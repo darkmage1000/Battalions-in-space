@@ -404,6 +404,7 @@ namespace BIS
                 Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;
                 aimPoint = gw != null ? Magnet(CameraAim(v.transform)) : CameraAim(v.transform);
                 inp.aimPoint = aimPoint;
+                inp.fromCamera = true; inp.camPos = Cam.transform.position;
                 inp.fire = Ctl.Fire || (gw != null && AutoFireOk(gw.def)); inp.alt = Ctl.Alt;
                 if (me.seat == 0)
                 {

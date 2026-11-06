@@ -269,9 +269,12 @@ namespace BIS
             return found;
         }
 
+        public static System.Action<Vector3, Collider, WeaponDef, Unit> DebugImpact;   // test harness only
+
         void Impact(Shot s, Vector3 p, Vector3 normal, Collider c)
         {
             var w = s.w;
+            DebugImpact?.Invoke(p, c, w, s.owner);
             IDamageable target = c ? c.GetComponentInParent<IDamageable>() : null;
 
             // a Bladesworn hero blocking deflects bolts back

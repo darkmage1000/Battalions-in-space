@@ -11,6 +11,8 @@ namespace BIS
         public float throttle;      // flyers: -1..1 change of throttle
         public Vector2 steer;       // flyers: yaw (x) / pitch (y) rate -1..1
         public float roll, climb;
+        public bool fromCamera;      // the player's input: shots that the barrel can't clear start on the camera line
+        public Vector3 camPos;
     }
 
     /// <summary>
@@ -522,7 +524,7 @@ namespace BIS
             if (sec != null && sec.def.lockOn) UpdateLock(dt, sec.def);
             if (inp.fire && w != null && w.Ready && !landed)
             {
-                Vector3 m = Muzzle(muzzleIdx++);
+                Vector3 m = ShotOrigin(Muzzle(muzzleIdx++), inp);
                 Vector3 dir = AimDir(m, inp.aimPoint);
                 Fire(w.def, m, dir, null);
                 w.Spend();
@@ -532,7 +534,7 @@ namespace BIS
                 if (sec.def.kind == WKind.Repair) RepairPulse(sec.def);
                 else
                 {
-                    Vector3 m = Muzzle(muzzleIdx++);
+                    Vector3 m = ShotOrigin(Muzzle(muzzleIdx++), inp);
                     Vector3 dir = AimDir(m, inp.aimPoint);
                     for (int p = 0; p < sec.def.pellets; p++)
                     {
@@ -543,6 +545,29 @@ namespace BIS
                 }
                 sec.Spend();
             }
+        }
+
+        /// <summary>
+        /// Where a shot by the player should start: the muzzle, unless something blocks the muzzle's line to the
+        /// aim point near the vehicle while the camera's view of it is clear (low cover, a rock in front of the
+        /// barrel) - then from the point of the camera line level with the muzzle, so you hit what you see.
+        /// </summary>
+        Vector3 ShotOrigin(Vector3 muzzle, VehicleInput inp)
+        {
+            if (!inp.fromCamera) return muzzle;
+            Vector3 to = inp.aimPoint - muzzle; float d = to.magnitude;
+            if (d < 2) return muzzle;
+            const int mask = (1 << Layers.Default) | (1 << Layers.Ground) | (1 << Layers.Hull) | (1 << Layers.Vehicle);
+            float near = Mathf.Min(d - 1.5f, 25f);
+            foreach (var h in Physics.RaycastAll(muzzle, to / d, near, mask, QueryTriggerInteraction.Ignore))
+            {
+                if (h.collider.transform.IsChildOf(transform)) continue;
+                Vector3 cd = inp.aimPoint - inp.camPos; float cl = cd.magnitude; if (cl < 1) return muzzle;
+                cd /= cl;
+                float t = Mathf.Clamp(Vector3.Dot(muzzle - inp.camPos, cd), 0, cl - 1);
+                return inp.camPos + cd * t;
+            }
+            return muzzle;
         }
 
         Vector3 AimDir(Vector3 from, Vector3 aimPoint)
@@ -565,13 +590,16 @@ namespace BIS
             {
                 Vector3 local = body.InverseTransformDirection(to);
                 if (def.kind == VKind.Bomber && local.z > 0) local.z = -local.z * 0.2f - 0.1f;   // tail gun covers the rear
-                gunnerT.localRotation = Quaternion.RotateTowards(gunnerT.localRotation, Quaternion.LookRotation(local), 200 * dt);
+                gunnerT.localRotation = Quaternion.RotateTowards(gunnerT.localRotation, Quaternion.LookRotation(local), 720 * dt);
             }
             if (inp.fire && gunW != null && gunW.Ready && !landed)
             {
                 var mz = model.gunnerMuzzles;
-                Vector3 m = gunnerT.TransformPoint(mz[gunnerIdx++ % mz.Length]);
+                Vector3 m = ShotOrigin(gunnerT.TransformPoint(mz[gunnerIdx++ % mz.Length]), inp);
+                // shots go to the crosshair (the turret only shows where); the bomber's tail gun keeps to its rear arc
                 Vector3 dir = gunnerT.forward;
+                Vector3 toAim = inp.aimPoint - m;
+                if (toAim.sqrMagnitude > 1 && (def.kind != VKind.Bomber || Vector3.Angle(gunnerT.forward, toAim) < 25)) dir = toAim.normalized;
                 if (gunW.def.spread > 0) dir = Quaternion.Euler(Random.Range(-gunW.def.spread, gunW.def.spread), Random.Range(-gunW.def.spread, gunW.def.spread), 0) * dir;
                 Shots.Fire(gunW.def, m, dir, Team, g, transform, faction.bolt, 1, null, def.Flies ? vel : Vector3.zero);
                 Fx.Muzzle(m, faction.bolt);
