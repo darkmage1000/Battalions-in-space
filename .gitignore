@@ -22,3 +22,4 @@
 .idea/
 *.apk
 *.aab
+/Previews/*.png

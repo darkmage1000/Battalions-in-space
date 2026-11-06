@@ -575,6 +575,7 @@ namespace BIS
         void Pilot(Vehicle v, float dt)
         {
             think -= dt;
+            if (job == SpaceJob.Defend || job == SpaceJob.Sabotage) PickSpaceJob();
             var space = b.space;
             Vector3 pos = v.transform.position;
             var inp = new VehicleInput();
@@ -614,13 +615,12 @@ namespace BIS
                 case SpaceJob.Board:
                     {
                         if (!enemy.HangarOpen && Random.value < 0.01f) { job = SpaceJob.Dogfight; break; }
-                        Vector3 approach = enemy.transform.TransformPoint(new Vector3(0, 10, 160));
-                        Vector3 mouth = enemy.transform.TransformPoint(new Vector3(0, 8, 40));
-                        Vector3 inside = enemy.transform.TransformPoint(new Vector3(Random.Range(-1, 1) * 0 + 0, 4, 14));
                         Vector3 local = enemy.transform.InverseTransformPoint(pos);
+                        Vector3 inside = enemy.transform.TransformPoint(new Vector3(0, 4, 12));
+                        bool aligned = Mathf.Abs(local.x) < 24 && Mathf.Abs(local.y - 9) < 9 && local.z > 0;
                         if (enemy.hangar.Contains(pos))
                         {
-                            point = inside; throttleWant = 0.12f;
+                            point = inside; throttleWant = 0.1f;
                             if (v.speed < 14 || (inside - pos).magnitude < 12)
                             {
                                 boarded = true;
@@ -629,8 +629,18 @@ namespace BIS
                                 return;
                             }
                         }
-                        else if (local.z > 120 || Mathf.Abs(local.x) > 50) { point = approach; throttleWant = 0.9f; boost = (approach - pos).magnitude > 400; }
-                        else { point = mouth; throttleWant = 0.35f; if (local.z < 60) point = inside; }
+                        else if (!aligned || local.z > 320)
+                        {
+                            // line up on the hangar axis well out in front of it
+                            point = enemy.transform.TransformPoint(new Vector3(0, 9, Mathf.Max(200, local.z * 0.6f)));
+                            if (local.z > 160 && Mathf.Abs(local.x) < 60 && local.z < 360) point = enemy.transform.TransformPoint(new Vector3(0, 9, local.z - 80));
+                            throttleWant = 0.9f; boost = (point - pos).magnitude > 500;
+                        }
+                        else
+                        {
+                            point = enemy.transform.TransformPoint(new Vector3(0, 9, Mathf.Max(0, local.z - 60)));
+                            throttleWant = local.z > 140 ? 0.6f : 0.28f;
+                        }
                         inp.aimPoint = point;
                         Steer(v, point, throttleWant, ref inp, 3f);
                         v.seatIn[0] = inp;

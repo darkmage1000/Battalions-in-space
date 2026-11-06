@@ -141,8 +141,9 @@ namespace BIS
         public void TakeDamage(DamageInfo d)
         {
             if (destroyed || battle.over) return;
-            float a = d.amount * (ShieldUp ? 0.12f : 1f);
-            if (d.weapon != null && d.weapon.kind != WKind.Torpedo && d.weapon.kind != WKind.Missile) a *= 0.35f;
+            // the hull mostly falls through its systems; direct hits only scratch it
+            float a = d.amount * (ShieldUp ? 0.1f : 1f);
+            a *= d.weapon != null && d.weapon.kind == WKind.Torpedo ? 0.22f : 0.05f;
             hull -= a;
             if (hull <= 0) { hull = 0; destroyed = true; battle.OnCapitalDestroyed(this, d.attacker); }
         }
@@ -346,7 +347,7 @@ namespace BIS
 
         void AddShield(Vector3 p)
         {
-            var s = Make(SysKind.Shield, "Shield Generator", p, 6000, false, false);
+            var s = Make(SysKind.Shield, "Shield Generator", p, 12000, false, false);
             var k = new MeshKit();
             k.Cyl(new Vector3(0, 2, 0), 10, 4, Quaternion.identity, HullDark(faction), 12);
             k.Sphere(new Vector3(0, 6, 0), new Vector3(16, 12, 16), Quaternion.identity, new Color(0.7f, 0.72f, 0.76f), 12, 6);
@@ -363,7 +364,7 @@ namespace BIS
 
         void AddEngine(Vector3 p)
         {
-            var s = Make(SysKind.Engine, "Engine", p, 5000, true, false);
+            var s = Make(SysKind.Engine, "Engine", p, 8000, true, false);
             var k = new MeshKit();
             k.Cyl(Vector3.zero, 11, 16, Quaternion.Euler(0, 0, 90), HullDark(faction), 12);
             k.Cyl(new Vector3(-8.2f, 0, 0), 9, 0.6f, Quaternion.Euler(0, 0, 90), MeshKit.Glow(faction.body == Body.Slender ? new Color(0.5f, 1f, 0.85f) : faction.body == Body.Machine ? new Color(1f, 0.75f, 0.3f) : new Color(0.55f, 0.75f, 1f)), 12);
@@ -393,7 +394,7 @@ namespace BIS
 
         void AddHangarControl(Vector3 p)
         {
-            var s = Make(SysKind.Hangar, "Hangar Control", p, 3500, false, false);
+            var s = Make(SysKind.Hangar, "Hangar Control", p, 5000, false, false);
             var k = new MeshKit();
             k.Box(Vector3.zero, new Vector3(10, 3, 4), new Color(0.35f, 0.35f, 0.38f));
             k.Box(new Vector3(0, -0.6f, 2.05f), new Vector3(8, 1, 0.1f), MeshKit.Glow(new Color(1f, 0.8f, 0.3f)));
@@ -403,7 +404,7 @@ namespace BIS
 
         void AddLifeSupport(Vector3 p)
         {
-            var s = Make(SysKind.LifeSupport, "Life Support", p, 3200, true, true);
+            var s = Make(SysKind.LifeSupport, "Life Support", p, 4000, true, true);
             var k = new MeshKit();
             for (int i = 0; i < 3; i++)
             {
@@ -418,7 +419,7 @@ namespace BIS
 
         void AddReactor(Vector3 p)
         {
-            var s = Make(SysKind.Reactor, "Reactor Core", p, 3800, true, true);
+            var s = Make(SysKind.Reactor, "Reactor Core", p, 4500, true, true);
             var k = new MeshKit();
             k.Cyl(new Vector3(0, 0.5f, 0), 4, 1, Quaternion.identity, new Color(0.3f, 0.3f, 0.32f), 12);
             k.Cyl(new Vector3(0, 3.8f, 0), 2.2f, 5.6f, Quaternion.identity, MeshKit.Glow(new Color(1f, 0.55f, 0.2f)), 12);
@@ -456,10 +457,15 @@ namespace BIS
         {
             Fx.Explosion(s.AimPoint, s.interior ? 2.2f : 4f, true);
             for (int i = 0; i < 4; i++) Fx.Explosion(s.AimPoint + Random.insideUnitSphere * (s.interior ? 3 : 8), 1.5f);
-            hull -= maxHull * 0.12f;
+            hull -= maxHull * HullShare(s.kind);
             battle.OnSystemDestroyed(this, s, by);
             if (hull <= 0 && !destroyed) { hull = 0; destroyed = true; battle.OnCapitalDestroyed(this, by); return; }
             if (!crippled && !systems.Exists(x => x.critical && !x.destroyed)) { crippled = true; battle.OnCapitalCrippled(this, by); }
+        }
+
+        public static float HullShare(SysKind k)
+        {
+            switch (k) { case SysKind.Turret: return 0.04f; case SysKind.Shield: return 0.12f; case SysKind.Engine: return 0.1f; case SysKind.Hangar: return 0.08f; default: return 0.12f; }
         }
 
         public Vector3 Node(int i) => transform.TransformPoint(nodes[i]);

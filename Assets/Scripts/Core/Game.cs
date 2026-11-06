@@ -79,6 +79,8 @@ namespace BIS
             battle = Battle.Create(cfg, r => { battle = null; onEnd?.Invoke(r); });
         }
 
+        public void ClearBackdrop() { if (backdrop) Destroy(backdrop); backdrop = null; }
+
         /// <summary>A quiet space scene behind the menus.</summary>
         public void BuildBackdrop()
         {

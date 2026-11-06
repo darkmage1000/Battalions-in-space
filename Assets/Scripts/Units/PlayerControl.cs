@@ -277,6 +277,7 @@ namespace BIS
                 {
                     flyCamRot = Quaternion.Slerp(flyCamRot, v.transform.rotation, dt * (v.IsShip ? 5f : 4f));
                     Vector3 want = v.transform.position + flyCamRot * new Vector3(0, v.model.camHeight * 0.7f, -v.model.camDist);
+                    want = CamCollide(v.transform.position + v.transform.up * 1.5f, want, v.transform);
                     cam.transform.position = Vector3.Lerp(cam.transform.position, want, dt * 14);
                     cam.transform.rotation = flyCamRot * Quaternion.Euler(6, 0, 0);
                     wantFov = Settings.Fov + (Ctl.Boost ? 10 : 0);

@@ -410,8 +410,9 @@ namespace BIS
                         Sfx.Play("thud", h.point, 0.9f, 0.5f);
                         if (!Alive) return;
                     }
-                    step += h.normal * into * dt * 1.2f;
-                    speed *= soft ? 0.6f : 0.35f;
+                    // slide along what we hit; only solid scenery bleeds speed
+                    step += h.normal * into * dt * 1.05f;
+                    if (h.collider.gameObject.layer != Layers.Vehicle) speed = Mathf.Max(speed * (soft ? 0.9f : 0.7f), Mathf.Min(speed, 8f));
                     if (soft && h.normal.y > 0.7f && driven == false) landed = true;
                 }
             }
