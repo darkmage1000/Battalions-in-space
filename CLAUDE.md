@@ -33,4 +33,5 @@ The editor does not tick Play mode while it is in the background. Use `BIS.Edito
 - Checked in the editor: land battles (captures, bleeding, vehicles used by bots), hero change (H), space battles (bombers kill shields/engines, ~7 min to a ticket win), bot boarding → reactor sabotage with detpacks, player landing in the enemy hangar and getting out, conquest invasion → battle → capture, a 60-turn auto-resolved campaign to a winner.
 - Touch controls (`Core/TouchInput.cs`): floating move stick left, drag-look right, buttons; on automatically on phones, Options > "Touch controls" forces them on a PC touch screen. Menus are IMGUI, so taps work as clicks. Android: IL2CPP ARM64, `Battalions > Build Android`.
 - Q in a vehicle switches seat (driver / gunner / passenger). Abandoned starships self-destruct after 90 s (they have no pads).
-- Not yet checked by hand: how flying feels with a mouse, gamepad on real hardware, the APK on a phone.
+- APK installed and launched on the user's phone 2026-11-05 (menu renders, no errors in logcat): `bash Tools/deploy.sh 192.168.100.167:<connect port>` (phone already paired; the connect port changes when wireless debugging restarts).
+- Not yet checked by hand: how flying feels with a mouse, gamepad on real hardware, a full battle on the phone.

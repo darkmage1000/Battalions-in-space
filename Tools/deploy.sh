@@ -2,6 +2,8 @@
 # Installs Builds/Android/BattalionsInSpace.apk on the paired phone over wireless debugging and launches it.
 # The phone's connect port changes after reboot / Wi-Fi toggle; it is rediscovered via mDNS.
 # Pairing only has to be done once (adb pair IP:PORT CODE).
+# mDNS discovery does not work on this PC: pass the phone's "IP address & Port" from the Wireless debugging screen,
+#   bash Tools/deploy.sh 192.168.100.167:41307
 set -e
 ADB="/c/Program Files/Unity/Hub/Editor/6000.0.62f1/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,8 +12,9 @@ PKG="com.battalions.space"
 
 [ -f "$APK" ] || { echo "No APK at $APK - build first (Battalions > Build Android)"; exit 1; }
 "$ADB" start-server >/dev/null 2>&1
-EP=""
+EP="$1"
 for i in 1 2 3 4 5 6 7 8; do
+  [ -n "$EP" ] && break
   EP=$("$ADB" mdns services | awk '/_adb-tls-connect/ {print $3; exit}')
   [ -n "$EP" ] && break
   sleep 1.5
