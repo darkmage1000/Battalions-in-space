@@ -31,4 +31,6 @@ The editor does not tick Play mode while it is in the background. Use `BIS.Edito
 ## Status
 - **2026-11-05 — first full build.** 4 factions (Terran Concord, Vorrkai Dominion, Iron Synod, Kessari Veil), each 5 classes + pilot/marine, 4 heroes (Blade / Gunslinger / Juggernaut / Mystic archetypes), tank, transport, gunship, 4 starships, a capital ship. 4 land maps (Harrak Dunes, Elos Highwood, Frostfall Ridge, Cinder Reach), 3 space maps (Harrak Orbit, Veil Nebula, Shattered Belt). Quickplay + Galactic Conquest. Windows build passes `-autotest`.
 - Checked in the editor: land battles (captures, bleeding, vehicles used by bots), hero change (H), space battles (bombers kill shields/engines, ~7 min to a ticket win), bot boarding → reactor sabotage with detpacks, player landing in the enemy hangar and getting out, conquest invasion → battle → capture, a 60-turn auto-resolved campaign to a winner.
-- Not yet checked by hand: how flying feels with a mouse, gamepad on real hardware, Android (no touch controls yet).
+- Touch controls (`Core/TouchInput.cs`): floating move stick left, drag-look right, buttons; on automatically on phones, Options > "Touch controls" forces them on a PC touch screen. Menus are IMGUI, so taps work as clicks. Android: IL2CPP ARM64, `Battalions > Build Android`.
+- Q in a vehicle switches seat (driver / gunner / passenger). Abandoned starships self-destruct after 90 s (they have no pads).
+- Not yet checked by hand: how flying feels with a mouse, gamepad on real hardware, the APK on a phone.

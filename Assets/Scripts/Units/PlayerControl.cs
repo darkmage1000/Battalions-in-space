@@ -205,6 +205,11 @@ namespace BIS
                 Say(v.IsShip ? "Fly into a hangar and slow down to get out" : "Land first to get out");
                 Sfx.Play2D("deny");
             }
+            if (Ctl.Swap && v.riders.Length > 1)
+            {
+                if (v.SwitchSeat(me)) { Say(me.seat == 0 ? "Driver seat" : me.seat == 1 && v.gunnerT ? "Gunner seat" : "Passenger seat", 1.5f); Sfx.Play2D("ui"); camYaw = v.transform.eulerAngles.y; }
+                else { Say("No free seat", 1.5f); Sfx.Play2D("deny"); }
+            }
             var inp = new VehicleInput();
             if (me.seat == 0 && v.Flies)
             {

@@ -128,6 +128,19 @@ namespace BIS
             return s;
         }
 
+        /// <summary>Move a rider to the next free seat (Q in a vehicle).</summary>
+        public bool SwitchSeat(Unit u)
+        {
+            int from = System.Array.IndexOf(riders, u);
+            if (from < 0) return false;
+            for (int k = 1; k < riders.Length; k++)
+            {
+                int s = (from + k) % riders.Length;
+                if (!riders[s]) { riders[from] = null; riders[s] = u; u.seat = s; return true; }
+            }
+            return false;
+        }
+
         public bool CanExitHere()
         {
             if (!def.IsShip) return !def.Flies || landed || AltitudeAboveGround() < 4f;
@@ -210,6 +223,7 @@ namespace BIS
             if (!Alive) return;
             prim?.Tick(dt); sec?.Tick(dt); gunW?.Tick(dt);
             if (IsEmpty) IdleTime += dt; else IdleTime = 0;
+            if (def.IsShip && IsEmpty && IdleTime > 90) { SelfDestruct(); return; }   // starships have no pads; tidy up abandoned ones
 
             var drv = Driver;
             var din = drv ? seatIn[0] : default;

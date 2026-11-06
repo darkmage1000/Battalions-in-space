@@ -626,7 +626,7 @@ namespace BIS
                 "F class special or hero ability   E enter vehicle   H become a hero when unlocked\n" +
                 "Tab scoreboard   M map   Esc pause\n\n" +
                 "<b>GROUND VEHICLES</b>\n" +
-                "WASD drive   Mouse aim turret   Left click main gun   Shift boost   E get out\n\n" +
+                "WASD drive   Mouse aim turret   Left click main gun   Shift boost   Q change seat   E get out\n\n" +
                 "<b>GUNSHIPS AND STARFIGHTERS</b>\n" +
                 "Mouse steer   W / S throttle   A / D roll   Shift boost   Left click guns   Right click missiles / torpedoes / repair\n" +
                 "Gunships: Space / Ctrl climb and descend.  Starfighters: fly into a hangar, slow down, E to land and get out.\n\n" +

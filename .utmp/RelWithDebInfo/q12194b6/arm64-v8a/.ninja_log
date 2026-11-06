@@ -1,0 +1,12 @@
+# ninja log v5
+70	348	8156322048845446	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	7cf8b69c0968f50
+350	536	8156322050717639	C:/Users/akwil/OneDrive/Desktop/Battalions in Space/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/q12194b6/obj/arm64-v8a/libswappywrapper.so	b59aead48e1135e5
+26	1052	8156322055846124	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	a3fcd72d56c6e127
+61	1059	8156322055926334	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	52a9c214146e9051
+10	1077	8156322056127637	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	dd62d47d81d453fb
+43	1090	8156322056256257	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	b2ed391550aa6fe
+34	1121	8156322056585980	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	a2b1f579328983a0
+52	1229	8156322057646126	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	9958c5701bed9570
+18	1258	8156322057950423	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	c795de54de2881b
+1	1333	8156322058643833	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	ba39cb8ae24b0231
+1333	1450	8156322059772275	C:/Users/akwil/OneDrive/Desktop/Battalions in Space/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/q12194b6/obj/arm64-v8a/libgame.so	5d01e55451f091b9

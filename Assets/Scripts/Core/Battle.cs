@@ -311,9 +311,9 @@ namespace BIS
         void Update()
         {
             float dt = Time.deltaTime;
+            control.Tick(dt);
             if (dt <= 0) return;
             time += dt;
-            control.Tick(dt);
 
             if (!over)
             {

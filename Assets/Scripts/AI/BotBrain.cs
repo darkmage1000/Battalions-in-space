@@ -67,6 +67,8 @@ namespace BIS
 
         public void OnVehicleHurt(DamageInfo d) => OnHurt(d);
 
+        static bool OutOfAmmo(WeaponState w) => w != null && !w.def.UsesHeat && w.def.clip > 0 && w.clip <= 0 && w.ammo <= 0;
+
         // ── entry ────────────────────────────────────────────────────────
         public void Think(float dt)
         {
@@ -263,6 +265,7 @@ namespace BIS
                     if (u.RoleOf == Role.Heavy && !(target is Vehicle) && d < 30) wantPrimary = false;
                     if (u.RoleOf == Role.Marksman && d < 18) wantPrimary = false;
                     if (u.RoleOf == Role.Engineer) wantPrimary = true;
+                    if (OutOfAmmo(u.weapons[0])) wantPrimary = false;
                     if ((u.cur == 0) != wantPrimary && Random.value < 0.1f) u.input.swap = true;
                 }
                 // grenades
@@ -320,6 +323,7 @@ namespace BIS
                 if (Mathf.Abs(pos.x) > lim || Mathf.Abs(pos.z) > lim) move = (-pos).normalized;
             }
 
+            if (OutOfAmmo(u.Weapon) && u.weapons[1 - u.cur] != null && !OutOfAmmo(u.weapons[1 - u.cur])) u.input.swap = true;
             move = Avoid(pos, move, dt);
             if (u.cls != null && u.cls.special == Special.Jetpack && !u.grounded && move.sqrMagnitude > 0.1f && stuckT > 0.6f) u.input.jump = true;
 
@@ -829,6 +833,7 @@ namespace BIS
             }
             if (target == null && move.sqrMagnitude < 0.01f && !atGoal) move = toN.normalized;
 
+            if (OutOfAmmo(u.Weapon) && u.weapons[1 - u.cur] != null && !OutOfAmmo(u.weapons[1 - u.cur])) u.input.swap = true;
             move = Avoid(pos, move, dt);
             u.input.move = Vector3.ClampMagnitude(new Vector3(move.x, 0, move.z), 1);
             u.input.aimPoint = aimPoint;
