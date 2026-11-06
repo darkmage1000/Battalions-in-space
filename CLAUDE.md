@@ -5,6 +5,7 @@ All IP is original: four factions, their soldiers, heroes, ships, planets and th
 
 ## Run
 Open `Assets/Scenes/Main.unity` (empty) and press Play: `Game` boots itself (`[RuntimeInitializeOnLoadMethod]`) and builds everything in code — camera, sun, menus, battles. Nothing is authored in the scene and there are no art assets: models come from `MeshKit`, sounds/music from `Sfx`.
+Source: https://github.com/darkmage1000/Battalions-in-space (public, branch `master`; builds, Library and preview PNGs are git-ignored, so the repo is code + settings only).
 Menu **Battalions > Setup Project** (also runs on load): scene + build settings, player settings, gamepad axes. **Battalions > Build Windows** → `Builds/Windows/BattalionsInSpace.exe`; **Build Android** → `Builds/Android/BattalionsInSpace.apk`.
 Build self-test: `BattalionsInSpace.exe -autotest -screen-fullscreen 0` plays every map 12 s with the player spawned, opens a campaign, writes `%USERPROFILE%/AppData/LocalLow/Battalions Studio/Battalions in Space/autotest.txt` and quits.
 
