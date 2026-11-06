@@ -32,6 +32,31 @@ namespace BIS
         public bool auto = true;                 // hold to fire
 
         public WeaponDef Copy() => (WeaponDef)MemberwiseClone();
+
+        /// <summary>The distance the gun is good at: aim assist and auto-fire stop beyond it.</summary>
+        public float EffectiveRange
+        {
+            get
+            {
+                switch (kind)
+                {
+                    case WKind.Rifle: return 90;
+                    case WKind.Repeater: return splash > 0 ? 80 : 60;
+                    case WKind.Pistol: return 55;
+                    case WKind.Shotgun: return 22;
+                    case WKind.Sniper: return 320;
+                    case WKind.Rocket: return 160;
+                    case WKind.Blade: return 5;
+                    case WKind.Beam: return range;
+                    case WKind.Cannon: return 170;
+                    case WKind.ShipLaser: return Mathf.Min(range, 420);
+                    case WKind.Missile: return Mathf.Min(range, 600);
+                    case WKind.Torpedo: return 500;
+                    case WKind.Repair: return 0;
+                    default: return Mathf.Min(range, 120);
+                }
+            }
+        }
         public bool UsesHeat => heatPerShot > 0;
         public float Dps => damage * pellets * rate;
     }

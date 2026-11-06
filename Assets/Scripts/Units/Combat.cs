@@ -78,6 +78,7 @@ namespace BIS
             public bool grenade;
             public float trailTimer;
             public Material mat;
+            public bool player;
         }
         readonly List<Shot> live = new List<Shot>(512);
         readonly Stack<Shot> pool = new Stack<Shot>();
@@ -105,6 +106,11 @@ namespace BIS
 
         public void Clear() { foreach (var s in live) pool.Push(s); live.Clear(); }
 
+        // the player's aim statistics (Options > Show aim and hit statistics)
+        public static int PlayerShots, PlayerHits;
+        public static float LastMissBy = -1, LastMissTime = -99;
+        public static void ResetStats() { PlayerShots = PlayerHits = 0; LastMissBy = -1; }
+
         public static void Fire(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul = 1, Transform homing = null, Vector3 inheritVel = default)
         {
             if (!I) return;
@@ -112,6 +118,8 @@ namespace BIS
             s.pos = s.prev = from; s.vel = dir.normalized * w.speed + inheritVel; s.life = w.range / Mathf.Max(1, w.speed) * 1.1f + 0.2f;
             s.w = w; s.team = team; s.owner = owner; s.ignore = ignore; s.col = col; s.dmgMul = dmgMul; s.homing = homing;
             s.grenade = w.kind == WKind.Grenade; s.trailTimer = 0;
+            s.player = owner && owner.part != null && owner.part.isPlayer;
+            if (s.player && !s.grenade) PlayerShots++;
             if (s.grenade) s.life = 4f;
             float boost = w.kind == WKind.Rocket || w.kind == WKind.Missile || w.kind == WKind.Torpedo ? 1.6f : 1.3f;
             s.mat = Mats.Additive(new Color(col.r * boost, col.g * boost, col.b * boost, 1));
@@ -194,13 +202,16 @@ namespace BIS
 
         bool Cast(Shot s, Vector3 from, Vector3 dir, float dist, out RaycastHit best)
         {
-            int n = Physics.RaycastNonAlloc(from, dir, hits, dist, Layers.ShotMask, QueryTriggerInteraction.Ignore);
+            // the player's bolts are a little fatter (0.2 m) so a well-aimed shot is not lost to a thin capsule edge
+            int n = s.player ? Physics.SphereCastNonAlloc(from, 0.2f, dir, hits, dist, Layers.ShotMask, QueryTriggerInteraction.Ignore)
+                             : Physics.RaycastNonAlloc(from, dir, hits, dist, Layers.ShotMask, QueryTriggerInteraction.Ignore);
             best = default;
             float bd = float.MaxValue; bool found = false;
             for (int i = 0; i < n; i++)
             {
                 var h = hits[i];
                 if (s.ignore && h.collider.transform.IsChildOf(s.ignore)) continue;
+                if (h.distance <= 0 && h.point == Vector3.zero) { h.point = from; h.normal = -dir; }
                 if (h.distance < bd) { bd = h.distance; best = h; found = true; }
             }
             return found;
@@ -225,6 +236,23 @@ namespace BIS
                 }
             }
 
+            if (s.player && !s.grenade)
+            {
+                if (target != null && target.Alive && target.Team != s.team) PlayerHits++;
+                else if (Battle.I != null)
+                {
+                    // how far did the miss pass from the nearest enemy?
+                    float best = 6;
+                    foreach (var eu in Battle.I.units)
+                        if (eu && eu.Alive && eu.team != s.team && !eu.InVehicle)
+                        {
+                            Vector3 a = s.prev, b2 = p; Vector3 ab = b2 - a; float t = Mathf.Clamp01(Vector3.Dot(eu.AimPoint - a, ab) / Mathf.Max(0.0001f, ab.sqrMagnitude));
+                            float d = Vector3.Distance(a + ab * t, eu.AimPoint);
+                            if (d < best) best = d;
+                        }
+                    if (best < 6) { LastMissBy = best; LastMissTime = Time.time; }
+                }
+            }
             if (target != null && target.Alive && target.Team != s.team)
             {
                 Deal(target, w.damage * s.dmgMul, w, s.owner, s.team, p, s.vel.normalized, w.splash > 0 ? DmgType.Explosive : DmgType.Bolt);

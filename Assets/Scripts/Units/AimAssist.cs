@@ -18,11 +18,13 @@ namespace BIS
         static readonly float[] friction = { 1, 0.8f, 0.62f, 0.45f }; // look speed while on target
 
         static int Level => Mathf.Clamp(Settings.AimAssist, 0, 3);
-        public static bool On => Level > 0 && (TouchInput.Active || Ctl.PadActive || Settings.MouseAssist);
-        public static float MagnetCone => magnet[Level];
-        public static float PullCone => pull[Level];
-        public static float PullRate => pullRate[Level];
-        public static float Friction => friction[Level];
+        public static bool On => Level > 0 && (Settings.Current != Settings.InputDevice.KeyboardMouse || Settings.MouseAssist);
+        // touch screens get wider cones and a stronger pull than a gamepad; the mouse (if enabled) the gentlest
+        static float DeviceMul => Settings.Current == Settings.InputDevice.Touch ? 1.6f : Settings.Current == Settings.InputDevice.Gamepad ? 1f : 0.6f;
+        public static float MagnetCone => magnet[Level] * DeviceMul;
+        public static float PullCone => pull[Level] * DeviceMul;
+        public static float PullRate => pullRate[Level] * DeviceMul;
+        public static float Friction => Mathf.Lerp(1, friction[Level], Mathf.Clamp01(DeviceMul));
 
         /// <summary>
         /// Best enemy near the view direction: lowest (angle + distance share), visible from eye.

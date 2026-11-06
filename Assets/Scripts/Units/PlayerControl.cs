@@ -155,7 +155,7 @@ namespace BIS
         {
             float zoomMul = me.input.aim && me.Weapon.def.zoomFov > 0 ? 0.25f : me.input.aim ? 0.6f : 1f;
             var wd = me.Weapon.def;
-            float range = wd.kind == WKind.Blade ? 12 : wd.kind == WKind.Repair ? 0 : Mathf.Clamp(wd.range, 25, 260);
+            float range = wd.EffectiveRange;
             float lookMul = Assist(me.transform, range, wd.kind == WKind.Beam || wd.kind == WKind.Blade ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade);
             camYaw += Ctl.Look.x * zoomMul * lookMul;
             camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * zoomMul * lookMul, -70, 75);
@@ -169,6 +169,9 @@ namespace BIS
             };
             aimPoint = Magnet(CameraAim(me.transform));
             inp.aimPoint = aimPoint;
+            if (AutoFireOk(wd)) { inp.fire = true; inp.fireDown = true; }
+            // the player's own shots are tighter than the bots', tighter still on touch and when assist has a target
+            me.spreadMul = (Settings.Current == Settings.InputDevice.Touch ? 0.45f : Settings.Current == Settings.InputDevice.Gamepad ? 0.55f : 0.7f) * (assistOnTarget ? 0.6f : 1f);
             me.input = inp;
 
             if (Ctl.Use)
@@ -195,7 +198,7 @@ namespace BIS
         /// <summary>Finds the assist target for the camera view, pulls the view toward it and returns the look-speed multiplier.</summary>
         float Assist(Transform ignore, float range, float shotSpeed, bool infantry, bool vehicles, bool shipsOnly, float dt, bool pull)
         {
-            assistTarget = null; assistAngle = 999;
+            assistTarget = null; assistAngle = 999; assistOnTarget = false;
             if (!AimAssist.On || range <= 0) return 1;
             var cam = Cam;
             float zoom = cam.fieldOfView / Mathf.Max(20, Settings.Fov);          // smaller cones when zoomed in
@@ -208,12 +211,25 @@ namespace BIS
             return assistAngle <= AimAssist.MagnetCone * zoom * 1.3f ? AimAssist.Friction : 1;
         }
 
+        public bool assistOnTarget;
+
         /// <summary>Bends the shot onto the assist target when it is inside the magnetism cone.</summary>
         Vector3 Magnet(Vector3 raw)
         {
+            assistOnTarget = false;
             if (assistTarget == null || !assistTarget.Alive) return raw;
             float zoom = Cam.fieldOfView / Mathf.Max(20, Settings.Fov);
-            return assistAngle <= AimAssist.MagnetCone * zoom ? assistPoint : raw;
+            assistOnTarget = assistAngle <= AimAssist.MagnetCone * zoom;
+            return assistOnTarget ? assistPoint : raw;
+        }
+
+        /// <summary>Touch auto-fire: shoot when assist is on an enemy that is within the gun's effective range.</summary>
+        bool AutoFireOk(WeaponDef w)
+        {
+            if (!TouchInput.Active || !Settings.AutoFire || !AimAssist.On || !assistOnTarget || assistTarget == null) return false;
+            if (w.kind == WKind.Repair) return false;
+            if ((w.kind == WKind.Rocket || w.kind == WKind.Cannon) && assistTarget is Unit && w.lockOn) return false;
+            return true;
         }
 
         // target lock for gunships and starfighters
@@ -305,12 +321,14 @@ namespace BIS
                 float conv = AimAssist.On ? Mathf.Min(10f, Mathf.Max(4f, AimAssist.MagnetCone * (space ? 1.8f : 1.4f))) : 4f;
                 float pullCone = AimAssist.On ? AimAssist.PullCone * (space ? 1.6f : 1.3f) : 0;
                 float shot = v.prim != null ? v.prim.def.speed : 300;
-                var t = AimAssist.Find(b, me.team, v.transform.position, v.transform.forward, Mathf.Max(conv, pullCone), space ? 650 : 350, shot,
+                float effRange = v.prim != null ? Mathf.Min(space ? 650 : 350, v.prim.def.EffectiveRange) : 300;
+                var t = AimAssist.Find(b, me.team, v.transform.position, v.transform.forward, Mathf.Max(conv, pullCone), effRange, shot,
                                        v.transform, !space, true, space, out var tp, out var ta);
                 assistTarget = t;
+                assistOnTarget = t != null && ta <= conv;
                 if (t != null)
                 {
-                    if (ta <= conv) aimPoint = tp;
+                    if (ta <= conv) { aimPoint = tp; if (TouchInput.Active && Settings.AutoFire && AimAssist.On) inp.fire = true; }
                     if (ta <= pullCone)
                     {
                         Vector3 local = v.transform.InverseTransformDirection((tp - v.transform.position).normalized);
@@ -363,13 +381,13 @@ namespace BIS
             else
             {
                 var gw = me.seat == 0 ? v.prim : me.seat == 1 ? v.gunW : null;
-                float lookMul = gw != null ? Assist(v.transform, Mathf.Clamp(gw.def.range, 60, 300), gw.def.speed, true, true, false, dt, true) : 1;
+                float lookMul = gw != null ? Assist(v.transform, gw.def.EffectiveRange, gw.def.speed, true, true, false, dt, true) : 1;
                 camYaw += Ctl.Look.x * lookMul;
                 camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * lookMul, -40, 60);
                 Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;
                 aimPoint = gw != null ? Magnet(CameraAim(v.transform)) : CameraAim(v.transform);
                 inp.aimPoint = aimPoint;
-                inp.fire = Ctl.Fire; inp.alt = Ctl.Alt;
+                inp.fire = Ctl.Fire || (gw != null && AutoFireOk(gw.def)); inp.alt = Ctl.Alt;
                 if (me.seat == 0)
                 {
                     inp.move = Vector3.ClampMagnitude(fwd * Ctl.Move.y + right * Ctl.Move.x, 1);

@@ -4,36 +4,48 @@ using UnityEngine;
 namespace BIS
 {
     /// <summary>
-    /// On-screen controls for phones and tablets: a floating move stick on the left, drag-to-look on the
-    /// right, and buttons. Feeds Ctl; drawn by HUD while playing. Menus use IMGUI, which takes touches as clicks.
+    /// On-screen controls for phones and tablets. Left: floating move stick (push it all the way to run) with a
+    /// second FIRE button above it, so the right thumb can aim while the left thumb shoots. Right: drag anywhere
+    /// to look; the big FIRE button also aims while held. Only the buttons that make sense right now are shown
+    /// (on foot / driving / gunner / piloting). Auto-fire (Options) shoots when the crosshair is on an enemy.
     /// </summary>
     public static class TouchInput
     {
-        public static bool Active => Application.isMobilePlatform || Settings.ForceTouch;
-        public class Btn { public string id, label; public Rect r; public bool held, down; public int finger = -1; }
+        public static bool Active => Settings.Current == Settings.InputDevice.Touch;
+        public class Btn
+        {
+            public string id, label; public Rect r; public bool held, down, visible; public int finger = -1; public bool big;
+        }
         public static readonly List<Btn> Buttons = new List<Btn>();
         public static Vector2 StickOrigin, StickPos;
         public static int stickFinger = -1, lookFinger = -1;
         public static Vector2 Move, Look;
         static bool built;
 
+        static Btn B(string id, string label, float x, float y, float s, bool big = false)
+        {
+            var b = new Btn { id = id, label = label, r = new Rect(x, y, s, s), big = big };
+            Buttons.Add(b);
+            return b;
+        }
+
         static void Build()
         {
             built = true;
-            void B(string id, string label, float x, float y, float s) => Buttons.Add(new Btn { id = id, label = label, r = new Rect(x, y, s, s) });
-            // positions are from the bottom-right corner in virtual UI units (negative = from right / bottom)
-            B("fire", "FIRE", -250, -280, 170);
-            B("aim", "AIM", -420, -200, 110);
+            // positions in virtual UI units; negative = measured from the right / bottom edge
+            B("fire", "FIRE", -300, -330, 200, true);
             B("jump", "JUMP", -150, -470, 120);
-            B("crouch", "DUCK", -290, -470, 110);
-            B("reload", "R", -420, -330, 90);
-            B("swap", "SWAP", -540, -170, 100);
-            B("equip", "GEAR", -540, -300, 100);
-            B("ability", "SKILL", -420, -450, 100);
-            B("use", "USE", -150, -620, 110);
-            B("sprint", "RUN", 40, -470, 110);
-            B("hero", "HERO", -290, -620, 100);
-            B("boost", "BOOST", 170, -470, 110);
+            B("aim", "ZOOM", -470, -230, 110);
+            B("swap", "SWAP", -470, -360, 100);
+            B("equip", "GEAR", -600, -230, 100);
+            B("ability", "SKILL", -300, -480, 110);
+            B("use", "ENTER", -150, -620, 120);
+            B("hero", "HERO", -440, -480, 110);
+            B("fire2", "FIRE", 60, -560, 130);
+            B("boost", "BOOST", -150, -470, 120);
+            B("alt", "MSL", -470, -230, 110);
+            B("up", "UP", -620, -360, 100);
+            B("down", "DOWN", -620, -230, 100);
             B("pause", "II", -110, 20, 90);
             B("score", "TAB", -220, 20, 90);
         }
@@ -46,6 +58,39 @@ namespace BIS
 
         public static Btn Get(string id) { foreach (var b in Buttons) if (b.id == id) return b; return null; }
 
+        /// <summary>Which buttons show, and their labels, for what the player is doing right now.</summary>
+        static void Layout()
+        {
+            var pc = Battle.I != null ? Battle.I.control : null;
+            var me = pc != null ? pc.Me : null;
+            foreach (var b in Buttons) b.visible = false;
+            void Show(string id, string label = null) { var b = Get(id); b.visible = true; if (label != null) b.label = label; }
+            Show("pause"); Show("score");
+            if (me == null) return;
+            if (!me.InVehicle)
+            {
+                Show("fire", "FIRE"); Show("fire2"); Show("jump"); Show("equip", "GEAR");
+                if (me.weapons[1] != null) Show("swap", "SWAP");
+                if (me.Weapon.def.zoomFov > 0) Show("aim", "ZOOM");
+                else if (me.IsHero && me.hero.kind == HeroKind.Blade) Show("aim", "BLOCK");
+                if (me.AbilityName != null) Show("ability", me.AbilityName.Length > 6 ? "SKILL" : me.AbilityName);
+                if (Battle.I.player.heroReady && !me.IsHero) Show("hero", "HERO");
+                if (pc.NearbyVehicle()) Show("use", "ENTER");
+                return;
+            }
+            var v = me.vehicle;
+            if (v.CanExitHere()) Show("use", "EXIT");
+            if (v.riders.Length > 1) Show("swap", "SEAT");
+            if (me.seat == 0)
+            {
+                Show("fire", "FIRE"); Show("fire2"); Show("boost", "BOOST");
+                if (v.sec != null) Show("alt", v.sec.def.kind == WKind.Repair ? "HEAL" : v.sec.def.kind == WKind.Torpedo ? "TORP" : "MSL");
+                if (v.Flies) Show("ability", pc.flyLock != null ? "FREE" : "LOCK");
+                if (v.Flies && !v.IsShip) { Show("up"); Show("down"); }
+            }
+            else if (me.seat == 1 && v.gunnerT) { Show("fire", "FIRE"); Show("fire2"); }
+        }
+
         public static void Update()
         {
             if (!built) Build();
@@ -53,24 +98,33 @@ namespace BIS
             Look = Vector2.zero;
             bool playing = Battle.I != null && Battle.I.control.mode == PlayerControl.Mode.Play && !Battle.I.control.paused;
             if (!playing) { Move = Vector2.zero; stickFinger = lookFinger = -1; foreach (var b in Buttons) { b.held = false; b.finger = -1; } return; }
+            Layout();
             float s = UI.S;
+            float look = 0.4f * Settings.TouchSens;
             for (int i = 0; i < Input.touchCount; i++)
             {
                 var t = Input.GetTouch(i);
                 Vector2 p = new Vector2(t.position.x / s, (Screen.height - t.position.y) / s);
+                Vector2 delta = new Vector2(t.deltaPosition.x, t.deltaPosition.y) / s;
                 if (t.phase == TouchPhase.Began)
                 {
                     Btn hit = null;
-                    foreach (var b in Buttons) if (ScreenRect(b).Contains(p)) { hit = b; break; }
+                    foreach (var b in Buttons) if (b.visible && ScreenRect(b).Contains(p)) { hit = b; break; }
                     if (hit != null) { hit.held = true; hit.down = true; hit.finger = t.fingerId; }
                     else if (p.x < UI.W * 0.4f && stickFinger < 0) { stickFinger = t.fingerId; StickOrigin = StickPos = p; }
                     else if (lookFinger < 0) lookFinger = t.fingerId;
                 }
                 else if (t.phase == TouchPhase.Moved || t.phase == TouchPhase.Stationary)
                 {
-                    if (t.fingerId == stickFinger) StickPos = p;
-                    else if (t.fingerId == lookFinger) Look += new Vector2(t.deltaPosition.x, t.deltaPosition.y) / s * 0.18f * Settings.MouseSens;
-                    else foreach (var b in Buttons) if (b.finger == t.fingerId && b.id == "fire") Look += new Vector2(t.deltaPosition.x, t.deltaPosition.y) / s * 0.12f * Settings.MouseSens;
+                    if (t.fingerId == stickFinger)
+                    {
+                        StickPos = p;
+                        // the stick base follows a finger that drifts far, so it never runs out of travel
+                        Vector2 off = StickPos - StickOrigin;
+                        if (off.magnitude > 150) StickOrigin = StickPos - off.normalized * 150;
+                    }
+                    else if (t.fingerId == lookFinger) Look += delta * look;
+                    else foreach (var b in Buttons) if (b.finger == t.fingerId && b.id == "fire") Look += delta * look;   // aim while holding FIRE
                 }
                 else
                 {
@@ -79,12 +133,15 @@ namespace BIS
                     foreach (var b in Buttons) if (b.finger == t.fingerId) { b.held = false; b.finger = -1; }
                 }
             }
+            // buttons that disappeared release their fingers
+            foreach (var b in Buttons) if (!b.visible && b.held) { b.held = false; b.finger = -1; }
             Move = stickFinger >= 0 ? Vector2.ClampMagnitude((StickPos - StickOrigin) / 110f, 1) : Vector2.zero;
             Move.y = -Move.y;
         }
 
-        public static bool Held(string id) { var b = Get(id); return b != null && b.held; }
-        public static bool Down(string id) { var b = Get(id); return b != null && b.down; }
+        public static bool Held(string id) { var b = Get(id); return b != null && b.visible && b.held; }
+        public static bool Down(string id) { var b = Get(id); return b != null && b.visible && b.down; }
+        public static bool Running => Move.magnitude > 0.92f;
 
         /// <summary>Drawn by the HUD during play.</summary>
         public static void Draw()
@@ -93,19 +150,18 @@ namespace BIS
             if (stickFinger >= 0)
             {
                 UI.Dot(StickOrigin, 110, new Color(1, 1, 1, 0.08f));
-                UI.Dot(StickOrigin + Vector2.ClampMagnitude(StickPos - StickOrigin, 110), 46, new Color(1, 1, 1, 0.3f));
+                UI.Dot(StickOrigin + Vector2.ClampMagnitude(StickPos - StickOrigin, 110), 46, Running ? new Color(1f, 0.85f, 0.4f, 0.4f) : new Color(1, 1, 1, 0.3f));
             }
-            else UI.Text(new Rect(40, UI.H - 200, 400, 30), "drag here to move", 18, new Color(1, 1, 1, 0.35f));
-            var me = Battle.I != null ? Battle.I.control.Me : null;
-            bool piloting = me != null && me.InVehicle && me.vehicle.Flies && me.seat == 0;
+            else UI.Text(new Rect(40, UI.H - 200, 460, 30), "drag here to move - push all the way to run", 18, new Color(1, 1, 1, 0.35f));
             foreach (var b in Buttons)
             {
+                if (!b.visible) continue;
                 var r = ScreenRect(b);
-                string label = b.id == "ability" && piloting ? (Battle.I.control.flyLock != null ? "FREE" : "LOCK") : b.label;
-                UI.Fill(r, b.held ? new Color(1f, 0.8f, 0.3f, 0.45f) : new Color(0.1f, 0.12f, 0.16f, 0.45f));
+                UI.Fill(r, b.held ? new Color(1f, 0.8f, 0.3f, 0.45f) : b.big ? new Color(0.5f, 0.12f, 0.1f, 0.45f) : new Color(0.1f, 0.12f, 0.16f, 0.45f));
                 UI.Frame(r, new Color(1, 1, 1, 0.35f), 2);
-                UI.Text(r, label, b.id == "fire" ? 30 : 20, Color.white, TextAnchor.MiddleCenter);
+                UI.Text(r, b.label, b.big ? 34 : 20, Color.white, TextAnchor.MiddleCenter);
             }
+            if (Settings.AutoFire) UI.Text(new Rect(UI.W - 330, UI.H - 120, 320, 24), "auto-fire on", 15, new Color(1, 1, 1, 0.4f), TextAnchor.MiddleRight);
         }
     }
 }

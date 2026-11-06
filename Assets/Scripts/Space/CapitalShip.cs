@@ -67,7 +67,7 @@ namespace BIS
                 target = null; float best = 760 * 760;
                 foreach (var v in ship.battle.vehicles)
                 {
-                    if (!v || !v.Alive || v.Team == ship.team || v.IsEmpty || !v.IsShip) continue;
+                    if (!v || !v.Alive || v.Team == ship.team || v.IsEmpty || !v.IsShip || v.LaunchShield) continue;
                     float d2 = (v.transform.position - aim.position).sqrMagnitude;
                     if (d2 < best && Vector3.Dot(v.transform.position - aim.position, ship.transform.TransformDirection(TurretFacing)) > -0.2f) { best = d2; target = v; }
                 }
@@ -359,7 +359,7 @@ namespace BIS
 
         void AddShield(Vector3 p)
         {
-            var s = Make(SysKind.Shield, "Shield Generator", p, 12000, false, false);
+            var s = Make(SysKind.Shield, "Shield Generator", p, 18000, false, false);
             var k = new MeshKit();
             k.Cyl(new Vector3(0, 2, 0), 10, 4, Quaternion.identity, HullDark(faction), 12);
             k.Sphere(new Vector3(0, 6, 0), new Vector3(16, 12, 16), Quaternion.identity, new Color(0.7f, 0.72f, 0.76f), 12, 6);
@@ -452,7 +452,7 @@ namespace BIS
             broadside -= dt;
             if (broadside <= 0)
             {
-                broadside = Random.Range(2.5f, 5f);
+                broadside = Random.Range(6f, 10f);
                 var enemy = battle.space.ships[1 - team];
                 if (enemy && !enemy.destroyed)
                 {

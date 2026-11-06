@@ -159,9 +159,29 @@ namespace BIS
         }
 
         // ── land infantry ────────────────────────────────────────────────
+        Squad squad;
+        int squadVersion = -1;
+        bool flanking;
+        public string OrderText => squad != null ? Commander.OrderName(squad.order) + (squad.target ? " " + squad.target.postName : "") : "";
+
         void PickObjective()
         {
             objT = Random.Range(8, 14);
+            squad = b.commander != null ? b.commander.SquadOf(u.part) : null;
+            if (squad != null && squad.target != null)
+            {
+                squadVersion = squad.version;
+                objective = squad.target;
+                float spreadR = squad.order == SquadOrder.Defend ? objective.radius * 1.3f : objective.radius * 0.7f;
+                Vector2 r2 = Random.insideUnitCircle * spreadR;
+                moveGoal = objective.Pos + new Vector3(r2.x, 0, r2.y);
+                // a flanking squad swings wide first, unless it is already close
+                flanking = squad.order == SquadOrder.Flank && (u.transform.position - objective.Pos).magnitude > 70 && (u.transform.position - squad.via).magnitude > 18;
+                if (flanking) moveGoal = squad.via + new Vector3(r2.x, 0, r2.y) * 0.5f;
+                // an attack wave waits at its staging point until enough of the squad is there
+                if (squad.gathering) { flanking = false; Vector2 r3 = Random.insideUnitCircle * 12; moveGoal = squad.stage + new Vector3(r3.x, 0, r3.y); }
+                return;
+            }
             CommandPost best = null; float bs = float.MaxValue;
             Vector3 p = u.transform.position;
             bool defend = Random.value < 0.22f;
@@ -192,20 +212,28 @@ namespace BIS
         {
             think -= dt; seeT -= dt; objT -= dt; strafeT -= dt; abilityT -= dt; grenadeT -= dt; enterT -= dt;
             Vector3 pos = u.transform.position;
-            if (objT <= 0 || objective == null || (objective.owner == u.team && objective.progress >= 1 && objective.present[1 - u.team] == 0 && Random.value < 0.02f)) PickObjective();
+            if (squad == null && b.commander != null) squad = b.commander.SquadOf(u.part);
+            bool newOrders = squad != null && squad.version != squadVersion;
+            if (newOrders || objT <= 0 || objective == null || (squad == null && objective.owner == u.team && objective.progress >= 1 && objective.present[1 - u.team] == 0 && Random.value < 0.02f)) PickObjective();
 
             if (think <= 0)
             {
                 think = Random.Range(0.25f, 0.4f);
-                var t = FindTarget(u.Eye, Range, u.RoleOf == Role.Heavy && !u.IsHero);
+                // squads on the move only stop for close threats (or whoever is shooting them); defenders and marksmen engage at full range
+                bool onTheMove = squad != null && squad.order != SquadOrder.Defend && !squad.gathering && objective && (objective.Pos - pos).magnitude > objective.radius * 1.5f
+                                 && u.RoleOf != Role.Marksman && Time.time - u.lastHurt > 2.5f;
+                var t = FindTarget(u.Eye, onTheMove ? Mathf.Min(Range, 45) : Range, u.RoleOf == Role.Heavy && !u.IsHero);
                 if (t != null) { if (t != target) trackTime = 0; target = t; seeT = 1.2f; }
                 else if (seeT <= 0) target = null;
                 // grab a vehicle near spawn now and then
-                if (wantVehicle == null && target == null && enterT <= 0 && !u.IsHero && Time.time - u.spawnTime < 8 && u.RoleOf != Role.Marksman)
+                if (wantVehicle == null && target == null && enterT <= 0 && !u.IsHero && Time.time - u.spawnTime < 15 && u.RoleOf != Role.Marksman)
                 {
                     enterT = 99;
+                    bool attacking = squad == null || squad.order != SquadOrder.Defend;
+                    float range = attacking ? 50 : 25;
                     foreach (var v in b.vehicles)
-                        if (v && v.CanEnter(u) && (v.Team == u.team || v.IsEmpty) && (v.transform.position - pos).sqrMagnitude < 35 * 35 && Random.value < (v.Driver ? 0.35f : 0.55f)) { wantVehicle = v; break; }
+                        if (v && v.CanEnter(u) && (v.Team == u.team || v.IsEmpty) && (v.transform.position - pos).sqrMagnitude < range * range &&
+                            Random.value < (v.Driver ? (attacking ? 0.55f : 0.2f) : (attacking ? 0.8f : 0.25f))) { wantVehicle = v; break; }
                 }
             }
             if (target != null && !target.Alive) target = null;
@@ -240,8 +268,11 @@ namespace BIS
                 {
                     float approach = d > pref * 1.3f ? 1 : d < pref * 0.6f ? -0.7f : 0;
                     move = dir * approach + side * 0.75f;
-                    // keep drifting toward the objective when the fight is far from it
-                    if (objective && (objective.Pos - pos).magnitude > 30 && d > 35) move += (objective.Pos - pos).normalized * 0.6f;
+                    // keep drifting toward the objective when the fight is far from it; attacking squads fight while advancing
+                    bool pushing = squad != null && squad.order != SquadOrder.Defend && !squad.gathering;
+                    Vector3 toObj = objective ? objective.Pos - pos : Vector3.zero; toObj.y = 0;
+                    if (objective && pushing && toObj.magnitude > objective.radius * 0.8f) move += (flanking ? (squad.via - pos).normalized : toObj.normalized) * (d > 15 ? 0.9f : 0.5f);
+                    else if (objective && toObj.magnitude > 30 && d > 35) move += toObj.normalized * 0.6f;
                 }
                 float boltSpeed = u.Weapon.def.speed;
                 Vector3 lead = Lead(u.Eye, target, boltSpeed);
@@ -300,12 +331,15 @@ namespace BIS
             {
                 Vector3 to = moveGoal - pos; to.y = 0;
                 float d = to.magnitude;
+                if (flanking && d < 10) { flanking = false; Vector2 r0 = Random.insideUnitCircle * objective.radius * 0.7f; moveGoal = objective.Pos + new Vector3(r0.x, 0, r0.y); }
                 if (d > 2) { move = to / d; sprint = d > 30; }
                 else
                 {
-                    Vector2 r = Random.insideUnitCircle * objective.radius * 0.7f;
-                    moveGoal = objective.Pos + new Vector3(r.x, 0, r.y);
-                    if (Random.value < 0.3f) crouch = true;
+                    bool defending = squad != null && squad.order == SquadOrder.Defend;
+                    Vector2 r = Random.insideUnitCircle * objective.radius * (defending ? 1.3f : 0.7f);
+                    moveGoal = squad != null && squad.gathering ? squad.stage + new Vector3(r.x, 0, r.y) * 1.2f : objective.Pos + new Vector3(r.x, 0, r.y);
+                    if (squad != null && squad.gathering) defending = true;
+                    if (Random.value < (defending ? 0.6f : 0.3f)) crouch = true;
                 }
                 aimPoint = u.Eye + (move.sqrMagnitude > 0.01f ? move : u.transform.forward) * 30 + Vector3.up * 0.5f;
                 // engineers fix friendly vehicles on the way
@@ -700,7 +734,7 @@ namespace BIS
                         Vector3 lead = Lead(pos, target, v.prim.def.speed);
                         point = AimWithError(pos, lead, dt * 0.5f);
                         float ang = Vector3.Angle(v.transform.forward, lead - pos);
-                        inp.fire = ang < 5 + (1 - skill) * 3 && d < 520 && v.prim.heat < 0.85f;
+                        inp.fire = ang < 3.5f + (1 - skill) * 2.5f && d < 420 && v.prim.heat < 0.7f;
                         inp.alt = v.sec != null && ((v.sec.def.lockOn && v.lockTime >= 1f && d < 650) || (v.sec.def.kind == WKind.Shotgun && ang < 6 && d < 200));
                         throttleWant = d < 80 ? 0.5f : d > 300 ? 1f : 0.8f;
                         boost = d > 500;

@@ -76,6 +76,7 @@ namespace BIS
         public LandWorld land;
         public SpaceWorld space;
         public PlayerControl control;
+        public Commander commander;
         public bool over;
         public float overTime;
         public BattleResult result;
@@ -109,6 +110,7 @@ namespace BIS
             I = this;
             root = transform;
             gameObject.AddComponent<Shots>();
+            Shots.ResetStats();
             for (int t = 0; t < 2; t++)
             {
                 var f = Factions.Get(cfg.factions[t]);
@@ -153,6 +155,7 @@ namespace BIS
                 }
             }
             foreach (var p in people) p.heroCost = BonusOf(p.team) == Bonus.VeteranOfficers ? 18 : p.isPlayer ? 36 : 52;
+            if (land) commander = new Commander(this);
 
             var pc = gameObject.AddComponent<PlayerControl>();
             control = pc;
@@ -346,6 +349,7 @@ namespace BIS
             if (!over)
             {
                 foreach (var p in posts) p.Tick(dt);
+                commander?.Tick(dt);
                 if (space) foreach (var s in space.ships) s.Tick(dt);
                 Rules(dt);
             }
@@ -366,6 +370,8 @@ namespace BIS
                 int ship = -1, cls = 0;
                 float r = Random.value;
                 bool defenders = CountOnFoot(p.team) < 3;
+                // keep the sky readable: at most this many craft per side; the rest wait their turn
+                if (!defenders && hero == null && CountShips(p.team) >= MaxShipsPerSide) { p.respawn = 3; return; }
                 if (hero == null && !defenders)
                 {
                     ship = r < 0.42f ? 0 : r < 0.62f ? 2 : r < 0.88f ? 1 : 3;
@@ -376,9 +382,18 @@ namespace BIS
             else
             {
                 p.classChoice = PickBotClass(p.team);
-                Spawn(p, p.classChoice, hero, -1, -1);
+                var post = commander != null && Random.value < 0.85f ? commander.SpawnPostFor(p) : null;
+                Spawn(p, p.classChoice, hero, post ? post.index : -1, -1);
             }
             p.respawn = 5;
+        }
+
+        public const int MaxShipsPerSide = 8;
+        int CountShips(int t)
+        {
+            int n = 0;
+            foreach (var v in vehicles) if (v && v.Alive && v.IsShip && !v.IsEmpty && v.Team == t) n++;
+            return n;
         }
 
         int CountOnFoot(int t)
@@ -499,6 +514,7 @@ namespace BIS
 
         public void OnPostCaptured(CommandPost cp, int t)
         {
+            commander?.OnPostChanged(cp, -1);
             foreach (var u in units)
                 if (u && u.Alive && u.team == t && !u.InVehicle && (u.transform.position - cp.Pos).sqrMagnitude < cp.radius * cp.radius)
                 { AddPoints(u.part, 4); u.part.captures++; }
@@ -509,6 +525,7 @@ namespace BIS
 
         public void OnPostNeutralised(CommandPost cp, int lost, int by)
         {
+            commander?.OnPostChanged(cp, lost);
             foreach (var u in units)
                 if (u && u.Alive && u.team == by && !u.InVehicle && (u.transform.position - cp.Pos).sqrMagnitude < cp.radius * cp.radius) AddPoints(u.part, 1);
             if (lost == player.team) { HUD.Message($"We lost {cp.postName}", new Color(1f, 0.5f, 0.4f), 3); Sfx.Play2D("lost", 0.6f); }

@@ -97,17 +97,19 @@ namespace BIS
                 TouchInput.Update();
                 if (TouchInput.Move != Vector2.zero) { mv = TouchInput.Move; throttle = TouchInput.Move.y; roll = -TouchInput.Move.x * 0.8f; }
                 lk += TouchInput.Look;
-                if (TouchInput.Held("fire")) fire = true;
-                if (TouchInput.Down("fire")) fireD = true;
-                if (TouchInput.Held("aim")) { aim = true; alt = true; }
-                if (TouchInput.Down("aim")) { aimD = true; altD = true; }
-                if (TouchInput.Held("jump")) { jump = true; climb = 1; }
+                bool tf = TouchInput.Held("fire") || TouchInput.Held("fire2");
+                if (tf) fire = true;
+                if (TouchInput.Down("fire") || TouchInput.Down("fire2")) fireD = true;
+                if (TouchInput.Held("aim")) { aim = true; }
+                if (TouchInput.Down("aim")) { aimD = true; }
+                if (TouchInput.Held("alt")) alt = true;
+                if (TouchInput.Down("alt")) altD = true;
+                if (TouchInput.Held("jump")) jump = true;
                 if (TouchInput.Down("jump")) jumpD = true;
-                if (TouchInput.Held("crouch")) { crouch = true; climb = -1; }
-                if (TouchInput.Down("crouch")) crouchD = true;
-                if (TouchInput.Held("sprint")) sprint = true;
+                if (TouchInput.Held("up")) climb = 1;
+                if (TouchInput.Held("down")) climb = -1;
+                if (TouchInput.Running && !aim) sprint = true;
                 if (TouchInput.Held("boost")) boost = true;
-                if (TouchInput.Down("reload")) Reload = true;
                 if (TouchInput.Down("swap")) Swap = true;
                 if (TouchInput.Down("equip")) Equip = true;
                 if (TouchInput.Down("ability")) Ability = true;
@@ -136,7 +138,21 @@ namespace BIS
     public static class Settings
     {
         public static float MouseSens = 2f, PadSens = 3f, Volume = 0.8f, MusicVolume = 0.5f, Fov = 65f;
-        public static bool InvertY, InvertPad, ShowFps, ForceTouch, MouseAssist;
+        public static bool InvertY, InvertPad, ShowFps, MouseAssist, AutoFire = true, AimDebug;
+        public static float TouchSens = 1f;
+        public enum InputDevice { Auto, KeyboardMouse, Gamepad, Touch }
+        public static InputDevice Device = InputDevice.Auto;
+        public static readonly string[] DeviceNames = { "Auto", "Keyboard + mouse", "Gamepad", "Touch screen" };
+        /// <summary>The device the game is tuned for right now (Auto picks touch on phones, else follows the last pad / mouse input).</summary>
+        public static InputDevice Current
+        {
+            get
+            {
+                if (Device != InputDevice.Auto) return Device;
+                if (Application.isMobilePlatform) return InputDevice.Touch;
+                return Ctl.PadActive ? InputDevice.Gamepad : InputDevice.KeyboardMouse;
+            }
+        }
         public static int BotsPerTeam = 16, Difficulty = 1, Quality = 2, AimAssist = 2;
 
         public static void Load()
@@ -149,9 +165,12 @@ namespace BIS
             InvertY = PlayerPrefs.GetInt("invy", 0) == 1;
             InvertPad = PlayerPrefs.GetInt("invpad", 0) == 1;
             ShowFps = PlayerPrefs.GetInt("fps", 0) == 1;
-            ForceTouch = PlayerPrefs.GetInt("touch", 0) == 1;
+            Device = (InputDevice)PlayerPrefs.GetInt("device", 0);
+            AutoFire = PlayerPrefs.GetInt("autofire", 1) == 1;
+            AimDebug = PlayerPrefs.GetInt("aimdebug", 0) == 1;
+            TouchSens = PlayerPrefs.GetFloat("touchsens", 1f);
             MouseAssist = PlayerPrefs.GetInt("mouseassist", 0) == 1;
-            AimAssist = PlayerPrefs.GetInt("aimassist", 2);
+            AimAssist = PlayerPrefs.GetInt("aimassist", Application.isMobilePlatform ? 3 : 2);
             BotsPerTeam = PlayerPrefs.GetInt("bots", 16);
             Difficulty = PlayerPrefs.GetInt("diff", 1);
             Quality = PlayerPrefs.GetInt("quality", Application.isMobilePlatform ? 0 : 2);
@@ -168,7 +187,10 @@ namespace BIS
             PlayerPrefs.SetInt("invy", InvertY ? 1 : 0);
             PlayerPrefs.SetInt("invpad", InvertPad ? 1 : 0);
             PlayerPrefs.SetInt("fps", ShowFps ? 1 : 0);
-            PlayerPrefs.SetInt("touch", ForceTouch ? 1 : 0);
+            PlayerPrefs.SetInt("device", (int)Device);
+            PlayerPrefs.SetInt("autofire", AutoFire ? 1 : 0);
+            PlayerPrefs.SetInt("aimdebug", AimDebug ? 1 : 0);
+            PlayerPrefs.SetFloat("touchsens", TouchSens);
             PlayerPrefs.SetInt("mouseassist", MouseAssist ? 1 : 0);
             PlayerPrefs.SetInt("aimassist", AimAssist);
             PlayerPrefs.SetInt("bots", BotsPerTeam);

@@ -36,7 +36,7 @@ namespace BIS
         public static WeaponDef Torpedo(string n) => new WeaponDef { name = n, kind = WKind.Torpedo, damage = 950, rate = 0.45f, speed = 120, heatPerShot = 0.5f, splash = 8, splashDmg = 400, vsVehicle = 1, range = 700, sound = "cannon", boltLen = 2.5f, boltWidth = 1.1f, pitch = 0.7f };
         public static WeaponDef Flechette(string n) => new WeaponDef { name = n, kind = WKind.Shotgun, damage = 22, pellets = 7, rate = 1.3f, spread = 2.5f, speed = 340, heatPerShot = 0.3f, vsVehicle = 1, range = 400, sound = "repeater", boltLen = 3, boltWidth = 0.2f };
         public static WeaponDef RepairPulse(string n) => new WeaponDef { name = n, kind = WKind.Repair, damage = 220, rate = 0.33f, range = 70, heatPerShot = 0.9f, sound = "repair" };
-        public static WeaponDef CapTurret(string n) => new WeaponDef { name = n, kind = WKind.Turret, damage = 34, rate = 2.4f, spread = 0.9f, speed = 280, heatPerShot = 0, vsVehicle = 1, range = 900, sound = "heavy", boltLen = 9, boltWidth = 0.6f };
+        public static WeaponDef CapTurret(string n) => new WeaponDef { name = n, kind = WKind.Turret, damage = 22, rate = 1.3f, spread = 1.2f, speed = 240, heatPerShot = 0, vsVehicle = 1, range = 650, sound = "heavy", boltLen = 9, boltWidth = 0.6f };
     }
 
     /// <summary>The four original factions of Battalions in Space.</summary>
@@ -75,6 +75,14 @@ namespace BIS
                 case VKind.Bomber: v.hp = 1250; v.speed = 52; v.turn = 65; v.seats = 2; v.primary = W.ShipLaser(p, 34, 4); v.secondary = W.Torpedo(s); v.gunner = W.ShipLaser(g ?? "Tail Gun", 28, 6); v.respawn = 10; break;
                 case VKind.Interceptor: v.hp = 420; v.speed = 94; v.turn = 125; v.seats = 1; v.primary = W.ShipLaser(p, 32, 11); v.secondary = W.Flechette(s); v.respawn = 6; break;
                 case VKind.Support: v.hp = 950; v.speed = 62; v.turn = 80; v.seats = 3; v.primary = W.ShipLaser(p, 36, 5); v.secondary = W.RepairPulse(s); v.respawn = 10; break;
+            }
+            if (v.IsShip)
+            {
+                // calmer space fights: slower, tougher craft and softer guns
+                v.speed *= 0.75f; v.turn *= 0.85f; v.hp *= 1.45f;
+                if (v.primary != null) v.primary.damage *= 0.62f;
+                if (v.secondary != null && v.secondary.kind != WKind.Repair) { v.secondary.damage *= 0.75f; v.secondary.splashDmg *= 0.75f; }
+                if (v.gunner != null) v.gunner.damage *= 0.62f;
             }
             return v;
         }

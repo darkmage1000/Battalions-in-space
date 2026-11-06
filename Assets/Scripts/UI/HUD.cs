@@ -176,6 +176,8 @@ namespace BIS
                 UI.Fill(new Rect(0, 0, w, h), new Color(0.8f, 0, 0, hurtT * 0.12f));
             }
 
+            if (Settings.AimDebug) AimDebug(pc, me, c);
+
             // pilot target lock (follow mode)
             if (me.InVehicle && me.vehicle.Flies && me.seat == 0)
             {
@@ -311,6 +313,24 @@ namespace BIS
             if (prompt != null) UI.Text(new Rect(0, h / 2 + 70, w, 30), prompt, 22, Color.white, TextAnchor.MiddleCenter);
             if (pc.outOfBounds > 0) UI.Text(new Rect(0, h / 2 - 140, w, 40), $"RETURN TO THE BATTLEFIELD  {Mathf.CeilToInt(10 - pc.outOfBounds)}", 30, UI.Bad, TextAnchor.MiddleCenter);
             if (b.space) SpaceStatus(me);
+        }
+
+        void AimDebug(PlayerControl pc, Unit me, Vector2 c)
+        {
+            var cam = Game.Cam;
+            int shots = Shots.PlayerShots, hits = Shots.PlayerHits;
+            string miss = Shots.LastMissBy >= 0 && Time.time - Shots.LastMissTime < 3 ? $"   last miss passed {Shots.LastMissBy:0.0} m from an enemy" : "";
+            string tgt = pc.assistTarget != null ? $"assist: {PlayerControl.NameOf(pc.assistTarget)} {(pc.assistOnTarget ? "(shots bent onto it)" : "(pulling)")}" : AimAssist.On ? "assist: no target in range" : "assist: off for this device";
+            float range = me.InVehicle ? (me.vehicle.prim != null ? me.vehicle.prim.def.EffectiveRange : 0) : me.Weapon.def.EffectiveRange;
+            UI.Text(new Rect(c.x - 400, c.y + 120, 800, 24), $"hits {hits} / {shots}  ({(shots > 0 ? hits * 100 / shots : 0)}%){miss}", 17, UI.Gold, TextAnchor.MiddleCenter);
+            UI.Text(new Rect(c.x - 400, c.y + 144, 800, 24), $"{tgt}   gun range {Mathf.RoundToInt(range)} m   device {Settings.DeviceNames[(int)Settings.Current]}", 15, UI.Dim, TextAnchor.MiddleCenter);
+            if (pc.assistTarget != null)
+            {
+                Vector3 sp = cam.WorldToScreenPoint(pc.assistTarget.AimPoint);
+                if (sp.z > 0) UI.Frame(new Rect(sp.x / UI.S - 14, (Screen.height - sp.y) / UI.S - 14, 28, 28), pc.assistOnTarget ? UI.Bad : UI.Gold, 2);
+                Vector3 ap = cam.WorldToScreenPoint(pc.aimPoint);
+                if (sp.z > 0 && ap.z > 0) UI.Dot(new Vector2(ap.x / UI.S, (Screen.height - ap.y) / UI.S), 3, UI.Good);
+            }
         }
 
         public static string EquipName(Equip e) => e == Equip.Grenade ? "Grenades" : e == Equip.Mine ? "Mines" : e == Equip.Detpack ? "Detpacks" : e == Equip.Supply ? "Supply crates" : "";

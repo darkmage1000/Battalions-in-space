@@ -137,24 +137,43 @@ namespace BIS
         {
             Title("Options");
             float w = UI.W;
-            Rect r = new Rect(w / 2 - 420, 160, 840, 820);
+            Rect r = new Rect(w / 2 - 440, 150, 880, 860);
             UI.Box(r);
             float x = r.x + 40, y = r.y + 16, rw = r.width - 80;
-            Settings.MouseSens = UI.Slider(new Rect(x, y, rw, 44), "Mouse sensitivity", Settings.MouseSens, 0.3f, 6f, Settings.MouseSens.ToString("0.0")); y += 54;
-            Settings.PadSens = UI.Slider(new Rect(x, y, rw, 44), "Gamepad sensitivity", Settings.PadSens, 0.5f, 8f, Settings.PadSens.ToString("0.0")); y += 54;
             Settings.Fov = UI.Slider(new Rect(x, y, rw, 44), "Field of view", Settings.Fov, 50, 95, Settings.Fov.ToString("0")); y += 54;
             Settings.Volume = UI.Slider(new Rect(x, y, rw, 44), "Volume", Settings.Volume, 0, 1, Mathf.RoundToInt(Settings.Volume * 100) + "%"); y += 54;
             Settings.MusicVolume = UI.Slider(new Rect(x, y, rw, 44), "Menu music", Settings.MusicVolume, 0, 1, Mathf.RoundToInt(Settings.MusicVolume * 100) + "%"); y += 54;
             Sfx.Music.volume = Settings.MusicVolume * 0.5f;
             Settings.Quality = Mathf.RoundToInt(UI.Slider(new Rect(x, y, rw, 44), "Graphics", Settings.Quality, 0, 2, new[] { "Low", "Medium", "High" }[Settings.Quality])); y += 54;
-            Settings.AimAssist = Mathf.RoundToInt(UI.Slider(new Rect(x, y, rw, 44), "Aim assist (touch, pad)", Settings.AimAssist, 0, 3, AimAssist.Names[Settings.AimAssist])); y += 54;
-            Settings.MouseAssist = UI.Toggle(new Rect(x, y, rw, 50), "Aim assist with the mouse too", Settings.MouseAssist); y += 56;
-            Settings.InvertY = UI.Toggle(new Rect(x, y, rw, 50), "Invert mouse Y", Settings.InvertY); y += 56;
-            Settings.InvertPad = UI.Toggle(new Rect(x, y, rw, 50), "Invert gamepad Y", Settings.InvertPad); y += 56;
+            UI.Text(new Rect(x, y + 8, 260, 30), "Controls", 22);
+            for (int d = 0; d < 4; d++)
+                if (UI.Button(new Rect(x + 190 + d * 142, y + 4, 136, 40), Settings.DeviceNames[d], (int)Settings.Device == d, true, 15)) Settings.Device = (Settings.InputDevice)d;
+            y += 52;
+            UI.Text(new Rect(x, y, rw, 24), "Now tuned for: " + Settings.DeviceNames[(int)Settings.Current] + (Settings.Device == Settings.InputDevice.Auto ? " (auto)" : ""), 17, UI.Dim); y += 30;
+            Settings.AimAssist = Mathf.RoundToInt(UI.Slider(new Rect(x, y, rw, 44), "Aim assist", Settings.AimAssist, 0, 3, AimAssist.Names[Settings.AimAssist])); y += 54;
+            if (Settings.Current == Settings.InputDevice.Touch)
+            {
+                Settings.TouchSens = UI.Slider(new Rect(x, y, rw, 44), "Touch look speed", Settings.TouchSens, 0.3f, 3f, Settings.TouchSens.ToString("0.0")); y += 54;
+                Settings.AutoFire = UI.Toggle(new Rect(x, y, rw, 50), "Auto-fire when the crosshair is on an enemy", Settings.AutoFire); y += 56;
+            }
+            else if (Settings.Current == Settings.InputDevice.KeyboardMouse)
+            {
+                Settings.MouseSens = UI.Slider(new Rect(x, y, rw, 44), "Mouse sensitivity", Settings.MouseSens, 0.3f, 6f, Settings.MouseSens.ToString("0.0")); y += 54;
+                Settings.MouseAssist = UI.Toggle(new Rect(x, y, rw, 50), "Aim assist with the mouse too", Settings.MouseAssist); y += 56;
+                Settings.InvertY = UI.Toggle(new Rect(x, y, rw, 50), "Invert mouse Y", Settings.InvertY); y += 56;
+            }
+            else
+            {
+                Settings.PadSens = UI.Slider(new Rect(x, y, rw, 44), "Gamepad sensitivity", Settings.PadSens, 0.5f, 8f, Settings.PadSens.ToString("0.0")); y += 54;
+                Settings.InvertPad = UI.Toggle(new Rect(x, y, rw, 50), "Invert gamepad Y", Settings.InvertPad); y += 56;
+            }
+            Settings.AimDebug = UI.Toggle(new Rect(x, y, rw, 50), "Show aim and hit statistics", Settings.AimDebug); y += 56;
             Settings.ShowFps = UI.Toggle(new Rect(x, y, rw, 50), "Show frame rate", Settings.ShowFps); y += 56;
-            if (!Application.isMobilePlatform) { Settings.ForceTouch = UI.Toggle(new Rect(x, y, rw, 50), "Touch controls (for touch screens)", Settings.ForceTouch); y += 56; }
-            bool full = UI.Toggle(new UnityEngine.Rect(x, y, rw, 50), "Fullscreen", UnityEngine.Screen.fullScreen);
-            if (full != UnityEngine.Screen.fullScreen) UnityEngine.Screen.fullScreen = full;
+            if (!Application.isMobilePlatform)
+            {
+                bool full = UI.Toggle(new UnityEngine.Rect(x, y, rw, 50), "Fullscreen", UnityEngine.Screen.fullScreen);
+                if (full != UnityEngine.Screen.fullScreen) UnityEngine.Screen.fullScreen = full;
+            }
             if (UI.Button(new Rect(r.center.x - 160, r.yMax + 20, 320, 64), "SAVE AND BACK", false, true, 26)) { Settings.Save(); screen = Screen.Main; }
         }
 

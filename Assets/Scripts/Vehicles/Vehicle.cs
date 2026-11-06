@@ -39,7 +39,8 @@ namespace BIS
         public Unit lastAttacker;
         public float radius = 2;
         public CapitalShip parkedIn;
-        public Transform forcedLock;   // the player's target lock (missiles home on it)
+        public Transform forcedLock;
+        public float spawnTime;   // the player's target lock (missiles home on it)
         bool destroyed;
         int muzzleIdx, gunnerIdx;
         float yaw, smokeT, crashCd, fxT;
@@ -87,6 +88,7 @@ namespace BIS
             if (d.secondary != null) sec = new WeaponState(d.secondary);
             if (d.gunner != null) gunW = new WeaponState(d.gunner);
             yaw = transform.eulerAngles.y;
+            spawnTime = Time.time;
             hum = Sfx.Loop(d.IsShip ? "fighter" : "engine", transform, 0.0f, d.IsShip ? 120 : 70);
             if (d.Flies && !d.IsShip) landed = true;
         }
@@ -176,9 +178,15 @@ namespace BIS
         }
 
         // ── damage / repair ──────────────────────────────────────────────
+        /// <summary>Starships are shielded for a few seconds after they leave the hangar.</summary>
+        public bool LaunchShield => def.IsShip && (landed || Time.time - launchTime < 6f);
+        float launchTime = -99;
+        bool wasLanded = true;
+
         public void TakeDamage(DamageInfo d)
         {
             if (!Alive) return;
+            if (LaunchShield && d.type != DmgType.Crush) d.amount *= 0.2f;
             hp -= d.amount;
             lastHurt = Time.time;
             if (d.attacker) lastAttacker = d.attacker;
@@ -223,6 +231,8 @@ namespace BIS
         {
             if (!Alive) return;
             prim?.Tick(dt); sec?.Tick(dt); gunW?.Tick(dt);
+            if (wasLanded && !landed) launchTime = Time.time;
+            wasLanded = landed;
             if (IsEmpty) IdleTime += dt; else IdleTime = 0;
             if (def.IsShip && IsEmpty && IdleTime > 90) { SelfDestruct(); return; }   // starships have no pads; tidy up abandoned ones
 
