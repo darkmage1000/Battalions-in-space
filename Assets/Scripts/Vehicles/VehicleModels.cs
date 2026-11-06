@@ -1,0 +1,327 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace BIS
+{
+    /// <summary>Code-built vehicle and starship models, styled per faction. Cached per faction + vehicle.</summary>
+    public class VModel
+    {
+        public Mesh body, turret, gun, gunnerTurret;
+        public Vector3 turretPos, gunPos, gunnerPos;
+        public Vector3[] muzzles, gunnerMuzzles, engines;
+        public Bounds bounds;
+        public float hover = 1.2f;
+        public float camDist = 9, camHeight = 3;
+    }
+
+    public static class VehicleModels
+    {
+        static readonly Dictionary<string, VModel> cache = new Dictionary<string, VModel>();
+        static Color G(Color c) { c.a = 0; return c; }
+        static Color D(Color c, float k) { var r = c * k; r.a = 1; return r; }
+
+        public static VModel Get(VehicleDef d, FactionDef f)
+        {
+            string key = f.id + "_" + d.kind;
+            if (cache.TryGetValue(key, out var m) && m.body) return m;
+            m = new VModel();
+            switch (d.kind)
+            {
+                case VKind.Tank: Tank(m, f); break;
+                case VKind.Transport: Transport(m, f); break;
+                case VKind.Air: Gunship(m, f); break;
+                case VKind.Fighter: Fighter(m, f); break;
+                case VKind.Bomber: Bomber(m, f); break;
+                case VKind.Interceptor: Interceptor(m, f); break;
+                default: Support(m, f); break;
+            }
+            m.bounds = m.body.bounds;
+            cache[key] = m;
+            return m;
+        }
+
+        static void Repulsors(MeshKit k, float w, float l, Color glow)
+        {
+            k.Box(new Vector3(-w * 0.35f, -0.62f, l * 0.3f), new Vector3(w * 0.22f, 0.12f, l * 0.22f), G(glow));
+            k.Box(new Vector3(w * 0.35f, -0.62f, l * 0.3f), new Vector3(w * 0.22f, 0.12f, l * 0.22f), G(glow));
+            k.Box(new Vector3(-w * 0.35f, -0.62f, -l * 0.3f), new Vector3(w * 0.22f, 0.12f, l * 0.22f), G(glow));
+            k.Box(new Vector3(w * 0.35f, -0.62f, -l * 0.3f), new Vector3(w * 0.22f, 0.12f, l * 0.22f), G(glow));
+        }
+
+        static void Tank(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt;
+            switch (f.body)
+            {
+                case Body.Reptile:
+                    k.Taper(Vector3.zero, new Vector2(4.4f, 7.4f), new Vector2(3.6f, 6f), 1.3f, Quaternion.identity, a);
+                    k.Nose(new Vector3(0, 0, 4.2f), new Vector3(4f, 1.2f, 1.6f), Quaternion.identity, b, -0.3f);
+                    for (int i = 0; i < 4; i++) k.Cone(new Vector3(-1.6f + i * 1.07f, 0.8f, -2.6f), 0.18f, 1.2f, Quaternion.Euler(-40, 0, 0), f.accent, 5);
+                    k.Cone(new Vector3(-2.3f, 0.2f, 3.2f), 0.25f, 1.4f, Quaternion.Euler(70, -20, 0), f.accent, 5);
+                    k.Cone(new Vector3(2.3f, 0.2f, 3.2f), 0.25f, 1.4f, Quaternion.Euler(70, 20, 0), f.accent, 5);
+                    break;
+                case Body.Machine:
+                    k.Box(Vector3.zero, new Vector3(4.6f, 1.5f, 7.2f), a);
+                    k.Box(new Vector3(0, 0.1f, 3.8f), new Vector3(4.2f, 1.1f, 0.6f), dk);
+                    k.Box(new Vector3(-2.4f, 0, 0), new Vector3(0.3f, 1.2f, 6.6f), b);
+                    k.Box(new Vector3(2.4f, 0, 0), new Vector3(0.3f, 1.2f, 6.6f), b);
+                    break;
+                case Body.Slender:
+                    k.Taper(Vector3.zero, new Vector2(4f, 7.6f), new Vector2(2.6f, 5.6f), 1.2f, Quaternion.identity, a);
+                    k.Wedge(new Vector3(-2.6f, 0, -1), new Vector3(1.2f, 0.6f, 5f), Quaternion.Euler(0, 0, 90), b);
+                    k.Wedge(new Vector3(2.6f, 0, -1), new Vector3(1.2f, 0.6f, 5f), Quaternion.Euler(0, 0, -90), b);
+                    k.Nose(new Vector3(0, -0.1f, 4.4f), new Vector3(2.6f, 0.9f, 1.8f), Quaternion.identity, a);
+                    break;
+                default:
+                    k.Taper(Vector3.zero, new Vector2(4.6f, 7.4f), new Vector2(3.8f, 6.2f), 1.4f, Quaternion.identity, a);
+                    k.Wedge(new Vector3(0, -0.1f, 4.1f), new Vector3(4.2f, 1.2f, 1.2f), Quaternion.Euler(90, 0, 0), a);
+                    k.Box(new Vector3(0, 0.72f, -1.2f), new Vector3(3.2f, 0.1f, 2.2f), b);
+                    k.Box(new Vector3(-2.35f, 0.1f, 0), new Vector3(0.2f, 0.6f, 6.4f), b);
+                    k.Box(new Vector3(2.35f, 0.1f, 0), new Vector3(0.2f, 0.6f, 6.4f), b);
+                    break;
+            }
+            Repulsors(k, 4.4f, 7f, glow);
+            k.Box(new Vector3(-1.3f, 0.2f, -3.75f), new Vector3(1f, 0.6f, 0.2f), G(new Color(1f, 0.55f, 0.2f)));
+            k.Box(new Vector3(1.3f, 0.2f, -3.75f), new Vector3(1f, 0.6f, 0.2f), G(new Color(1f, 0.55f, 0.2f)));
+            m.body = k.Build("tank_" + f.id);
+            k.Clear();
+            // turret
+            if (f.body == Body.Machine) k.Box(new Vector3(0, 0.5f, 0), new Vector3(2.8f, 1.1f, 3.2f), D(a, 0.85f));
+            else if (f.body == Body.Slender) k.Sphere(new Vector3(0, 0.45f, 0), new Vector3(2.8f, 1.2f, 3.4f), Quaternion.identity, D(a, 0.9f), 8, 4);
+            else k.Taper(new Vector3(0, 0.5f, 0), new Vector2(2.8f, 3.4f), new Vector2(2.2f, 2.6f), 1f, Quaternion.identity, D(a, 0.9f));
+            k.Box(new Vector3(0, 1.05f, -0.6f), new Vector3(0.7f, 0.2f, 0.7f), b);
+            m.turret = k.Build("tank_turret_" + f.id);
+            k.Clear();
+            k.Cyl(new Vector3(0, 0, 1.9f), 0.2f, 3.6f, Quaternion.Euler(90, 0, 0), dk, 8);
+            k.Cyl(new Vector3(0, 0, 3.7f), 0.28f, 0.4f, Quaternion.Euler(90, 0, 0), D(b, 0.7f), 8);
+            k.Box(new Vector3(0, 0, 0.3f), new Vector3(0.8f, 0.6f, 0.8f), D(a, 0.7f));
+            m.gun = k.Build("tank_gun_" + f.id);
+            k.Clear();
+            k.Box(new Vector3(0, 0.2f, 0), new Vector3(0.4f, 0.4f, 0.5f), dk);
+            k.Cyl(new Vector3(0, 0.2f, 0.6f), 0.06f, 0.9f, Quaternion.Euler(90, 0, 0), dk, 6);
+            m.gunnerTurret = k.Build("tank_mg_" + f.id);
+            m.turretPos = new Vector3(0, 0.7f, -0.3f);
+            m.gunPos = new Vector3(0, 0.55f, 0.9f);
+            m.muzzles = new[] { new Vector3(0, 0, 3.9f) };
+            m.gunnerPos = new Vector3(0.7f, 1.6f, -1.1f);
+            m.gunnerMuzzles = new[] { new Vector3(0, 0.2f, 1.1f) };
+            m.engines = new[] { new Vector3(-1.3f, 0.2f, -3.9f), new Vector3(1.3f, 0.2f, -3.9f) };
+            m.hover = 1.3f; m.camDist = 11; m.camHeight = 4f;
+        }
+
+        static void Transport(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt;
+            k.Taper(new Vector3(0, 0, -0.5f), new Vector2(3.8f, 8.6f), new Vector2(3.2f, 7.4f), 1.8f, Quaternion.identity, a);
+            k.Nose(new Vector3(0, -0.2f, 4.5f), new Vector3(3.4f, 1.4f, 2.2f), Quaternion.identity, f.body == Body.Reptile ? b : a, -0.2f);
+            k.Box(new Vector3(0, 0.75f, 3.1f), new Vector3(2.2f, 0.45f, 1.0f), G(D(glow, 0.6f)));
+            k.Box(new Vector3(-1.95f, 0.1f, -0.5f), new Vector3(0.12f, 1.0f, 6f), b);
+            k.Box(new Vector3(1.95f, 0.1f, -0.5f), new Vector3(0.12f, 1.0f, 6f), b);
+            if (f.body == Body.Slender) { k.Wedge(new Vector3(0, 1.3f, -2.5f), new Vector3(0.3f, 1.6f, 3f), Quaternion.identity, b); }
+            if (f.body == Body.Reptile) for (int i = 0; i < 3; i++) k.Cone(new Vector3(0, 1.1f, -3.5f + i * 1.4f), 0.2f, 0.9f, Quaternion.Euler(-30, 0, 0), f.accent, 5);
+            Repulsors(k, 3.6f, 8f, glow);
+            k.Box(new Vector3(0, 0, -4.85f), new Vector3(2.4f, 0.8f, 0.2f), G(new Color(1f, 0.55f, 0.2f)));
+            m.body = k.Build("apc_" + f.id);
+            k.Clear();
+            k.Box(new Vector3(0, 0.12f, 0), new Vector3(0.5f, 0.3f, 0.6f), dk);
+            k.Cyl(new Vector3(-0.2f, 0.1f, 0.7f), 0.06f, 1.0f, Quaternion.Euler(90, 0, 0), dk, 6);
+            k.Cyl(new Vector3(0.2f, 0.1f, 0.7f), 0.06f, 1.0f, Quaternion.Euler(90, 0, 0), dk, 6);
+            m.gun = k.Build("apc_gun_" + f.id);
+            k.Clear();
+            k.Box(new Vector3(0, 0.35f, 0), new Vector3(1.2f, 0.7f, 1.4f), D(a, 0.8f));
+            k.Box(new Vector3(-0.5f, 0.45f, 0.5f), new Vector3(0.4f, 0.4f, 1.0f), dk);
+            k.Box(new Vector3(0.5f, 0.45f, 0.5f), new Vector3(0.4f, 0.4f, 1.0f), dk);
+            m.gunnerTurret = k.Build("apc_pod_" + f.id);
+            m.gunPos = new Vector3(0, -0.4f, 5.2f);
+            m.muzzles = new[] { new Vector3(-0.2f, 0.1f, 1.2f), new Vector3(0.2f, 0.1f, 1.2f) };
+            m.gunnerPos = new Vector3(0, 0.95f, -2.6f);
+            m.gunnerMuzzles = new[] { new Vector3(-0.5f, 0.45f, 1.0f), new Vector3(0.5f, 0.45f, 1.0f) };
+            m.engines = new[] { new Vector3(0, 0, -5f) };
+            m.hover = 1.4f; m.camDist = 12; m.camHeight = 4.5f;
+        }
+
+        static void Wing(MeshKit k, Vector3 root, float span, float chord, float sweep, float thick, float dihedral, Color c, bool right)
+        {
+            float s = right ? 1 : -1;
+            Vector3 r0 = root + new Vector3(0, 0, chord * 0.5f), r1 = root + new Vector3(0, 0, -chord * 0.5f);
+            Vector3 tip = root + new Vector3(s * span, span * dihedral, -sweep);
+            Vector3 t0 = tip + new Vector3(0, 0, chord * 0.2f), t1 = tip + new Vector3(0, 0, -chord * 0.2f);
+            Vector3 up = Vector3.up * thick * 0.5f;
+            if (right)
+            {
+                k.Quad(r0 + up, t0 + up, t1 + up, r1 + up, c);
+                k.Quad(r1 - up, t1 - up, t0 - up, r0 - up, D(c, 0.8f));
+            }
+            else
+            {
+                k.Quad(r1 + up, t1 + up, t0 + up, r0 + up, c);
+                k.Quad(r0 - up, t0 - up, t1 - up, r1 - up, D(c, 0.8f));
+            }
+            k.Quad(t0 - up, t0 + up, r0 + up, r0 - up, c);
+            k.Quad(r1 - up, r1 + up, t1 + up, t1 - up, c);
+        }
+
+        static void Gunship(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt;
+            k.Taper(Vector3.zero, new Vector2(2.6f, 8f), new Vector2(2.0f, 6.6f), 1.8f, Quaternion.Euler(0, 0, 0), a);
+            k.Nose(new Vector3(0, -0.1f, 5.2f), new Vector3(2.2f, 1.6f, 2.6f), Quaternion.identity, a, -0.2f);
+            k.Box(new Vector3(0, 0.55f, 3.8f), new Vector3(1.6f, 0.6f, 1.6f), G(D(glow, 0.7f)));
+            Wing(k, new Vector3(1.1f, 0.4f, -0.5f), 4.6f, 3f, f.body == Body.Slender ? 2.4f : 1.2f, 0.25f, f.body == Body.Reptile ? -0.15f : 0.05f, b, true);
+            Wing(k, new Vector3(-1.1f, 0.4f, -0.5f), 4.6f, 3f, f.body == Body.Slender ? 2.4f : 1.2f, 0.25f, f.body == Body.Reptile ? -0.15f : 0.05f, b, false);
+            k.Cyl(new Vector3(-4.6f, 0.5f, -1f), 0.55f, 2.6f, Quaternion.Euler(90, 0, 0), dk, 8);
+            k.Cyl(new Vector3(4.6f, 0.5f, -1f), 0.55f, 2.6f, Quaternion.Euler(90, 0, 0), dk, 8);
+            k.Cyl(new Vector3(-4.6f, 0.5f, -2.35f), 0.45f, 0.1f, Quaternion.Euler(90, 0, 0), G(new Color(1f, 0.55f, 0.2f)), 8);
+            k.Cyl(new Vector3(4.6f, 0.5f, -2.35f), 0.45f, 0.1f, Quaternion.Euler(90, 0, 0), G(new Color(1f, 0.55f, 0.2f)), 8);
+            k.Wedge(new Vector3(0, 1.4f, -3.2f), new Vector3(0.25f, 1.6f, 2.2f), Quaternion.identity, b);
+            m.body = k.Build("gunship_" + f.id);
+            k.Clear();
+            k.Sphere(Vector3.zero, new Vector3(0.7f, 0.6f, 0.7f), Quaternion.identity, dk, 6, 4);
+            k.Cyl(new Vector3(0, 0, 0.6f), 0.07f, 1.0f, Quaternion.Euler(90, 0, 0), dk, 6);
+            m.gunnerTurret = k.Build("gunship_chin_" + f.id);
+            m.muzzles = new[] { new Vector3(-4.6f, 0.2f, 0.6f), new Vector3(4.6f, 0.2f, 0.6f) };
+            m.gunnerPos = new Vector3(0, -1.05f, 4.4f);
+            m.gunnerMuzzles = new[] { new Vector3(0, 0, 1.1f) };
+            m.engines = new[] { new Vector3(-4.6f, 0.5f, -2.5f), new Vector3(4.6f, 0.5f, -2.5f) };
+            m.hover = 0; m.camDist = 14; m.camHeight = 4.5f;
+        }
+
+        static void Fighter(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt, eng = new Color(1f, 0.6f, 0.3f);
+            if (f.body == Body.Machine) eng = new Color(1f, 0.75f, 0.25f);
+            if (f.body == Body.Slender) eng = new Color(0.5f, 1f, 0.85f);
+            switch (f.body)
+            {
+                case Body.Human: // forward-swept wings with wingtip cannons
+                    k.Taper(Vector3.zero, new Vector2(1.6f, 6f), new Vector2(1.2f, 4.8f), 1.2f, Quaternion.identity, a);
+                    k.Nose(new Vector3(0, 0, 4f), new Vector3(1.4f, 1.1f, 2.2f), Quaternion.identity, a);
+                    k.Box(new Vector3(0, 0.6f, 1.6f), new Vector3(0.9f, 0.4f, 1.4f), G(D(glow, 0.6f)));
+                    Wing(k, new Vector3(0.7f, 0, -1.4f), 4.2f, 2.2f, -1.6f, 0.2f, 0, b, true);
+                    Wing(k, new Vector3(-0.7f, 0, -1.4f), 4.2f, 2.2f, -1.6f, 0.2f, 0, b, false);
+                    k.Cyl(new Vector3(4.9f, 0, 0.6f), 0.12f, 2.2f, Quaternion.Euler(90, 0, 0), dk, 6);
+                    k.Cyl(new Vector3(-4.9f, 0, 0.6f), 0.12f, 2.2f, Quaternion.Euler(90, 0, 0), dk, 6);
+                    m.muzzles = new[] { new Vector3(-4.9f, 0, 1.8f), new Vector3(4.9f, 0, 1.8f) };
+                    break;
+                case Body.Reptile: // three claw wings
+                    k.Taper(Vector3.zero, new Vector2(1.5f, 5.6f), new Vector2(1.2f, 4.4f), 1.4f, Quaternion.identity, a);
+                    k.Nose(new Vector3(0, 0, 3.9f), new Vector3(1.4f, 1.2f, 2.4f), Quaternion.identity, b, -0.4f);
+                    k.Box(new Vector3(0, 0.7f, 1.4f), new Vector3(0.9f, 0.3f, 1.2f), G(new Color(1f, 0.85f, 0.2f) * 0.6f));
+                    for (int i = 0; i < 3; i++)
+                    {
+                        var q = Quaternion.Euler(0, 0, i * 120 + 90);
+                        k.Box(q * new Vector3(0, 2.2f, -0.8f), new Vector3(0.2f, 3.4f, 2.4f), q, b);
+                        k.Cone(q * new Vector3(0, 4.1f, 0.2f), 0.18f, 1.4f, q * Quaternion.Euler(80, 0, 0), f.accent, 5);
+                    }
+                    m.muzzles = new[] { Quaternion.Euler(0, 0, 210) * new Vector3(0, 3.6f, 0.6f), Quaternion.Euler(0, 0, -30) * new Vector3(0, 3.6f, 0.6f) };
+                    break;
+                case Body.Machine: // spindle core with ring wing
+                    k.Cyl(Vector3.zero, 0.9f, 6f, Quaternion.Euler(90, 0, 0), a, 8);
+                    k.Cone(new Vector3(0, 0, 4.2f), 0.9f, 2.4f, Quaternion.Euler(90, 0, 0), a, 8);
+                    k.Cyl(new Vector3(0, 0, 3.05f), 0.6f, 0.2f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float an = i * 45;
+                        var q = Quaternion.Euler(0, 0, an);
+                        k.Box(q * new Vector3(0, 3.2f, -1.2f), new Vector3(2.3f, 0.3f, 1.6f), q, b);
+                    }
+                    k.Box(new Vector3(0, 1.7f, -1.2f), new Vector3(0.25f, 2.6f, 1.2f), dk);
+                    k.Box(new Vector3(0, -1.7f, -1.2f), new Vector3(0.25f, 2.6f, 1.2f), dk);
+                    k.Box(new Vector3(1.7f, 0, -1.2f), new Vector3(2.6f, 0.25f, 1.2f), dk);
+                    k.Box(new Vector3(-1.7f, 0, -1.2f), new Vector3(2.6f, 0.25f, 1.2f), dk);
+                    m.muzzles = new[] { new Vector3(-3.2f, 0, 0.2f), new Vector3(3.2f, 0, 0.2f) };
+                    break;
+                default: // crescent
+                    k.Sphere(Vector3.zero, new Vector3(1.6f, 1.2f, 5.6f), Quaternion.identity, a, 8, 5);
+                    k.Box(new Vector3(0, 0.45f, 1.2f), new Vector3(0.7f, 0.3f, 1.4f), G(D(glow, 0.6f)));
+                    for (int i = -4; i <= 4; i++)
+                    {
+                        float t = i / 4f;
+                        var p = new Vector3(t * 5f, 0, 1.6f * (1 - t * t) - 1.6f);
+                        k.Box(p, new Vector3(1.3f, 0.18f, 1.2f + (1 - Mathf.Abs(t))), Quaternion.Euler(0, -t * 40, 0), b);
+                    }
+                    m.muzzles = new[] { new Vector3(-5f, 0, 0.2f), new Vector3(5f, 0, 0.2f) };
+                    break;
+            }
+            k.Cyl(new Vector3(-0.45f, 0, -3.05f), 0.38f, 0.15f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            k.Cyl(new Vector3(0.45f, 0, -3.05f), 0.38f, 0.15f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            m.body = k.Build("fighter_" + f.id);
+            m.engines = new[] { new Vector3(-0.45f, 0, -3.2f), new Vector3(0.45f, 0, -3.2f) };
+            m.camDist = 15; m.camHeight = 4f;
+        }
+
+        static void Bomber(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt, eng = new Color(1f, 0.6f, 0.3f);
+            k.Taper(Vector3.zero, new Vector2(3.6f, 9f), new Vector2(3.0f, 7.6f), 2.2f, Quaternion.identity, a);
+            k.Nose(new Vector3(0, -0.2f, 5.6f), new Vector3(3.2f, 1.8f, 2.4f), Quaternion.identity, a, -0.2f);
+            k.Box(new Vector3(0, 0.95f, 3.8f), new Vector3(1.6f, 0.5f, 1.4f), G(D(glow, 0.6f)));
+            float sweep = f.body == Body.Slender ? 3f : f.body == Body.Reptile ? 2f : 1f;
+            Wing(k, new Vector3(1.6f, 0, -1), 6f, 4f, sweep, 0.35f, f.body == Body.Reptile ? -0.12f : 0, b, true);
+            Wing(k, new Vector3(-1.6f, 0, -1), 6f, 4f, sweep, 0.35f, f.body == Body.Reptile ? -0.12f : 0, b, false);
+            k.Cyl(new Vector3(-3.2f, -0.2f, -1.5f), 0.9f, 5f, Quaternion.Euler(90, 0, 0), dk, 8);
+            k.Cyl(new Vector3(3.2f, -0.2f, -1.5f), 0.9f, 5f, Quaternion.Euler(90, 0, 0), dk, 8);
+            k.Cyl(new Vector3(-3.2f, -0.2f, -4.05f), 0.75f, 0.12f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            k.Cyl(new Vector3(3.2f, -0.2f, -4.05f), 0.75f, 0.12f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            k.Box(new Vector3(0, -1.2f, 0), new Vector3(1.6f, 0.5f, 4f), dk);
+            if (f.body == Body.Machine) k.Box(new Vector3(0, 1.3f, -1), new Vector3(1.2f, 0.6f, 5f), b);
+            m.body = k.Build("bomber_" + f.id);
+            k.Clear();
+            k.Sphere(Vector3.zero, new Vector3(0.9f, 0.8f, 0.9f), Quaternion.identity, dk, 6, 4);
+            k.Cyl(new Vector3(-0.15f, 0, 0.6f), 0.06f, 1.0f, Quaternion.Euler(90, 0, 0), dk, 6);
+            k.Cyl(new Vector3(0.15f, 0, 0.6f), 0.06f, 1.0f, Quaternion.Euler(90, 0, 0), dk, 6);
+            m.gunnerTurret = k.Build("bomber_tail_" + f.id);
+            m.muzzles = new[] { new Vector3(-0.9f, -0.6f, 6.4f), new Vector3(0.9f, -0.6f, 6.4f) };
+            m.gunnerPos = new Vector3(0, 1.3f, -3.6f);
+            m.gunnerMuzzles = new[] { new Vector3(0, 0, 1.1f) };
+            m.engines = new[] { new Vector3(-3.2f, -0.2f, -4.2f), new Vector3(3.2f, -0.2f, -4.2f) };
+            m.camDist = 21; m.camHeight = 6f;
+        }
+
+        static void Interceptor(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt, eng = new Color(1f, 0.6f, 0.3f);
+            k.Sphere(Vector3.zero, new Vector3(1.8f, 1.8f, 2.2f), Quaternion.identity, a, 8, 5);
+            k.Sphere(new Vector3(0, 0, 1.0f), new Vector3(1.0f, 1.0f, 0.4f), Quaternion.identity, G(D(glow, 0.5f)), 8, 4);
+            float tilt = f.body == Body.Reptile ? 25 : f.body == Body.Slender ? -20 : 0;
+            for (int s = -1; s <= 1; s += 2)
+            {
+                var q = Quaternion.Euler(0, 0, s * tilt);
+                k.Box(new Vector3(s * 1.3f, 0, 0), new Vector3(1.4f, 0.3f, 0.5f), dk);
+                if (f.body == Body.Machine) k.Cyl(new Vector3(s * 2.2f, 0, 0), 2.2f, 0.18f, Quaternion.Euler(0, 0, 90), b, 6);
+                else k.Taper(new Vector3(s * 2.1f, 0, 0), new Vector2(0.2f, 2.8f), new Vector2(0.2f, 1.2f), 4.6f, q * Quaternion.Euler(0, 0, s * 90), b);
+            }
+            k.Cyl(new Vector3(0, 0, -1.15f), 0.5f, 0.15f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            m.body = k.Build("interceptor_" + f.id);
+            m.muzzles = new[] { new Vector3(-0.6f, -0.5f, 1.2f), new Vector3(0.6f, -0.5f, 1.2f) };
+            m.engines = new[] { new Vector3(0, 0, -1.3f) };
+            m.camDist = 12; m.camHeight = 3.5f;
+        }
+
+        static void Support(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt, eng = new Color(1f, 0.6f, 0.3f);
+            k.Box(Vector3.zero, new Vector3(3.6f, 2.6f, 8f), a);
+            k.Nose(new Vector3(0, 0.2f, 5.2f), new Vector3(3.2f, 2.2f, 2.4f), Quaternion.identity, a);
+            k.Box(new Vector3(0, 0.9f, 4.4f), new Vector3(2f, 0.6f, 1.2f), G(D(glow, 0.6f)));
+            k.Box(new Vector3(0, -1.5f, -0.5f), new Vector3(2.8f, 0.6f, 5f), b);
+            k.Cyl(new Vector3(0, 1.6f, -1.5f), 0.8f, 0.4f, Quaternion.identity, dk, 10, 1.2f);
+            k.Box(new Vector3(0, 2.0f, -1.5f), new Vector3(0.3f, 0.3f, 0.3f), G(new Color(0.4f, 1f, 0.5f)));
+            Wing(k, new Vector3(1.8f, 0, -2), 3f, 3f, 0.8f, 0.3f, 0.1f, b, true);
+            Wing(k, new Vector3(-1.8f, 0, -2), 3f, 3f, 0.8f, 0.3f, 0.1f, b, false);
+            k.Cyl(new Vector3(-1.2f, 0, -4.05f), 0.7f, 0.12f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            k.Cyl(new Vector3(1.2f, 0, -4.05f), 0.7f, 0.12f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            m.body = k.Build("support_" + f.id);
+            m.muzzles = new[] { new Vector3(-1.7f, -0.6f, 3.5f), new Vector3(1.7f, -0.6f, 3.5f) };
+            m.engines = new[] { new Vector3(-1.2f, 0, -4.2f), new Vector3(1.2f, 0, -4.2f) };
+            m.camDist = 20; m.camHeight = 6f;
+        }
+    }
+}

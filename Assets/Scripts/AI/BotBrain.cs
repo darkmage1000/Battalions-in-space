@@ -1,0 +1,830 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace BIS
+{
+    /// <summary>
+    /// AI for one bot: infantry on land (posts, cover-less skirmishing, grenades, abilities, vehicles),
+    /// drivers / gunners / gunship pilots, and in space: dogfighting, bombing runs on capital ship systems,
+    /// boarding the enemy hangar and sabotaging Life Support / the Reactor, and defending its own ship.
+    /// </summary>
+    public class BotBrain
+    {
+        enum SpaceJob { Dogfight, Bomb, Board, Escort, Defend, Sabotage }
+        enum RunPhase { Approach, Attack, Break }
+
+        readonly Unit u;
+        readonly Battle b;
+        float think, seeT, objT, strafeT, strafe = 1, stuckT, noiseT, burst, sideStepT, abilityT, grenadeT, enterT;
+        Vector3 lastPos, noise, moveGoal, sideStep;
+        IDamageable target;
+        Vector3 targetVel;
+        CommandPost objective;
+        Vehicle wantVehicle;
+        float trackTime;
+        SpaceJob job;
+        RunPhase run;
+        Vector3 runPoint;
+        Subsystem sysTarget;
+        int navGoal = -1, navNext = -1;
+        float detpackT;
+        bool boarded;
+        float skill;
+
+        public BotBrain(Unit unit)
+        {
+            u = unit; b = unit.battle;
+            skill = unit.part.aimSkill;
+            lastPos = u.transform.position;
+            think = Random.Range(0, 0.3f);
+            abilityT = Random.Range(3, 10);
+            grenadeT = Random.Range(3, 8);
+            if (b.space != null)
+            {
+                job = SpaceJob.Defend;
+                if (u.InVehicle || true) PickSpaceJob();
+            }
+        }
+
+        float Range => u.Weapon.def.kind == WKind.Sniper ? 220 : u.IsHero && u.hero.kind == HeroKind.Blade ? 60 : 95;
+        float PreferDist
+        {
+            get
+            {
+                if (u.IsHero) return u.hero.kind == HeroKind.Blade ? 1.5f : u.hero.kind == HeroKind.Mystic ? 9 : 22;
+                switch (u.RoleOf) { case Role.Heavy: return 35; case Role.Marksman: return 90; case Role.Engineer: return 9; case Role.Specialist: return 18; default: return 24; }
+            }
+        }
+
+        public void OnHurt(DamageInfo d)
+        {
+            if (d.attacker && d.attacker.Alive && d.attacker.team != u.team && (target == null || !target.Alive || Random.value < 0.5f))
+            {
+                target = d.attacker.InVehicle ? (IDamageable)d.attacker.vehicle : d.attacker;
+                seeT = 2.5f;
+            }
+        }
+
+        public void OnVehicleHurt(DamageInfo d) => OnHurt(d);
+
+        // ── entry ────────────────────────────────────────────────────────
+        public void Think(float dt)
+        {
+            if (u.InVehicle)
+            {
+                var v = u.vehicle;
+                if (u.seat == 0)
+                {
+                    if (v.def.IsGround) Drive(v, dt);
+                    else if (v.def.IsShip) Pilot(v, dt);
+                    else FlyGunship(v, dt);
+                }
+                else if (v.gunnerT && u.seat == 1) Gunner(v, dt);
+                else Passenger(v, dt);
+                return;
+            }
+            if (b.space != null) SpaceInfantry(dt);
+            else LandInfantry(dt);
+        }
+
+        // ── perception ───────────────────────────────────────────────────
+        bool Visible(Vector3 from, IDamageable t)
+        {
+            Vector3 to = t.AimPoint - from;
+            float d = to.magnitude;
+            if (d < 0.5f) return true;
+            if (Physics.Raycast(from, to / d, out var hit, d - 0.6f, Layers.SightMask, QueryTriggerInteraction.Ignore))
+            {
+                var hd = hit.collider.GetComponentInParent<IDamageable>();
+                return hd == t;
+            }
+            return true;
+        }
+
+        IDamageable FindTarget(Vector3 eye, float range, bool preferVehicles, bool shipsOnly = false)
+        {
+            IDamageable best = null; float bd = range * range;
+            int checks = 0;
+            var cand = new List<(IDamageable, float)>(16);
+            if (!shipsOnly)
+                foreach (var e in b.units)
+                {
+                    if (!e || !e.Alive || e.team == u.team || e.InVehicle || e.Cloaked) continue;
+                    float d2 = (e.transform.position - eye).sqrMagnitude;
+                    if (d2 < bd) cand.Add((e, d2 * (preferVehicles ? 2.5f : 1f) * (e.part.isPlayer ? 0.8f : 1f)));
+                }
+            foreach (var v in b.vehicles)
+            {
+                if (!v || !v.Alive || v.Team == u.team || v.IsEmpty) continue;
+                if (shipsOnly && !v.IsShip) continue;
+                float d2 = (v.transform.position - eye).sqrMagnitude;
+                if (d2 < bd * 1.4f) cand.Add((v, d2 * (preferVehicles ? 0.3f : 1.6f)));
+            }
+            cand.Sort((x, y) => x.Item2.CompareTo(y.Item2));
+            foreach (var c in cand)
+            {
+                if (checks++ > 4) break;
+                if (Visible(eye, c.Item1)) { best = c.Item1; break; }
+            }
+            return best;
+        }
+
+        Vector3 VelOf(IDamageable t)
+        {
+            if (t is Unit tu) return tu.velocity;
+            if (t is Vehicle tv) return tv.vel;
+            return Vector3.zero;
+        }
+
+        Vector3 Lead(Vector3 from, IDamageable t, float speed)
+        {
+            Vector3 p = t.AimPoint;
+            float tt = (p - from).magnitude / Mathf.Max(30, speed);
+            return p + VelOf(t) * tt * 0.85f;
+        }
+
+        Vector3 AimWithError(Vector3 from, Vector3 point, float dt)
+        {
+            noiseT -= dt;
+            float dist = (point - from).magnitude;
+            if (noiseT <= 0)
+            {
+                noiseT = Random.Range(0.25f, 0.5f);
+                float errDeg = Mathf.Lerp(7.5f, 1.4f, skill) * Mathf.Lerp(1.6f, 0.6f, Mathf.Clamp01(trackTime / 3f));
+                noise = Random.insideUnitSphere * Mathf.Tan(errDeg * Mathf.Deg2Rad) * dist;
+            }
+            return point + noise;
+        }
+
+        // ── land infantry ────────────────────────────────────────────────
+        void PickObjective()
+        {
+            objT = Random.Range(8, 14);
+            CommandPost best = null; float bs = float.MaxValue;
+            Vector3 p = u.transform.position;
+            bool defend = Random.value < 0.22f;
+            foreach (var cp in b.posts)
+            {
+                float d = (cp.Pos - p).magnitude;
+                float s;
+                if (cp.owner == u.team)
+                {
+                    bool threatened = cp.present[1 - u.team] > 0 || (cp.capTeam != u.team && cp.progress < 1);
+                    if (!threatened && !defend) continue;
+                    s = d * (threatened ? 0.5f : 1.2f);
+                }
+                else s = d * (cp.owner < 0 ? 0.75f : 1f);
+                s += Random.Range(0, 120);
+                if (s < bs) { bs = s; best = cp; }
+            }
+            if (!best) best = b.posts.Count > 0 ? b.posts[Random.Range(0, b.posts.Count)] : null;
+            objective = best;
+            if (objective)
+            {
+                Vector2 r = Random.insideUnitCircle * objective.radius * 0.6f;
+                moveGoal = objective.Pos + new Vector3(r.x, 0, r.y);
+            }
+        }
+
+        void LandInfantry(float dt)
+        {
+            think -= dt; seeT -= dt; objT -= dt; strafeT -= dt; abilityT -= dt; grenadeT -= dt; enterT -= dt;
+            Vector3 pos = u.transform.position;
+            if (objT <= 0 || objective == null || (objective.owner == u.team && objective.progress >= 1 && objective.present[1 - u.team] == 0 && Random.value < 0.02f)) PickObjective();
+
+            if (think <= 0)
+            {
+                think = Random.Range(0.25f, 0.4f);
+                var t = FindTarget(u.Eye, Range, u.RoleOf == Role.Heavy && !u.IsHero);
+                if (t != null) { if (t != target) trackTime = 0; target = t; seeT = 1.2f; }
+                else if (seeT <= 0) target = null;
+                // grab a vehicle near spawn now and then
+                if (wantVehicle == null && target == null && enterT <= 0 && !u.IsHero && Time.time - u.spawnTime < 8 && u.RoleOf != Role.Marksman)
+                {
+                    enterT = 99;
+                    foreach (var v in b.vehicles)
+                        if (v && v.CanEnter(u) && (v.Team == u.team || v.IsEmpty) && (v.transform.position - pos).sqrMagnitude < 35 * 35 && Random.value < (v.Driver ? 0.35f : 0.55f)) { wantVehicle = v; break; }
+                }
+            }
+            if (target != null && !target.Alive) target = null;
+
+            Vector3 move = Vector3.zero;
+            bool fire = false, aim = false, crouch = false, sprint = false;
+            Vector3 aimPoint = u.Eye + u.transform.forward * 30;
+
+            if (wantVehicle)
+            {
+                if (!wantVehicle.CanEnter(u)) wantVehicle = null;
+                else
+                {
+                    Vector3 to = wantVehicle.transform.position - pos; to.y = 0;
+                    if (to.magnitude < wantVehicle.radius + 3.5f) { wantVehicle.Enter(u); wantVehicle = null; return; }
+                    move = to.normalized; sprint = true;
+                    aimPoint = wantVehicle.transform.position;
+                }
+            }
+            else if (target != null)
+            {
+                trackTime += dt;
+                Vector3 tp = target.AimPoint;
+                Vector3 to = tp - pos; to.y = 0;
+                float d = to.magnitude;
+                Vector3 dir = d > 0.1f ? to / d : u.transform.forward;
+                if (strafeT <= 0) { strafeT = Random.Range(0.8f, 2.2f); strafe = Random.value < 0.5f ? -1 : 1; }
+                Vector3 side = Vector3.Cross(Vector3.up, dir) * strafe;
+                float pref = PreferDist;
+                if (u.RoleOf == Role.Marksman && !u.IsHero) { crouch = d > 30; move = d < 20 ? -dir : Vector3.zero; aim = true; }
+                else
+                {
+                    float approach = d > pref * 1.3f ? 1 : d < pref * 0.6f ? -0.7f : 0;
+                    move = dir * approach + side * 0.75f;
+                    // keep drifting toward the objective when the fight is far from it
+                    if (objective && (objective.Pos - pos).magnitude > 30 && d > 35) move += (objective.Pos - pos).normalized * 0.6f;
+                }
+                float boltSpeed = u.Weapon.def.speed;
+                Vector3 lead = Lead(u.Eye, target, boltSpeed);
+                aimPoint = AimWithError(u.Eye, lead, dt);
+                // shoot in bursts, and do not cook the weapon
+                var w = u.Weapon;
+                burst -= dt;
+                if (burst < -0.5f) burst = Random.Range(0.6f, 1.5f);
+                bool heatOk = !w.def.UsesHeat || w.heat < 0.82f;
+                fire = burst > 0 && heatOk && d < Range;
+                if (w.def.kind == WKind.Rocket && !(target is Vehicle) && d > 40) fire = false;
+                if (w.def.kind == WKind.Blade) fire = d < 3.5f;
+                if (w.def.kind == WKind.Beam) fire = d < w.def.range;
+                if (w.def.kind == WKind.Repair) { fire = false; if (u.weapons[0] != null && u.cur != 0) u.input.swap = true; }
+                if (w.def.kind == WKind.Shotgun) fire = d < 22;
+                if (u.Blocking) fire = false;
+                // switch weapon for the situation
+                if (u.weapons[1] != null && !u.IsHero)
+                {
+                    bool wantPrimary = true;
+                    if (u.RoleOf == Role.Heavy && !(target is Vehicle) && d < 30) wantPrimary = false;
+                    if (u.RoleOf == Role.Marksman && d < 18) wantPrimary = false;
+                    if (u.RoleOf == Role.Engineer) wantPrimary = true;
+                    if ((u.cur == 0) != wantPrimary && Random.value < 0.1f) u.input.swap = true;
+                }
+                // grenades
+                if (grenadeT <= 0 && u.cls != null && u.cls.equip == Equip.Grenade && u.equipLeft > 0 && d > 9 && d < 26 && target is Unit)
+                {
+                    grenadeT = Random.Range(6, 14);
+                    u.input.equip = true;
+                    aimPoint = tp + Vector3.up * d * 0.12f;
+                }
+                // abilities
+                if (abilityT <= 0 && u.abilityCd <= 0)
+                {
+                    bool use = false;
+                    if (u.IsHero)
+                    {
+                        switch (u.hero.kind)
+                        {
+                            case HeroKind.Blade: use = d > 5 && d < 13; break;
+                            case HeroKind.Gunslinger: use = d < 40; break;
+                            case HeroKind.Juggernaut: use = d > 12 && d < 70; break;
+                            case HeroKind.Mystic: use = d < 11; break;
+                        }
+                    }
+                    else if (u.cls.special == Special.Frenzy || u.cls.special == Special.Rally) use = d < 30;
+                    if (use) { u.input.ability = true; abilityT = Random.Range(4, 9); }
+                }
+                // blade heroes block when shot at from range
+                if (u.IsHero && u.hero.kind == HeroKind.Blade && d > 5 && Time.time - u.lastHurt < 1.5f && Random.value < 0.7f) { aim = true; move = dir; }
+                if (u.IsHero && u.hero.kind == HeroKind.Blade) { move = dir + side * 0.2f; sprint = d > 8; }
+            }
+            else if (objective)
+            {
+                Vector3 to = moveGoal - pos; to.y = 0;
+                float d = to.magnitude;
+                if (d > 2) { move = to / d; sprint = d > 30; }
+                else
+                {
+                    Vector2 r = Random.insideUnitCircle * objective.radius * 0.7f;
+                    moveGoal = objective.Pos + new Vector3(r.x, 0, r.y);
+                    if (Random.value < 0.3f) crouch = true;
+                }
+                aimPoint = u.Eye + (move.sqrMagnitude > 0.01f ? move : u.transform.forward) * 30 + Vector3.up * 0.5f;
+                // engineers fix friendly vehicles on the way
+                if (u.RoleOf == Role.Engineer && !u.IsHero && Time.frameCount % 10 == 0) TryRepairNearby(ref move, ref aimPoint, ref fire);
+                // specials
+                if (abilityT <= 0 && u.abilityCd <= 0 && u.cls != null && u.cls.special == Special.Cloak && d > 30) { u.input.ability = true; abilityT = 20; }
+                // heavy lays a mine at the objective
+                if (u.cls != null && u.cls.equip == Equip.Mine && u.equipLeft > 0 && d < 6 && Random.value < 0.004f) u.input.equip = true;
+            }
+
+            // keep it inside the battlefield
+            if (b.land != null)
+            {
+                float lim = b.land.PlayHalf - 15;
+                if (Mathf.Abs(pos.x) > lim || Mathf.Abs(pos.z) > lim) move = (-pos).normalized;
+            }
+
+            move = Avoid(pos, move, dt);
+            if (u.cls != null && u.cls.special == Special.Jetpack && !u.grounded && move.sqrMagnitude > 0.1f && stuckT > 0.6f) u.input.jump = true;
+
+            u.input.move = Vector3.ClampMagnitude(new Vector3(move.x, 0, move.z), 1);
+            u.input.aimPoint = aimPoint;
+            u.input.fire = fire;
+            u.input.fireDown = fire && Random.value < 0.25f;
+            u.input.aim = aim;
+            u.input.crouch = crouch;
+            u.input.sprint = sprint && !fire;
+        }
+
+        void TryRepairNearby(ref Vector3 move, ref Vector3 aimPoint, ref bool fire)
+        {
+            foreach (var v in b.vehicles)
+            {
+                if (!v || !v.Alive || v.Team != u.team || v.hp > v.maxHp * 0.8f) continue;
+                Vector3 to = v.transform.position - u.transform.position;
+                if (to.magnitude > 25) continue;
+                if (u.cur != 1) { u.input.swap = true; return; }
+                if (to.magnitude > 4) move = new Vector3(to.x, 0, to.z).normalized;
+                else { move = Vector3.zero; aimPoint = v.AimPoint; fire = true; }
+                return;
+            }
+            if (u.cur != 0 && u.weapons[0] != null) u.input.swap = true;
+        }
+
+        /// <summary>Feelers against walls / rocks; sidestep and jump when stuck.</summary>
+        Vector3 Avoid(Vector3 pos, Vector3 move, float dt)
+        {
+            if (move.sqrMagnitude < 0.01f) { stuckT = 0; lastPos = pos; return move; }
+            Vector3 dir = new Vector3(move.x, 0, move.z).normalized;
+            Vector3 knee = pos + Vector3.up * 0.7f;
+            const int mask = (1 << Layers.Default) | (1 << Layers.Hull) | (1 << Layers.Vehicle);
+            if (Physics.SphereCast(knee, 0.35f, dir, out var hit, 2.4f, mask, QueryTriggerInteraction.Ignore))
+            {
+                Vector3 l = Quaternion.Euler(0, -65, 0) * dir, r = Quaternion.Euler(0, 65, 0) * dir;
+                bool lf = !Physics.SphereCast(knee, 0.35f, l, out _, 3f, mask), rf = !Physics.SphereCast(knee, 0.35f, r, out _, 3f, mask);
+                if (lf && (!rf || strafe < 0)) dir = l; else if (rf) dir = r; else dir = Vector3.Reflect(dir, hit.normal);
+            }
+            // stuck detection
+            float moved = (pos - lastPos).magnitude;
+            if (moved < 0.6f * dt * 3) stuckT += dt; else stuckT = Mathf.Max(0, stuckT - dt * 2);
+            lastPos = pos;
+            if (stuckT > 1.0f && sideStepT <= 0)
+            {
+                sideStepT = 1.0f;
+                sideStep = Quaternion.Euler(0, Random.value < 0.5f ? 100 : -100, 0) * dir;
+                u.input.jumpDown = true;
+                stuckT = 0;
+            }
+            if (sideStepT > 0) { sideStepT -= dt; return sideStep; }
+            return dir * move.magnitude;
+        }
+
+        // ── ground vehicle driver ────────────────────────────────────────
+        void Drive(Vehicle v, float dt)
+        {
+            think -= dt; objT -= dt; seeT -= dt;
+            Vector3 pos = v.transform.position;
+            if (objT <= 0 || objective == null) PickObjective();
+            if (think <= 0)
+            {
+                think = 0.35f;
+                var t = FindTarget(pos + Vector3.up * 2.5f, 150, true);
+                if (t != null) { target = t; seeT = 1.5f; }
+                else if (seeT <= 0) target = null;
+            }
+            if (target != null && !target.Alive) target = null;
+            if (v.hp < v.maxHp * 0.12f && Random.value < 0.02f) { v.Leave(u, true); return; }
+
+            var inp = new VehicleInput();
+            Vector3 goal = objective ? moveGoal : pos;
+            Vector3 aimAt = pos + v.transform.forward * 40;
+            if (target != null)
+            {
+                Vector3 tp = target.AimPoint;
+                float d = (tp - pos).magnitude;
+                var w = v.prim;
+                aimAt = AimWithError(pos, Lead(pos + Vector3.up * 2, target, w != null ? w.def.speed : 150), dt);
+                inp.fire = w != null && (!w.def.UsesHeat || w.heat < 0.75f) && d < (v.def.kind == VKind.Tank ? 160 : 110);
+                if (v.def.kind == VKind.Tank) { float pref = 45; if (d < pref * 0.6f) goal = pos - (tp - pos).normalized * 20; else if (d < pref * 1.4f) goal = pos + Vector3.Cross(Vector3.up, (tp - pos).normalized) * strafe * 10; }
+            }
+            Vector3 to = goal - pos; to.y = 0;
+            float dist = to.magnitude;
+            Vector3 move = dist > 6 ? to / dist : Vector3.zero;
+            if (dist < 6 && objective) { Vector2 r = Random.insideUnitCircle * objective.radius; moveGoal = objective.Pos + new Vector3(r.x, 0, r.y) * 1.5f; }
+            strafeT -= dt; if (strafeT <= 0) { strafeT = Random.Range(2, 5); strafe = -strafe; }
+            // obstacle feelers
+            if (move.sqrMagnitude > 0.01f)
+            {
+                Vector3 from = pos + Vector3.up * 1.5f;
+                if (Physics.SphereCast(from, v.radius, move, out var hit, 9, (1 << Layers.Default) | (1 << Layers.Vehicle), QueryTriggerInteraction.Ignore) && !hit.collider.transform.IsChildOf(v.transform))
+                {
+                    Vector3 l = Quaternion.Euler(0, -60, 0) * move, r = Quaternion.Euler(0, 60, 0) * move;
+                    move = !Physics.SphereCast(from, v.radius, l, out _, 9, 1 << Layers.Default) ? l : r;
+                }
+                float moved = (pos - lastPos).magnitude;
+                if (moved < 1.5f * dt) stuckT += dt; else stuckT = 0;
+                if (stuckT > 2) { sideStepT = 1.5f; sideStep = -move; stuckT = 0; }
+                if (sideStepT > 0) { sideStepT -= dt; move = sideStep; }
+            }
+            lastPos = pos;
+            // let passengers off at the objective
+            if (objective && (objective.Pos - pos).magnitude < 22)
+                for (int i = 1; i < v.riders.Length; i++)
+                    if (v.riders[i] && v.riders[i].bot != null && (i > 1 || !v.gunnerT)) { var r = v.riders[i]; v.Leave(r, true); r.bot.objective = objective; }
+            inp.move = move;
+            inp.aimPoint = target != null ? aimAt : (move.sqrMagnitude > 0.01f ? pos + move * 40 + Vector3.up * 1.5f : aimAt);
+            inp.boost = dist > 80 && target == null;
+            v.seatIn[0] = inp;
+        }
+
+        void Gunner(Vehicle v, float dt)
+        {
+            think -= dt; seeT -= dt;
+            if (think <= 0)
+            {
+                think = 0.35f;
+                var t = FindTarget(v.gunnerT.position, 130, v.def.kind == VKind.Transport, v.IsShip);
+                if (t != null) { target = t; seeT = 1.5f; } else if (seeT <= 0) target = null;
+            }
+            if (target != null && !target.Alive) target = null;
+            var inp = new VehicleInput();
+            if (target != null)
+            {
+                inp.aimPoint = AimWithError(v.gunnerT.position, Lead(v.gunnerT.position, target, v.gunW.def.speed), dt);
+                inp.fire = !v.gunW.def.UsesHeat || v.gunW.heat < 0.8f;
+            }
+            else inp.aimPoint = v.gunnerT.position + v.transform.forward * 30;
+            v.seatIn[1] = inp;
+            if (!v.Driver && !v.def.Flies && Random.value < 0.01f) v.Leave(u, true);
+        }
+
+        void Passenger(Vehicle v, float dt)
+        {
+            if (!v.Driver && Random.value < 0.02f && v.CanExitHere()) v.Leave(u, true);
+            if (v.hp < v.maxHp * 0.15f && v.CanExitHere()) v.Leave(u, true);
+        }
+
+        // ── flight helpers ───────────────────────────────────────────────
+        static void Steer(Vehicle v, Vector3 point, float throttleWant, ref VehicleInput inp, float gain = 2.4f)
+        {
+            Vector3 to = point - v.transform.position;
+            if (to.sqrMagnitude < 0.01f) return;
+            Vector3 local = v.transform.InverseTransformDirection(to.normalized);
+            inp.steer.x = Mathf.Clamp(Mathf.Atan2(local.x, local.z) * gain, -1, 1);
+            inp.steer.y = Mathf.Clamp(Mathf.Atan2(local.y, Mathf.Max(0.05f, local.z)) * gain, -1, 1);
+            if (local.z < 0) inp.steer.y = local.y >= 0 ? 1 : -1;
+            float rightUp = v.transform.right.y;
+            inp.roll = Mathf.Clamp(-local.x * 1.1f - rightUp * 0.9f, -1, 1);
+            inp.throttle = Mathf.Clamp((throttleWant - v.throttle) * 4, -1, 1);
+        }
+
+        bool AvoidObstacles(Vehicle v, ref Vector3 point, float look)
+        {
+            Vector3 p = v.transform.position;
+            Vector3 f = v.transform.forward;
+            float dist = Mathf.Max(60, v.speed * look);
+            if (Physics.SphereCast(p, 7, f, out var hit, dist, Layers.SolidMask, QueryTriggerInteraction.Ignore))
+            {
+                Vector3 away = (hit.normal + Vector3.up * 0.6f).normalized;
+                point = p + (f + away * 2.2f).normalized * 120;
+                return true;
+            }
+            return false;
+        }
+
+        // ── planetary gunship ────────────────────────────────────────────
+        void FlyGunship(Vehicle v, float dt)
+        {
+            think -= dt; objT -= dt;
+            Vector3 pos = v.transform.position;
+            if (objT <= 0 || objective == null) PickObjective();
+            if (think <= 0)
+            {
+                think = 0.5f;
+                var t = FindTarget(pos, 260, true);
+                target = t;
+            }
+            if (target != null && !target.Alive) target = null;
+            var inp = new VehicleInput();
+            float gy = b.GroundY(pos);
+            Vector3 point;
+            if (target != null)
+            {
+                Vector3 tp = target.AimPoint;
+                float d = (tp - pos).magnitude;
+                if (run == RunPhase.Break)
+                {
+                    point = runPoint;
+                    if ((runPoint - pos).magnitude < 40 || d > 230) run = RunPhase.Attack;
+                }
+                else
+                {
+                    point = Lead(pos, target, v.prim.def.speed);
+                    if (d < 45) { run = RunPhase.Break; Vector3 away = (pos - tp); away.y = 0; runPoint = pos + away.normalized * 180 + Random.insideUnitSphere * 40; runPoint.y = b.GroundY(runPoint) + 55; }
+                    float ang = Vector3.Angle(v.transform.forward, point - pos);
+                    inp.fire = ang < 8 && d < 220 && v.prim.heat < 0.8f;
+                    inp.alt = ang < 10 && d < 260 && target is Vehicle && v.lockTime >= 1f;
+                }
+                inp.aimPoint = point;
+            }
+            else
+            {
+                Vector3 c = objective ? objective.Pos : Vector3.zero;
+                float a = Time.time * 0.25f + u.part.name.GetHashCode() % 10;
+                point = c + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * 80;
+                point.y = b.GroundY(point) + 50;
+                inp.aimPoint = point;
+            }
+            float minAlt = gy + 18;
+            if (point.y < minAlt && (target == null || run == RunPhase.Break)) point.y = minAlt + 10;
+            if (pos.y < gy + 12) point.y = Mathf.Max(point.y, pos.y + 30);
+            AvoidObstacles(v, ref point, 2f);
+            Steer(v, point, target != null ? 0.75f : 0.6f, ref inp);
+            inp.climb = pos.y < gy + 10 ? 1 : 0;
+            v.seatIn[0] = inp;
+        }
+
+        // ── space pilot ──────────────────────────────────────────────────
+        void PickSpaceJob()
+        {
+            if (!u.InVehicle) { job = SpaceJob.Defend; return; }
+            var k = u.vehicle.def.kind;
+            float r = Random.value;
+            switch (k)
+            {
+                case VKind.Bomber: job = r < 0.85f ? SpaceJob.Bomb : SpaceJob.Dogfight; break;
+                case VKind.Support: job = r < 0.45f ? SpaceJob.Board : SpaceJob.Escort; break;
+                case VKind.Interceptor: job = r < 0.9f ? SpaceJob.Dogfight : SpaceJob.Board; break;
+                default: job = r < 0.72f ? SpaceJob.Dogfight : r < 0.86f ? SpaceJob.Board : SpaceJob.Bomb; break;
+            }
+            run = RunPhase.Approach;
+        }
+
+        Subsystem PickSystem(CapitalShip enemy)
+        {
+            Subsystem best = null; float bs = float.MaxValue;
+            foreach (var s in enemy.systems)
+            {
+                if (s.destroyed || s.interior) continue;
+                float score = (s.transform.position - u.vehicle.transform.position).magnitude;
+                if (s.kind == SysKind.Shield) score *= 0.2f;
+                else if (s.kind == SysKind.Engine) score *= enemy.ShieldUp ? 2.5f : 0.4f;
+                else if (s.kind == SysKind.Turret) score *= 1.1f;
+                score += Random.Range(0, 150);
+                if (score < bs) { bs = score; best = s; }
+            }
+            return best;
+        }
+
+        void Pilot(Vehicle v, float dt)
+        {
+            think -= dt;
+            var space = b.space;
+            Vector3 pos = v.transform.position;
+            var inp = new VehicleInput();
+            var enemy = space.ships[1 - u.team];
+            var home = space.ships[u.team];
+
+            // taxi out of the hangar first
+            if (v.landed || (home.hangar.Contains(pos) && !boarded))
+            {
+                Vector3 exit = home.transform.TransformPoint(new Vector3(0, 10, 90));
+                inp.aimPoint = exit;
+                Steer(v, exit, 0.55f, ref inp, 3f);
+                inp.climb = 1;
+                v.seatIn[0] = inp;
+                return;
+            }
+
+            if (think <= 0)
+            {
+                think = 0.4f;
+                if (job == SpaceJob.Dogfight || job == SpaceJob.Escort || target == null)
+                {
+                    var t = FindTarget(pos, job == SpaceJob.Dogfight ? 1100 : 450, true, true);
+                    if (t != null) target = t;
+                }
+                if (job == SpaceJob.Bomb && (sysTarget == null || sysTarget.destroyed)) sysTarget = PickSystem(enemy);
+                if (job == SpaceJob.Bomb && sysTarget == null) job = SpaceJob.Dogfight;
+            }
+            if (target != null && !target.Alive) target = null;
+
+            Vector3 point = pos + v.transform.forward * 200;
+            float throttleWant = 0.85f;
+            bool boost = false;
+
+            switch (job)
+            {
+                case SpaceJob.Board:
+                    {
+                        if (!enemy.HangarOpen && Random.value < 0.01f) { job = SpaceJob.Dogfight; break; }
+                        Vector3 approach = enemy.transform.TransformPoint(new Vector3(0, 10, 160));
+                        Vector3 mouth = enemy.transform.TransformPoint(new Vector3(0, 8, 40));
+                        Vector3 inside = enemy.transform.TransformPoint(new Vector3(Random.Range(-1, 1) * 0 + 0, 4, 14));
+                        Vector3 local = enemy.transform.InverseTransformPoint(pos);
+                        if (enemy.hangar.Contains(pos))
+                        {
+                            point = inside; throttleWant = 0.12f;
+                            if (v.speed < 14 || (inside - pos).magnitude < 12)
+                            {
+                                boarded = true;
+                                v.Land(enemy.hangar);
+                                foreach (var r in (Unit[])v.riders.Clone()) if (r) { v.Leave(r, true); if (r.bot != null) { r.bot.job = SpaceJob.Sabotage; r.bot.boarded = true; } }
+                                return;
+                            }
+                        }
+                        else if (local.z > 120 || Mathf.Abs(local.x) > 50) { point = approach; throttleWant = 0.9f; boost = (approach - pos).magnitude > 400; }
+                        else { point = mouth; throttleWant = 0.35f; if (local.z < 60) point = inside; }
+                        inp.aimPoint = point;
+                        Steer(v, point, throttleWant, ref inp, 3f);
+                        v.seatIn[0] = inp;
+                        return;
+                    }
+                case SpaceJob.Bomb:
+                    if (sysTarget)
+                    {
+                        Vector3 sp = sysTarget.AimPoint;
+                        float d = (sp - pos).magnitude;
+                        if (run == RunPhase.Break)
+                        {
+                            point = runPoint; throttleWant = 1; boost = true;
+                            if ((runPoint - pos).magnitude < 80) run = RunPhase.Approach;
+                        }
+                        else
+                        {
+                            point = sp; throttleWant = d < 500 ? 0.75f : 1f; boost = d > 700;
+                            float ang = Vector3.Angle(v.transform.forward, sp - pos);
+                            inp.fire = ang < 6 && d < 600;
+                            inp.alt = ang < 5 && d < 520 && d > 60;
+                            if (d < 110)
+                            {
+                                run = RunPhase.Break;
+                                Vector3 outDir = (pos - enemy.transform.position).normalized;
+                                runPoint = pos + (outDir + Random.insideUnitSphere * 0.5f).normalized * 520;
+                            }
+                        }
+                    }
+                    break;
+                case SpaceJob.Escort:
+                    {
+                        // stay near friendly ships and pulse repairs
+                        Vehicle buddy = null; float bd = float.MaxValue;
+                        foreach (var o in b.vehicles) if (o && o != v && o.Alive && o.IsShip && o.Team == u.team && !o.landed) { float d2 = (o.transform.position - pos).sqrMagnitude; if (d2 < bd) { bd = d2; buddy = o; } }
+                        if (v.sec != null && v.sec.Ready && v.sec.def.kind == WKind.Repair)
+                        {
+                            int hurt = 0;
+                            foreach (var o in b.vehicles) if (o && o.Alive && o.Team == u.team && o.hp < o.maxHp * 0.8f && (o.transform.position - pos).sqrMagnitude < 60 * 60) hurt++;
+                            if (hurt > 0 || v.hp < v.maxHp * 0.7f) inp.alt = true;
+                        }
+                        if (target != null && (target.AimPoint - pos).magnitude < 400) goto case SpaceJob.Dogfight;
+                        if (buddy) { point = buddy.transform.position - buddy.transform.forward * 40 + Vector3.up * 15; throttleWant = Mathf.Clamp01(buddy.speed / v.def.speed + 0.15f); }
+                        else point = enemy.transform.position + Vector3.up * 200;
+                    }
+                    break;
+                case SpaceJob.Dogfight:
+                default:
+                    if (target != null)
+                    {
+                        Vector3 tp = target.AimPoint;
+                        float d = (tp - pos).magnitude;
+                        Vector3 lead = Lead(pos, target, v.prim.def.speed);
+                        point = AimWithError(pos, lead, dt * 0.5f);
+                        float ang = Vector3.Angle(v.transform.forward, lead - pos);
+                        inp.fire = ang < 5 + (1 - skill) * 3 && d < 520 && v.prim.heat < 0.85f;
+                        inp.alt = v.sec != null && ((v.sec.def.lockOn && v.lockTime >= 1f && d < 650) || (v.sec.def.kind == WKind.Shotgun && ang < 6 && d < 200));
+                        throttleWant = d < 80 ? 0.5f : d > 300 ? 1f : 0.8f;
+                        boost = d > 500;
+                        // overshoot: if very close and facing it, break off
+                        if (d < 30) point = pos + (v.transform.forward + Vector3.Cross(v.transform.forward, Vector3.up) * strafe).normalized * 200;
+                    }
+                    else
+                    {
+                        // patrol between the fleets, drift toward the enemy ship
+                        float a = Time.time * 0.12f + u.part.name.GetHashCode() % 7;
+                        point = Vector3.Lerp(home.transform.position, enemy.transform.position, 0.5f + 0.25f * Mathf.Sin(a)) + new Vector3(Mathf.Cos(a) * 300, Mathf.Sin(a * 1.7f) * 120, 0);
+                    }
+                    break;
+            }
+
+            // bounds
+            if (pos.magnitude > space.boundRadius - 150) point = Vector3.zero;
+            bool avoiding = AvoidObstacles(v, ref point, 2.6f);
+            if (avoiding) { inp.fire = false; throttleWant = Mathf.Min(throttleWant, 0.7f); }
+            inp.aimPoint = v.transform.position + v.transform.forward * 400;
+            if (target != null && job == SpaceJob.Dogfight) inp.aimPoint = Lead(pos, target, v.prim.def.speed);
+            if (job == SpaceJob.Bomb && sysTarget) inp.aimPoint = sysTarget.AimPoint;
+            Steer(v, point, throttleWant, ref inp);
+            inp.boost = boost && !avoiding;
+            if (v.hp < v.maxHp * 0.3f && job != SpaceJob.Board && Random.value < 0.002f) job = SpaceJob.Escort;
+            v.seatIn[0] = inp;
+        }
+
+        // ── on foot inside a capital ship ────────────────────────────────
+        void SpaceInfantry(float dt)
+        {
+            think -= dt; seeT -= dt; detpackT -= dt;
+            var space = b.space;
+            Vector3 pos = u.transform.position;
+            var inShip = space.ShipAt(pos);
+            if (!inShip) { u.input = default; u.input.aimPoint = pos + Vector3.forward; return; }
+            bool enemyShip = inShip.team != u.team;
+            if (enemyShip && job != SpaceJob.Sabotage) job = SpaceJob.Sabotage;
+
+            if (think <= 0)
+            {
+                think = 0.3f;
+                var t = FindTarget(u.Eye, 60, false);
+                if (t != null) { if (t != target) trackTime = 0; target = t; seeT = 1.2f; }
+                else if (seeT <= 0) target = null;
+                if (job == SpaceJob.Sabotage)
+                {
+                    if (sysTarget == null || sysTarget.destroyed)
+                    {
+                        sysTarget = null;
+                        var ls = inShip.Sys(SysKind.LifeSupport); var rc = inShip.Sys(SysKind.Reactor);
+                        var opts = new List<Subsystem>();
+                        if (ls && !ls.destroyed) opts.Add(ls);
+                        if (rc && !rc.destroyed) opts.Add(rc);
+                        if (opts.Count > 0) sysTarget = opts[Random.Range(0, opts.Count)];
+                    }
+                    navGoal = sysTarget ? (sysTarget.kind == SysKind.LifeSupport ? CapitalShip.NodeLS : CapitalShip.NodeReactor) : CapitalShip.NodeHangar;
+                }
+                else if (navGoal < 0 || Random.value < 0.01f)
+                {
+                    int[] posts = { CapitalShip.NodeLS, CapitalShip.NodeReactor, CapitalShip.NodeJunction, CapitalShip.NodeDoor, 7, 8 };
+                    navGoal = posts[Random.Range(0, posts.Length)];
+                }
+            }
+            if (target != null && !target.Alive) target = null;
+
+            Vector3 move = Vector3.zero, aimPoint = u.Eye + u.transform.forward * 20;
+            bool fire = false;
+            int here = inShip.NearestNode(pos);
+            if (navNext < 0 || (inShip.Node(navNext) - pos).sqrMagnitude < 2.2f) navNext = inShip.NextNode(here, Mathf.Max(0, navGoal));
+            Vector3 np = inShip.Node(navNext);
+            Vector3 toN = np - pos; toN.y = 0;
+            bool atGoal = here == navGoal && toN.magnitude < 3;
+
+            if (target != null)
+            {
+                trackTime += dt;
+                Vector3 lead = Lead(u.Eye, target, u.Weapon.def.speed);
+                aimPoint = AimWithError(u.Eye, lead, dt);
+                burst -= dt; if (burst < -0.4f) burst = Random.Range(0.6f, 1.4f);
+                var w = u.Weapon;
+                fire = burst > 0 && (!w.def.UsesHeat || w.heat < 0.82f) && w.def.kind != WKind.Repair && w.def.kind != WKind.Rocket;
+                if (w.def.kind == WKind.Repair || (w.def.kind == WKind.Rocket && !(target is Vehicle))) u.input.swap = true;
+                Vector3 to = target.AimPoint - pos; to.y = 0;
+                strafeT -= dt; if (strafeT <= 0) { strafeT = Random.Range(0.7f, 1.8f); strafe = -strafe; }
+                move = Vector3.Cross(Vector3.up, to.normalized) * strafe * 0.7f + (to.magnitude > 18 ? to.normalized * 0.5f : Vector3.zero);
+            }
+            else if (job == SpaceJob.Sabotage && sysTarget && (atGoal || (sysTarget.AimPoint - pos).magnitude < 9))
+            {
+                aimPoint = sysTarget.AimPoint;
+                // engineers / pilots plant detpacks; marines use rockets then rifles
+                if (u.cls != null && u.cls.equip == Equip.Detpack)
+                {
+                    if (u.equipLeft > 0 && detpackT <= 0 && (sysTarget.AimPoint - pos).magnitude < 8) { u.input.equip = true; detpackT = 1.5f; }
+                    else if (u.HasDetpacksOut && detpackT <= 0 && detpackT > -0.2f) { }
+                    if (u.HasDetpacksOut && u.equipLeft <= 0 && detpackT <= -1.5f) { u.input.equip = true; detpackT = 2; }
+                    fire = u.Weapon.def.kind != WKind.Repair;
+                    if (u.Weapon.def.kind == WKind.Repair) u.input.swap = true;
+                }
+                else
+                {
+                    if (u.weapons[1] != null && u.weapons[1].def.kind == WKind.Rocket && u.weapons[1].ammo + u.weapons[1].clip > 0 && u.cur == 0) u.input.swap = true;
+                    if (u.Weapon.def.kind == WKind.Rocket && u.Weapon.ammo + u.Weapon.clip <= 0) u.input.swap = true;
+                    fire = true;
+                }
+                u.input.fireDown = fire;
+            }
+            else if (!enemyShip && atGoal)
+            {
+                // defenders: hold and repair our own systems
+                if (u.cls != null && u.cls.pilot)
+                {
+                    foreach (var s in inShip.systems)
+                        if (!s.destroyed && s.interior && s.hp < s.maxHp && (s.AimPoint - pos).magnitude < 12)
+                        {
+                            if (u.Weapon.def.kind != WKind.Repair) u.input.swap = true;
+                            aimPoint = s.AimPoint;
+                            Vector3 tos = s.AimPoint - pos; tos.y = 0;
+                            move = tos.magnitude > 4 ? tos.normalized : Vector3.zero;
+                            fire = u.Weapon.def.kind == WKind.Repair;
+                            break;
+                        }
+                }
+                if (Random.value < 0.01f) navGoal = -1;
+            }
+            else
+            {
+                move = toN.magnitude > 0.3f ? toN.normalized : Vector3.zero;
+                aimPoint = u.Eye + (move.sqrMagnitude > 0.01f ? move : u.transform.forward) * 20;
+            }
+            if (target == null && move.sqrMagnitude < 0.01f && !atGoal) move = toN.normalized;
+
+            move = Avoid(pos, move, dt);
+            u.input.move = Vector3.ClampMagnitude(new Vector3(move.x, 0, move.z), 1);
+            u.input.aimPoint = aimPoint;
+            u.input.fire = fire;
+            u.input.sprint = target == null && move.sqrMagnitude > 0.1f;
+            u.input.crouch = false;
+        }
+    }
+}

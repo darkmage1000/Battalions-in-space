@@ -1,0 +1,566 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace BIS
+{
+    public struct UnitInput
+    {
+        public Vector3 move;          // world space, horizontal, |move| <= 1
+        public Vector3 aimPoint;      // where shots should go
+        public bool fire, fireDown, aim, jump, jumpDown, sprint, crouch, reload, swap, equip, ability, use;
+    }
+
+    public class WeaponState
+    {
+        public WeaponDef def;
+        public float heat, cool, reload;
+        public bool overheated;
+        public int clip, ammo;
+        public WeaponState(WeaponDef d) { def = d; clip = d.clip; ammo = d.ammo; }
+        public bool Ready => cool <= 0 && reload <= 0 && !overheated && (def.UsesHeat || def.clip == 0 || clip > 0);
+        public void Tick(float dt)
+        {
+            cool -= dt;
+            if (reload > 0) { reload -= dt; if (reload <= 0) { int take = Mathf.Min(def.clip - clip, ammo); clip += take; ammo -= take; } }
+            if (def.UsesHeat)
+            {
+                heat = Mathf.Max(0, heat - dt * (overheated ? 0.45f : 0.6f));
+                if (overheated && heat <= 0.05f) overheated = false;
+            }
+        }
+        public void Spend()
+        {
+            cool = 1f / def.rate;
+            if (def.UsesHeat) { heat += def.heatPerShot; if (heat >= 1) { heat = 1; overheated = true; } }
+            else if (def.clip > 0) clip--;
+        }
+        public bool NeedsReload => !def.UsesHeat && def.clip > 0 && clip <= 0 && ammo > 0 && reload <= 0;
+        public void StartReload() { if (!def.UsesHeat && def.clip > 0 && clip < def.clip && ammo > 0 && reload <= 0) reload = def.reload; }
+        public void Refill() { ammo = def.ammo; clip = def.clip; heat = 0; overheated = false; }
+        public string Status => def.UsesHeat ? (overheated ? "OVERHEAT" : $"{Mathf.RoundToInt(heat * 100)}% heat") : def.clip > 0 ? (reload > 0 ? "reloading" : $"{clip} / {ammo}") : "";
+    }
+
+    /// <summary>A soldier or hero on foot. Driven by UnitInput from PlayerControl or BotBrain.</summary>
+    public class Unit : MonoBehaviour, IDamageable
+    {
+        public Battle battle;
+        public Participant part;
+        public int team;
+        public FactionDef faction;
+        public ClassDef cls;
+        public HeroDef hero;
+        public string displayName;
+        public float hp, maxHp;
+        public bool dead;
+        public CharacterController cc;
+        public SoldierRig rig;
+        public BotBrain bot;
+        public UnitInput input;
+        public Vector3 velocity;
+        public float yaw, pitch;
+        public readonly WeaponState[] weapons = new WeaponState[2];
+        public int cur;
+        public int equipLeft;
+        public float jetFuel = 1, abilityCd, abilityTime, heroDrainAcc;
+        public Vehicle vehicle;
+        public int seat;
+        public bool crouching;
+        public Transform lockTarget;
+        public float lockTime;
+        public float lastHurt = -99, lastFire = -99, spawnTime;
+        public Unit lastAttacker;
+        public bool grounded;
+        float airTime, beamSound, swingTimer;
+        int fanShots; float fanTimer;
+        Vector3 push;
+        readonly List<Detpack> detpacks = new List<Detpack>();
+        LineRenderer beamLine;
+        AudioSource jetLoop;
+        public float rallyUntil, frenzyUntil, cloakUntil, dashUntil, invulnUntil;
+        Vector3 dashDir;
+        readonly HashSet<IDamageable> dashHit = new HashSet<IDamageable>();
+
+        public int Team => team;
+        public bool Alive => !dead && hp > 0;
+        public bool IsVehicle => false;
+        public bool IsHero => hero != null;
+        public bool InVehicle => vehicle != null;
+        public float Height => rig ? rig.height * (crouching ? 0.68f : 1f) : 1.8f;
+        public Vector3 AimPoint => transform.position + Vector3.up * Height * 0.62f;
+        public Vector3 Eye => transform.position + Vector3.up * Height * 0.9f;
+        public WeaponState Weapon => weapons[cur] ?? weapons[0];
+        public bool Blocking => hero != null && hero.kind == HeroKind.Blade && input.aim && Alive && !InVehicle;
+        public bool Cloaked => Time.time < cloakUntil;
+        public float DamageBoost => (Time.time < frenzyUntil ? 1.3f : 1f) * (Time.time < rallyUntil ? 1.25f : 1f);
+        public Role RoleOf => cls != null ? cls.role : Role.Assault;
+        public float Speed => (hero != null ? hero.speed : cls.speed) * (Time.time < frenzyUntil ? 1.45f : 1f);
+        public string ClassName => hero != null ? hero.name : cls.name;
+
+        public void Init(Battle b, Participant p, FactionDef f, ClassDef c, HeroDef h)
+        {
+            battle = b; part = p; team = p.team; faction = f; cls = c; hero = h;
+            displayName = p.name;
+            maxHp = hp = h != null ? h.hp : c.hp;
+            maxHp *= b.HealthMul(team); hp = maxHp;
+            gameObject.layer = Layers.Unit;
+            cc = gameObject.AddComponent<CharacterController>();
+            cc.height = 1.8f * (h != null ? h.scale : 1f); cc.radius = 0.4f; cc.center = new Vector3(0, cc.height / 2, 0);
+            cc.slopeLimit = 50; cc.stepOffset = 0.5f; cc.skinWidth = 0.06f; cc.minMoveDistance = 0;
+            if (h != null)
+            {
+                weapons[0] = new WeaponState(h.weapon);
+                weapons[1] = null;
+            }
+            else
+            {
+                bool award = p.awards[(int)c.role] && c.award != null;
+                weapons[0] = new WeaponState(award ? c.award : c.primary);
+                weapons[1] = c.secondary != null ? new WeaponState(c.secondary) : null;
+                equipLeft = c.equipCount;
+            }
+            rig = SoldierRig.Build(transform, f, c, h, weapons[0].def);
+            yaw = transform.eulerAngles.y;
+            spawnTime = Time.time;
+            invulnUntil = Time.time + 1.5f;
+            if (c != null && c.special == Special.Jetpack) jetLoop = Sfx.Loop("jet", transform, 0f, 40);
+            if (h != null && h.kind == HeroKind.Blade) Sfx.Loop("bladehum", rig.gun, 0.12f, 18);
+        }
+
+        // ── damage ───────────────────────────────────────────────────────
+        public void TakeDamage(DamageInfo d)
+        {
+            if (!Alive || Time.time < invulnUntil) return;
+            if (InVehicle && d.type != DmgType.Environment) return;
+            float amt = d.amount;
+            if (hero != null && d.type == DmgType.Explosive) amt *= 0.7f;
+            hp -= amt;
+            lastHurt = Time.time;
+            if (d.attacker) lastAttacker = d.attacker;
+            if (bot != null) bot.OnHurt(d);
+            if (part.isPlayer) HUD.Hurt(d.point);
+            if (Cloaked) cloakUntil = Time.time + 0.4f;
+            if (hp <= 0) Die(d.attacker, d.dir, d.weapon);
+        }
+
+        public void Heal(float amt)
+        {
+            if (!Alive) return;
+            hp = Mathf.Min(maxHp, hp + amt);
+        }
+
+        public void Push(Vector3 v) { push += v; }
+
+        public void Die(Unit killer, Vector3 dir, WeaponDef w = null)
+        {
+            if (dead) return;
+            dead = true; hp = 0;
+            if (InVehicle) vehicle.Leave(this, false);
+            cc.enabled = false;
+            rig.Die(dir.sqrMagnitude > 0.01f ? dir : -transform.forward);
+            rig.SetCloak(false);
+            if (beamLine) beamLine.enabled = false;
+            if (jetLoop) jetLoop.volume = 0;
+            foreach (var d in detpacks) if (d) Destroy(d.gameObject);
+            detpacks.Clear();
+            battle.OnUnitKilled(this, killer, w);
+            if (!IsHero && Random.value < 0.35f) Pickup.Drop(transform.position + Vector3.up * 0.3f);
+            Destroy(gameObject, 6f);
+        }
+
+        // ── per-frame ────────────────────────────────────────────────────
+        public void Tick(float dt)
+        {
+            if (dead) { rig.Animate(0, true, false, 0, dt, false); return; }
+            if (InVehicle) { vehicle.PlaceRider(this); return; }
+
+            for (int i = 0; i < 2; i++) weapons[i]?.Tick(dt);
+            abilityCd -= dt;
+
+            // hero health slowly drains (kills restore it)
+            if (hero != null)
+            {
+                heroDrainAcc += dt;
+                if (heroDrainAcc > 1) { heroDrainAcc -= 1; hp -= maxHp * 0.006f; if (hp <= 0) { Die(null, Vector3.zero); return; } }
+            }
+
+            // aim
+            Vector3 aimDir = input.aimPoint - Eye;
+            if (aimDir.sqrMagnitude < 0.01f) aimDir = transform.forward;
+            aimDir.Normalize();
+            float targetYaw = Mathf.Atan2(aimDir.x, aimDir.z) * Mathf.Rad2Deg;
+            yaw = Mathf.MoveTowardsAngle(yaw, targetYaw, (part.isPlayer ? 2000 : 540) * dt);
+            pitch = -Mathf.Asin(Mathf.Clamp(aimDir.y, -1, 1)) * Mathf.Rad2Deg;
+            transform.rotation = Quaternion.Euler(0, yaw, 0);
+
+            Move(dt);
+            Actions(dt);
+
+            // rig + cloak
+            Vector3 hv = new Vector3(velocity.x, 0, velocity.z);
+            bool bladeSwing = swingTimer > 0;
+            rig.Animate(hv.magnitude, grounded, crouching, pitch, dt, bladeSwing);
+            swingTimer = 0;
+            rig.SetCloak(Cloaked);
+            if (!part.isPlayer) { input.swap = input.equip = input.ability = input.jumpDown = input.reload = input.use = false; }
+        }
+
+        void Move(float dt)
+        {
+            grounded = cc.isGrounded;
+            crouching = input.crouch && grounded && hero == null;
+            bool aimingSlow = input.aim && (Weapon.def.zoomFov > 0);
+            float spd = Speed * (input.sprint && !crouching && !input.fire ? 1.45f : 1f) * (crouching ? 0.5f : 1f) * (aimingSlow ? 0.5f : 1f);
+            if (InSpaceZeroG()) spd *= 0.8f;
+            Vector3 wish = input.move * spd;
+
+            if (Time.time < dashUntil)
+            {
+                wish = dashDir * 22f;
+                velocity.x = wish.x; velocity.z = wish.z;
+                DashDamage();
+            }
+            Vector3 hv = new Vector3(velocity.x, 0, velocity.z);
+            float acc = grounded ? 45f : 10f;
+            hv = Vector3.MoveTowards(hv, new Vector3(wish.x, 0, wish.z), acc * dt);
+            velocity.x = hv.x; velocity.z = hv.z;
+
+            if (grounded) { airTime = 0; if (velocity.y < 0) velocity.y = -3f; }
+            else airTime += dt;
+            if (input.jumpDown && grounded) { velocity.y = hero != null && hero.kind == HeroKind.Blade ? 9.5f : 7.2f; grounded = false; }
+
+            bool jetting = false;
+            if (cls != null && cls.special == Special.Jetpack)
+            {
+                if (!grounded && input.jump && jetFuel > 0 && airTime > 0.15f)
+                {
+                    jetting = true;
+                    velocity.y = Mathf.MoveTowards(velocity.y, 7f, 30 * dt);
+                    jetFuel -= dt * 0.42f;
+                    if (Random.value < 0.6f) Fx.Emit(transform.position + Vector3.up * 0.9f - transform.forward * 0.3f, Vector3.down * 6 + Random.insideUnitSphere, new Color(1f, 0.6f, 0.25f, 1), 0.35f, 0.25f);
+                }
+                else if (grounded) jetFuel = Mathf.Min(1, jetFuel + dt * 0.3f);
+                if (jetLoop) jetLoop.volume = Mathf.MoveTowards(jetLoop.volume, jetting ? 0.4f : 0f, dt * 4);
+            }
+
+            velocity.y += Physics.gravity.y * (jetting ? 0.3f : 1f) * dt;
+            if (push.sqrMagnitude > 0.01f) { velocity += push; push = Vector3.zero; }
+            if (cc.enabled) cc.Move(velocity * dt);
+
+            // fell off the world / lost in space
+            if (battle.space != null)
+            {
+                if (airTime > 3.5f && !jetting) { Kill("lost in space"); return; }
+            }
+            else if (battle.land != null && transform.position.y < battle.land.Height(transform.position.x, transform.position.z) - 8)
+            {
+                transform.position = battle.land.Ground(transform.position) + Vector3.up;
+            }
+        }
+
+        bool InSpaceZeroG() => false;
+
+        public void Kill(string why)
+        {
+            if (!Alive) return;
+            hp = 0;
+            Die(null, Vector3.down);
+        }
+
+        void Actions(float dt)
+        {
+            var w = Weapon;
+            if (input.swap && weapons[1] != null) { cur = 1 - cur; rig.SetWeapon(Weapon.def); w = Weapon; Sfx.Play("ui", transform.position, 0.3f); }
+            if (input.reload) w.StartReload();
+            if (w.NeedsReload) w.StartReload();
+
+            // lock-on for launchers
+            if (w.def.lockOn) UpdateLock(dt, w.def); else { lockTarget = null; lockTime = 0; }
+
+            // fan fire (gunslinger ability) runs on its own clock
+            if (fanShots > 0)
+            {
+                fanTimer -= dt;
+                if (fanTimer <= 0) { fanTimer = 0.06f; fanShots--; FireBolt(w.def, 1.0f, 2.5f); }
+            }
+
+            bool wantFire = w.def.auto ? input.fire : input.fireDown;
+            if (w.def.kind == WKind.Beam) Beam(dt, input.fire && !w.overheated, w);
+            else if (wantFire && w.Ready && !Blocking)
+            {
+                switch (w.def.kind)
+                {
+                    case WKind.Blade: Swing(w.def); break;
+                    case WKind.Repair: RepairBeam(w.def, dt); break;
+                    default:
+                        for (int i = 0; i < w.def.pellets; i++) FireBolt(w.def, 1, w.def.spread);
+                        break;
+                }
+                w.Spend();
+                lastFire = Time.time;
+                if (Cloaked) cloakUntil = 0;
+            }
+
+            if (input.equip) UseEquipment();
+            if (input.ability && abilityCd <= 0) UseAbility();
+        }
+
+        void UpdateLock(float dt, WeaponDef w)
+        {
+            Transform best = null; float bestA = 7f;
+            Vector3 dir = (input.aimPoint - Eye).normalized;
+            foreach (var v in battle.vehicles)
+            {
+                if (!v || !v.Alive || v.Team == team || v.IsEmpty) continue;
+                Vector3 to = v.AimPoint - Eye;
+                float d = to.magnitude;
+                if (d > w.range) continue;
+                float a = Vector3.Angle(dir, to);
+                if (a < bestA) { bestA = a; best = v.transform; }
+            }
+            if (best != lockTarget) { lockTarget = best; lockTime = 0; }
+            else if (best) { float before = lockTime; lockTime += dt; if (part.isPlayer && before < 0.9f && lockTime >= 0.9f) Sfx.Play2D("lock", 0.8f); }
+        }
+
+        public Vector3 MuzzlePos => rig && rig.muzzle ? rig.muzzle.position : Eye + transform.forward * 0.5f;
+
+        void FireBolt(WeaponDef w, float mul, float spread)
+        {
+            Vector3 from = MuzzlePos;
+            Vector3 dir = (input.aimPoint - from);
+            if (dir.sqrMagnitude < 1f) dir = (input.aimPoint - Eye);
+            dir.Normalize();
+            float sp = spread * (crouching ? 0.6f : 1f) * (new Vector3(velocity.x, 0, velocity.z).magnitude > 3 ? 1.3f : 1f) * (input.aim ? 0.7f : 1f);
+            if (sp > 0) dir = Quaternion.AngleAxis(Random.Range(0, 360f), dir) * Quaternion.AngleAxis(Random.Range(0, sp), Vector3.Cross(dir, Vector3.up).normalized) * dir;
+            Transform homing = (w.lockOn && lockTime >= 0.9f) ? lockTarget : null;
+            Shots.Fire(w, from, dir, team, this, transform, faction.bolt, mul, homing);
+            Fx.Muzzle(from, faction.bolt);
+            Sfx.Play(w.sound, from, part.isPlayer ? 0.7f : 0.45f, w.pitch);
+        }
+
+        void Swing(WeaponDef w)
+        {
+            swingTimer = 1;
+            Sfx.Play("blade", transform.position, 0.6f, Random.Range(0.9f, 1.15f));
+            Vector3 c = transform.position + transform.forward * 1.6f + Vector3.up * 1f;
+            var cols = Physics.OverlapSphere(c, w.range * 0.7f, Layers.DamageMask, QueryTriggerInteraction.Ignore);
+            var set = new HashSet<IDamageable>();
+            foreach (var col in cols)
+            {
+                var d = col.GetComponentInParent<IDamageable>();
+                if (d == null || d == (IDamageable)this || !d.Alive || d.Team == team || !set.Add(d)) continue;
+                Shots.Deal(d, w.damage, w, this, team, d.AimPoint, transform.forward, DmgType.Melee);
+                Fx.Sparks(d.AimPoint, -transform.forward, hero != null ? hero.glow : Color.white, 10);
+                if (d is Unit u) u.Push(transform.forward * 6 + Vector3.up * 2);
+            }
+        }
+
+        void DashDamage()
+        {
+            var cols = Physics.OverlapSphere(transform.position + Vector3.up, 1.6f, Layers.DamageMask, QueryTriggerInteraction.Ignore);
+            foreach (var col in cols)
+            {
+                var d = col.GetComponentInParent<IDamageable>();
+                if (d == null || d == (IDamageable)this || !d.Alive || d.Team == team || !dashHit.Add(d)) continue;
+                Shots.Deal(d, 180, weapons[0].def, this, team, d.AimPoint, dashDir, DmgType.Melee);
+                Fx.Sparks(d.AimPoint, -dashDir, hero.glow, 14);
+                if (d is Unit u) u.Push(dashDir * 10 + Vector3.up * 5);
+            }
+        }
+
+        void Beam(float dt, bool on, WeaponState ws)
+        {
+            if (!beamLine)
+            {
+                beamLine = new GameObject("beam").AddComponent<LineRenderer>();
+                beamLine.transform.SetParent(transform, false);
+                beamLine.material = Mats.Additive(hero != null ? hero.glow : Color.cyan);
+                beamLine.widthMultiplier = 0.18f; beamLine.positionCount = 8; beamLine.useWorldSpace = true;
+            }
+            if (!on) { beamLine.enabled = false; return; }
+            var w = ws.def;
+            ws.heat += w.heatPerShot * dt * 10; if (ws.heat >= 1) { ws.heat = 1; ws.overheated = true; }
+            lastFire = Time.time;
+            Vector3 from = MuzzlePos;
+            Vector3 dir = (input.aimPoint - from).normalized;
+            // find a target near the beam
+            IDamageable best = null; float bestScore = 999;
+            foreach (var u in battle.units)
+            {
+                if (!u || !u.Alive || u.team == team || u.InVehicle) continue;
+                Vector3 to = u.AimPoint - from; float d = to.magnitude;
+                if (d > w.range) continue;
+                float a = Vector3.Angle(dir, to);
+                if (a < 14 && a + d * 0.3f < bestScore) { bestScore = a + d * 0.3f; best = u; }
+            }
+            foreach (var v in battle.vehicles)
+            {
+                if (!v || !v.Alive || v.Team == team) continue;
+                Vector3 to = v.AimPoint - from; float d = to.magnitude;
+                if (d > w.range + 3) continue;
+                float a = Vector3.Angle(dir, to);
+                if (a < 10 && a + d * 0.3f < bestScore) { bestScore = a + d * 0.3f; best = v; }
+            }
+            Vector3 end = from + dir * w.range;
+            if (best != null)
+            {
+                end = best.AimPoint;
+                Shots.Deal(best, w.damage * dt, w, this, team, end, dir, DmgType.Psi);
+                // chain to one more nearby enemy
+                foreach (var u in battle.units)
+                {
+                    if (!u || !u.Alive || u.team == team || (IDamageable)u == best) continue;
+                    if ((u.AimPoint - end).sqrMagnitude < 36) { Shots.Deal(u, w.damage * 0.5f * dt, w, this, team, u.AimPoint, dir, DmgType.Psi); break; }
+                }
+                if (Random.value < 0.3f) Fx.Sparks(end, -dir, hero != null ? hero.glow : Color.cyan, 2);
+            }
+            else if (Physics.Raycast(from, dir, out var hit, w.range, Layers.SolidMask)) end = hit.point;
+            beamLine.enabled = true;
+            for (int i = 0; i < 8; i++)
+            {
+                float t = i / 7f;
+                Vector3 p = Vector3.Lerp(from, end, t);
+                if (i > 0 && i < 7) p += Random.insideUnitSphere * 0.35f;
+                beamLine.SetPosition(i, p);
+            }
+            beamSound -= dt;
+            if (beamSound <= 0) { beamSound = 0.25f; Sfx.Play("zap", from, 0.4f, Random.Range(0.9f, 1.2f)); }
+        }
+
+        void RepairBeam(WeaponDef w, float dt)
+        {
+            Vector3 from = Eye;
+            Vector3 dir = (input.aimPoint - from).normalized;
+            if (Physics.SphereCast(from, 0.3f, dir, out var hit, w.range, Layers.ShotMask, QueryTriggerInteraction.Ignore))
+            {
+                var rep = hit.collider.GetComponentInParent<IRepairable>();
+                if (rep != null && rep.Team == team && rep.CanRepair)
+                {
+                    float done = rep.Repair(w.damage / w.rate * 1f);
+                    if (done > 0) battle.AddRepair(part, done);
+                    Fx.Sparks(hit.point, hit.normal, new Color(0.4f, 1f, 0.5f), 3);
+                    Sfx.Play("repair", hit.point, 0.4f);
+                }
+            }
+        }
+
+        void UseEquipment()
+        {
+            if (cls == null || equipLeft <= 0)
+            {
+                if (cls != null && cls.equip == Equip.Detpack && detpacks.Count > 0) DetonateAll();
+                return;
+            }
+            switch (cls.equip)
+            {
+                case Equip.Grenade:
+                    var g = new WeaponDef { name = "Grenade", kind = WKind.Grenade, damage = 0, speed = 19, range = 60, splash = 6, splashDmg = 260, vsVehicle = 0.6f };
+                    Vector3 d = (input.aimPoint - Eye).normalized; d = (d + Vector3.up * 0.35f).normalized;
+                    Shots.Fire(g, Eye + transform.forward * 0.4f, d, team, this, transform, faction.bolt, DamageBoost);
+                    equipLeft--;
+                    break;
+                case Equip.Mine:
+                    if (grounded) { Mine.Place(this, transform.position + transform.forward * 1.2f); equipLeft--; }
+                    break;
+                case Equip.Detpack:
+                    if (detpacks.Count > 0 && equipLeft <= 0) { DetonateAll(); return; }
+                    var dp = Detpack.Throw(this, Eye + transform.forward * 0.5f, (input.aimPoint - Eye).normalized);
+                    detpacks.Add(dp);
+                    equipLeft--;
+                    break;
+                case Equip.Supply:
+                    SupplyCrate.Place(this, transform.position + transform.forward * 1.4f);
+                    equipLeft--;
+                    break;
+            }
+            Sfx.Play("thud", transform.position, 0.4f, 1.3f);
+        }
+
+        public void DetonateAll()
+        {
+            foreach (var d in detpacks) if (d) d.Blow();
+            detpacks.Clear();
+        }
+
+        public bool HasDetpacksOut => detpacks.Count > 0;
+
+        public float AbilityCooldown => hero != null ? 12f : cls.special == Special.Rally ? 30f : 25f;
+        public string AbilityName => hero != null ? hero.abilityName : cls.special == Special.None || cls.special == Special.Jetpack ? null : cls.special.ToString().ToUpper();
+
+        void UseAbility()
+        {
+            if (hero != null)
+            {
+                abilityCd = AbilityCooldown;
+                switch (hero.kind)
+                {
+                    case HeroKind.Blade:
+                        dashDir = (new Vector3(input.aimPoint.x - transform.position.x, 0, input.aimPoint.z - transform.position.z)).normalized;
+                        if (dashDir.sqrMagnitude < 0.1f) dashDir = transform.forward;
+                        dashUntil = Time.time + 0.45f; dashHit.Clear();
+                        Sfx.Play("blade", transform.position, 0.8f, 0.7f);
+                        break;
+                    case HeroKind.Gunslinger:
+                        fanShots = 12; fanTimer = 0;
+                        break;
+                    case HeroKind.Juggernaut:
+                        var rk = W.Rocket("Barrage"); rk.damage = 160; rk.splashDmg = 140; rk.lockOn = false;
+                        for (int i = 0; i < 6; i++)
+                        {
+                            Vector3 d = (input.aimPoint - Eye).normalized + Random.insideUnitSphere * 0.06f + Vector3.up * 0.03f * i;
+                            Shots.Fire(rk, Eye + Vector3.up * 0.4f + transform.right * (i % 2 == 0 ? 0.4f : -0.4f), d, team, this, transform, faction.bolt);
+                        }
+                        Sfx.Play("rocket", transform.position, 0.9f, 0.8f);
+                        break;
+                    case HeroKind.Mystic:
+                        Vector3 fwd = transform.forward;
+                        foreach (var u in battle.units)
+                        {
+                            if (!u || !u.Alive || u.team == team || u.InVehicle) continue;
+                            Vector3 to = u.transform.position - transform.position;
+                            if (to.magnitude < 14 && Vector3.Angle(fwd, to) < 50)
+                            {
+                                Shots.Deal(u, 150, weapons[0].def, this, team, u.AimPoint, to.normalized, DmgType.Psi);
+                                u.Push(to.normalized * 16 + Vector3.up * 7);
+                            }
+                        }
+                        for (int i = 0; i < 40; i++)
+                            Fx.Emit(Eye + fwd, (fwd + Random.insideUnitSphere * 0.5f).normalized * Random.Range(10, 22), hero.glow, 0.6f, 0.4f);
+                        Sfx.Play("zap", transform.position, 1f, 0.6f);
+                        break;
+                }
+                return;
+            }
+            switch (cls.special)
+            {
+                case Special.Frenzy:
+                    frenzyUntil = Time.time + 6; abilityCd = AbilityCooldown;
+                    Sfx.Play("award", transform.position, 0.5f, 0.6f);
+                    break;
+                case Special.Cloak:
+                    cloakUntil = Time.time + 8; abilityCd = AbilityCooldown;
+                    Sfx.Play("zap", transform.position, 0.5f, 1.6f);
+                    break;
+                case Special.Rally:
+                    abilityCd = AbilityCooldown;
+                    foreach (var u in battle.units)
+                        if (u && u.Alive && u.team == team && (u.transform.position - transform.position).sqrMagnitude < 100)
+                        { u.Heal(150); u.rallyUntil = Time.time + 8; Fx.Burst(u.AimPoint, faction.bolt, 10, 3, 0.4f, 0.6f); }
+                    Sfx.Play("award", transform.position, 0.6f, 1.2f);
+                    break;
+            }
+        }
+
+        public void Resupply()
+        {
+            foreach (var w in weapons) w?.Refill();
+            if (cls != null) equipLeft = Mathf.Max(equipLeft, cls.equipCount);
+        }
+    }
+
+    public interface IRepairable
+    {
+        int Team { get; }
+        bool CanRepair { get; }
+        float Repair(float amount);   // returns hp actually restored
+    }
+}
