@@ -227,6 +227,30 @@ namespace BIS
             return false;
         }
 
+        // -- spawn timers -------------------------------------------------------
+        public const float RespawnPost = 10f;      // after dying, before you can spawn at a post (or your ship in space)
+        public const float PressureExtra = 5f;     // more if enemies are within PressureRadius of that post
+        public const float PressureRadius = 50f;
+        public const float RespawnSquad = 16f;     // before you can spawn on a squadmate
+        public const float MateCooldown = 30f;     // a squadmate can be spawned on once per this long
+
+        public bool Pressured(CommandPost cp, int team)
+        {
+            float r2 = PressureRadius * PressureRadius;
+            foreach (var u in units) if (u && u.Alive && u.team != team && (u.transform.position - cp.Pos).sqrMagnitude < r2) return true;
+            return false;
+        }
+
+        /// <summary>Seconds this participant must still wait before spawning at this post (null = their ship / any post).</summary>
+        public float WaitFor(Participant p, CommandPost cp)
+        {
+            float need = RespawnPost + (cp != null && Pressured(cp, p.team) ? PressureExtra : 0);
+            return Mathf.Max(0, need - (Time.time - p.diedAt));
+        }
+
+        /// <summary>Seconds before this participant may spawn on that squadmate.</summary>
+        public float WaitForMate(Participant p, Participant mate) => Mathf.Max(0, Mathf.Max(RespawnSquad - (Time.time - p.diedAt), mate.mateUsedUntil - Time.time));
+
         // -- squad spawning ---------------------------------------------------
         public int mateSpawns;                     // stats for tests
         public const float MateSafeRadius = 30f;   // no enemy this close
@@ -275,15 +299,17 @@ namespace BIS
             if (hero != null) { p.heroReady = false; p.pointsAtHero = p.points; p.everHero = true; }
             var cls = f.classes[Mathf.Clamp(classIndex, 0, 4)];
             mateSpawns++;
+            mate.part.mateUsedUntil = Time.time + MateCooldown;
             return SpawnUnit(p, hero != null ? null : cls, hero, spot, mate.transform.eulerAngles.y);
         }
 
-        public CommandPost PickPost(int team, Vector3 near)
+        public CommandPost PickPost(int team, Vector3 near, Participant who = null)
         {
             CommandPost best = null; float bd = float.MaxValue;
             foreach (var p in posts)
             {
                 if (!p.SpawnableFor(team)) continue;
+                if (who != null && WaitFor(who, p) > 0) continue;
                 float d = (p.Pos - near).sqrMagnitude + Random.Range(0, 4000f);
                 if (d < bd) { bd = d; best = p; }
             }
@@ -323,7 +349,7 @@ namespace BIS
                 Vector3 fp = ship.FootSpawn();
                 return SpawnUnit(p, c, hero, fp, ship.transform.eulerAngles.y + 180);
             }
-            CommandPost post = postIndex >= 0 && postIndex < posts.Count && posts[postIndex].SpawnableFor(p.team) ? posts[postIndex] : PickPost(p.team, p.unit ? p.unit.transform.position : Vector3.zero);
+            CommandPost post = postIndex >= 0 && postIndex < posts.Count && posts[postIndex].SpawnableFor(p.team) && WaitFor(p, posts[postIndex]) <= 0 ? posts[postIndex] : PickPost(p.team, p.unit ? p.unit.transform.position : Vector3.zero, p);
             if (!post) return null;
             Vector3 sp = post.SpawnPoint();
             Vector3 toCentre = -post.Pos; toCentre.y = 0;
@@ -433,13 +459,20 @@ namespace BIS
             {
                 p.classChoice = PickBotClass(p.team);
                 var mate = commander != null && hero == null ? commander.MateToSpawnOn(p) : null;
+                if (mate)
+                {
+                    float mw = WaitForMate(p, mate.part);
+                    if (mw > 0 && mw < 7) { p.respawn = mw + 0.1f; return; }   // worth waiting a few seconds for
+                    if (mw > 0) mate = null;
+                }
                 Unit spawned = mate ? SpawnOnMate(p, p.classChoice, null, mate) : null;
                 if (!spawned)
                 {
                     var post = commander != null && Random.value < 0.85f ? commander.SpawnPostFor(p) : null;
+                    if (post && WaitFor(p, post) > 0) post = null;
                     spawned = Spawn(p, p.classChoice, hero, post ? post.index : -1, -1);
                 }
-                if (!spawned) { p.respawn = 2; return; }
+                if (!spawned) { p.respawn = 1; return; }
             }
             p.respawn = 5;
         }
@@ -526,7 +559,8 @@ namespace BIS
             vp.deaths++;
             vp.unit = victim;
             teams[victim.team].tickets -= 1;
-            vp.respawn = 5;
+            vp.diedAt = Time.time;
+            vp.respawn = RespawnPost;
             string kname = killer ? killer.displayName : null;
             if (killer && killer.team != victim.team)
             {

@@ -483,6 +483,8 @@ namespace BIS
             var k = pc.killer;
             string s = k ? $"Killed by <color=#{UI.Hex(battle.TeamColor(k.team))}>{(k.IsHero ? k.hero.name : k.displayName)}</color>" : "You were killed";
             UI.Text(new Rect(0, UI.H * 0.6f, UI.W, 40), s, 30, Color.white, TextAnchor.MiddleCenter);
+            float wt = battle.WaitFor(battle.player, null);
+            if (wt > 0) UI.Text(new Rect(0, UI.H * 0.6f + 44, UI.W, 30), $"Reinforcements in {Mathf.CeilToInt(wt)} s", 22, UI.Dim, TextAnchor.MiddleCenter);
         }
 
         // ── spawn screen ─────────────────────────────────────────────────
@@ -558,7 +560,10 @@ namespace BIS
             UI.Text(new Rect(580, 870, map.width, 34), title, 26, Color.white);
             UI.Text(new Rect(580, 902, map.width, 60), b.land ? b.cfg.land.blurb : b.cfg.spaceMap.blurb, 18, UI.Dim, TextAnchor.UpperLeft, true);
             bool can = b.CanSpawn(b.player.team);
-            if (UI.Button(new Rect(w - 360, 990, 330, 64), pc.selHero >= 0 && b.player.heroReady ? "SPAWN AS HERO" : "SPAWN  (Enter)", false, can, 28, new Color(0.2f, 0.6f, 0.3f)))
+            float wait = b.land && pc.selMate != null ? b.WaitForMate(b.player, pc.selMate) : b.WaitFor(b.player, b.land && pc.selPost >= 0 && pc.selPost < b.posts.Count ? b.posts[pc.selPost] : null);
+            if (wait > 0) can = false;
+            string spawnLabel = wait > 0 ? $"REINFORCEMENTS IN {Mathf.CeilToInt(wait)}" : pc.selHero >= 0 && b.player.heroReady ? "SPAWN AS HERO" : "SPAWN  (Enter)";
+            if (UI.Button(new Rect(w - 360, 990, 330, 64), spawnLabel, false, can, wait > 0 ? 22 : 28, new Color(0.2f, 0.6f, 0.3f)))
                 pc.TrySpawn(pc.selHero >= 0 && b.player.heroReady);
             if (UI.Button(new Rect(30, 990, 220, 64), "CONTROLS", helpOpen, true, 22)) helpOpen = !helpOpen;
             if (helpOpen) Controls(new Rect(w / 2 - 420, 160, 840, 700));
@@ -574,7 +579,9 @@ namespace BIS
             {
                 if (p.owner != b.player.team) continue;
                 bool ok = p.SpawnableFor(b.player.team);
-                if (UI.Button(new Rect(r.x, yy, r.width, 36), ok ? p.postName : p.postName + " (attacked)", pc.selMate == null && pc.selPost == p.index, ok, 17)) { pc.selPost = p.index; pc.selMate = null; }
+                float wt = b.WaitFor(b.player, p);
+                string label = !ok ? p.postName + " (attacked)" : wt > 0 ? $"{p.postName}  {Mathf.CeilToInt(wt)}s" + (b.Pressured(p, b.player.team) ? " (+5)" : "") : p.postName;
+                if (UI.Button(new Rect(r.x, yy, r.width, 36), label, pc.selMate == null && pc.selPost == p.index, ok, 16)) { pc.selPost = p.index; pc.selMate = null; }
                 yy += 40;
             }
             var sq = b.commander != null ? b.commander.SquadOf(b.player) : null;
@@ -587,11 +594,12 @@ namespace BIS
                 if (m.isPlayer) continue;
                 string why = b.MateBlocked(m.unit);
                 bool ok = why == null;
-                string label = m.name + (ok ? "" : $" ({why})");
+                float mw = b.WaitForMate(b.player, m);
+                string label = m.name + (!ok ? $" ({why})" : mw > 0 ? $"  {Mathf.CeilToInt(mw)}s" : "");
                 if (UI.Button(new Rect(r.x, yy, r.width, 36), label, pc.selMate == m, ok, 15)) pc.selMate = m;
                 yy += 40;
             }
-            UI.Text(new Rect(r.x, yy, r.width, 60), $"Spawn beside a squadmate when no enemy is within {Battle.MateSafeRadius:0} m and they haven't been hit for {Battle.MateHurtSafe:0} s.", 14, UI.Dim, TextAnchor.UpperLeft, true);
+            UI.Text(new Rect(r.x, yy, r.width, 90), $"Posts: {Battle.RespawnPost:0} s after you fall (+{Battle.PressureExtra:0} s with enemies near). Squadmates: {Battle.RespawnSquad:0} s, once each per {Battle.MateCooldown:0} s, when no enemy is within {Battle.MateSafeRadius:0} m and they haven't been hit for {Battle.MateHurtSafe:0} s.", 14, UI.Dim, TextAnchor.UpperLeft, true);
         }
 
         public void DrawLandMap(Rect r, PlayerControl pc, bool pick)

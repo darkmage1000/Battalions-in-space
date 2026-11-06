@@ -42,6 +42,8 @@ namespace BIS
         public Unit unit;
         public Vehicle shipOnly;      // space pilots who never left their seat
         public float respawn;
+        public float diedAt = -999;        // spawn timers count from here
+        public float mateUsedUntil;        // someone spawned on this participant: not again until then
         public int points, kills, deaths, captures;
         public readonly int[] classKills = new int[5];
         public readonly bool[] awards = new bool[5];

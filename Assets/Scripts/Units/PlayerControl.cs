@@ -63,12 +63,16 @@ namespace BIS
             {
                 string why = b.MateBlocked(selMate.unit);
                 if (why != null) { Say($"Can't spawn on {selMate.name}: {why}"); Sfx.Play2D("deny"); return; }
+                float mw = b.WaitForMate(b.player, selMate);
+                if (mw > 0) { Say($"Squad reinforcements in {Mathf.CeilToInt(mw)} s"); Sfx.Play2D("deny"); return; }
                 u = b.SpawnOnMate(b.player, selClass, hero, selMate.unit);
             }
             else
             {
                 if (b.land && selPost >= 0 && selPost < b.posts.Count && b.posts[selPost].owner == b.player.team && !b.posts[selPost].SpawnableFor(b.player.team))
                 { Say($"{b.posts[selPost].postName} is under attack - pick another post or a squadmate"); Sfx.Play2D("deny"); return; }
+                float pw = b.land && selPost >= 0 && selPost < b.posts.Count ? b.WaitFor(b.player, b.posts[selPost]) : b.WaitFor(b.player, null);
+                if (pw > 0) { Say($"Reinforcements in {Mathf.CeilToInt(pw)} s"); Sfx.Play2D("deny"); return; }
                 u = b.Spawn(b.player, b.space ? selFoot : selClass, hero, selPost, b.space && !spaceOnFoot && hero == null ? selShip : -1);
             }
             if (u == null) { Say("Can't spawn there"); Sfx.Play2D("deny"); return; }
