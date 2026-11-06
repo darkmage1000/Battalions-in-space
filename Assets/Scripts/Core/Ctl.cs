@@ -173,7 +173,7 @@ namespace BIS
             AimAssist = PlayerPrefs.GetInt("aimassist", Application.isMobilePlatform ? 3 : 2);
             BotsPerTeam = PlayerPrefs.GetInt("bots", 16);
             Difficulty = PlayerPrefs.GetInt("diff", 1);
-            Quality = PlayerPrefs.GetInt("quality", Application.isMobilePlatform ? 0 : 2);
+            Quality = PlayerPrefs.GetInt("quality", Application.isMobilePlatform ? 1 : 2);   // phones: Medium (a 2026 phone held 60 fps with 32 animated soldiers)
             Apply();
         }
 
