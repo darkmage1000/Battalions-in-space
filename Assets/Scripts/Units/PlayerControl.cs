@@ -25,6 +25,9 @@ namespace BIS
         Vector2 stick;
         public string notice; public float noticeT;
         public Unit Me => b.player.unit != null && b.player.unit.Alive ? b.player.unit : null;
+        public static Vector3 testMove;     // self-tests only: added to the stick (world space)
+        public static bool testFire;
+        public static float testThrottle;
         Camera Cam => Game.Cam;
 
         public void Init(Battle battle)
@@ -65,6 +68,7 @@ namespace BIS
                 if (why != null) { Say($"Can't spawn on {selMate.name}: {why}"); Sfx.Play2D("deny"); return; }
                 float mw = b.WaitForMate(b.player, selMate);
                 if (mw > 0) { Say($"Squad reinforcements in {Mathf.CeilToInt(mw)} s"); Sfx.Play2D("deny"); return; }
+                if (Net.Session.IsClient) { Net.NetClient.RequestSpawn(selClass, -1, b.people.IndexOf(selMate), -1, false, 0, asHero, selHero); return; }
                 u = b.SpawnOnMate(b.player, selClass, hero, selMate.unit);
             }
             else
@@ -73,9 +77,19 @@ namespace BIS
                 { Say($"{b.posts[selPost].postName} is under attack - pick another post or a squadmate"); Sfx.Play2D("deny"); return; }
                 float pw = b.land && selPost >= 0 && selPost < b.posts.Count ? b.WaitFor(b.player, b.posts[selPost]) : b.WaitFor(b.player, null);
                 if (pw > 0) { Say($"Reinforcements in {Mathf.CeilToInt(pw)} s"); Sfx.Play2D("deny"); return; }
+                if (Net.Session.IsClient) { Net.NetClient.RequestSpawn(selClass, selPost, -1, selShip, spaceOnFoot, selFoot, asHero, selHero); return; }
                 u = b.Spawn(b.player, b.space ? selFoot : selClass, hero, selPost, b.space && !spaceOnFoot && hero == null ? selShip : -1);
             }
             if (u == null) { Say("Can't spawn there"); Sfx.Play2D("deny"); return; }
+            OnSpawned(u);
+        }
+
+        /// <summary>Wi-Fi guest: the host put us in a vehicle - point the camera its way.</summary>
+        public void OnEntered(Vehicle v) { flyCamRot = v.transform.rotation; camYaw = v.transform.eulerAngles.y; }
+
+        /// <summary>Into the battle with a fresh soldier (straight after spawning; on a Wi-Fi guest when the host's answer arrives).</summary>
+        public void OnSpawned(Unit u)
+        {
             mode = Mode.Play;
             camYaw = u.InVehicle ? u.vehicle.transform.eulerAngles.y : u.transform.eulerAngles.y; camPitch = 8;
             if (u.InVehicle) flyCamRot = u.vehicle.transform.rotation;
@@ -87,16 +101,11 @@ namespace BIS
         {
             var me = Me;
             if (me == null || !b.player.heroReady) return;
-            if (me.InVehicle) me.vehicle.Leave(me, true);
-            Vector3 p = me.transform.position; float yaw = me.yaw;
-            var hero = b.FreeHero(b.player.team, selHero);
-            b.units.Remove(me);
-            Destroy(me.gameObject);
-            b.player.heroReady = false; b.player.pointsAtHero = b.player.points; b.player.everHero = true;
-            b.SpawnUnit(b.player, null, hero, p + Vector3.up * 0.2f, yaw);
-            Fx.Burst(p + Vector3.up, hero.glow, 40, 6, 0.5f, 0.8f);
+            if (Net.Session.IsClient) { Net.NetClient.RequestHero(selHero); return; }
+            var u = b.MakeHeroNow(b.player, selHero);
+            if (u == null) return;
             Sfx.Play2D("award", 1f);
-            HUD.Message($"You are {hero.name}!", hero.glow, 3);
+            HUD.Message($"You are {u.hero.name}!", u.hero.glow, 3);
         }
 
         // ── per frame (called by Battle before units tick) ───────────────
@@ -110,11 +119,21 @@ namespace BIS
                 else
                 {
                     paused = !paused;
-                    Time.timeScale = paused ? 0 : 1;
+                    Time.timeScale = paused && !Net.Session.Active ? 0 : 1;     // a Wi-Fi game keeps going for the other player
                     Ctl.LockCursor(!paused && mode == Mode.Play);
                 }
             }
-            if (paused) return;
+            if (paused)
+            {
+                // the battle runs on in a Wi-Fi game: stand still and hold fire while the menu is up
+                var pm = Me;
+                if (Net.Session.Active && pm != null)
+                {
+                    if (pm.InVehicle) { if (pm.seat <= 1) pm.vehicle.seatIn[pm.seat] = new VehicleInput { aimPoint = pm.vehicle.seatIn[pm.seat].aimPoint }; }
+                    else pm.input = new UnitInput { aimPoint = pm.input.aimPoint };
+                }
+                return;
+            }
             showScore = Ctl.ScoreHeld;
             if (Ctl.Map && mode == Mode.Play) showMap = !showMap;
 
@@ -146,7 +165,7 @@ namespace BIS
             // bounds
             Vector3 p = me.InVehicle ? me.vehicle.transform.position : me.transform.position;
             bool outside = b.land ? !b.land.InBounds(p) : b.space && p.magnitude > b.space.boundRadius;
-            if (outside) { outOfBounds += dt; if (outOfBounds > 10) { if (me.InVehicle) me.vehicle.TakeDamage(new DamageInfo { amount = 99999, team = -1 }); else me.Kill("deserted"); } }
+            if (outside) { outOfBounds += dt; if (outOfBounds > 10 && !Net.Session.IsClient) { if (me.InVehicle) me.vehicle.TakeDamage(new DamageInfo { amount = 99999, team = -1 }); else me.Kill("deserted"); } }
             else outOfBounds = 0;
 
             if (me.InVehicle) VehicleTick(me, dt);
@@ -186,6 +205,8 @@ namespace BIS
             };
             aimPoint = Magnet(CameraAim(me.transform));
             inp.aimPoint = aimPoint;
+            if (testMove.sqrMagnitude > 0) inp.move = Vector3.ClampMagnitude(inp.move + testMove, 1);
+            if (testFire) { inp.fire = true; inp.fireDown = Time.frameCount % 10 == 0; }
             if (AutoFireOk(wd)) { inp.fire = true; inp.fireDown = true; }
             // the player's own shots are tighter than the bots', tighter still on touch and when assist has a target
             me.spreadMul = (Settings.Current == Settings.InputDevice.Touch ? 0.45f : Settings.Current == Settings.InputDevice.Gamepad ? 0.55f : 0.7f) * (assistOnTarget ? 0.6f : 1f);
@@ -200,7 +221,8 @@ namespace BIS
                     float d = (v.transform.position - me.transform.position).sqrMagnitude - v.radius * v.radius;
                     if (d < bd) { bd = d; best = v; }
                 }
-                if (best)
+                if (best && Net.Session.IsClient) Net.NetClient.RequestEnter(best);
+                else if (best)
                 {
                     best.Enter(me);
                     flyCamRot = best.transform.rotation; camYaw = best.transform.eulerAngles.y;
@@ -310,11 +332,13 @@ namespace BIS
             var v = me.vehicle;
             if (Ctl.Use)
             {
+                if (v.CanExitHere() && Net.Session.IsClient) { Net.NetClient.RequestExit(); return; }
                 if (v.CanExitHere()) { v.Leave(me, true); camYaw = v.transform.eulerAngles.y; return; }
                 Say(v.IsShip ? "Fly into a hangar and slow down to get out" : "Land first to get out");
                 Sfx.Play2D("deny");
             }
-            if (Ctl.Swap && v.riders.Length > 1)
+            if (Ctl.Swap && v.riders.Length > 1 && Net.Session.IsClient) { if (v.FreeSeat() >= 0) Net.NetClient.RequestSeat(); else { Say("No free seat", 1.5f); Sfx.Play2D("deny"); } }
+            else if (Ctl.Swap && v.riders.Length > 1)
             {
                 if (v.SwitchSeat(me)) { Say(me.seat == 0 ? "Driver seat" : me.seat == 1 && v.gunnerT ? "Gunner seat" : "Passenger seat", 1.5f); Sfx.Play2D("ui"); camYaw = v.transform.eulerAngles.y; }
                 else { Say("No free seat", 1.5f); Sfx.Play2D("deny"); }
@@ -326,7 +350,7 @@ namespace BIS
                 Vector2 rawStick = new Vector2(Mathf.Clamp(Ctl.Look.x * k, -1, 1), Mathf.Clamp(Ctl.Look.y * k, -1, 1));
                 stick = Vector2.Lerp(stick, rawStick, Mathf.Clamp01(dt * 18));
                 inp.steer = stick;
-                inp.throttle = Ctl.Throttle;
+                inp.throttle = Ctl.Throttle + testThrottle;
                 inp.roll = Ctl.Roll;
                 inp.climb = v.IsShip ? 0 : Ctl.Climb;
                 inp.boost = Ctl.Boost;
@@ -408,7 +432,7 @@ namespace BIS
                 inp.fire = Ctl.Fire || (gw != null && AutoFireOk(gw.def)); inp.alt = Ctl.Alt;
                 if (me.seat == 0)
                 {
-                    inp.move = Vector3.ClampMagnitude(fwd * Ctl.Move.y + right * Ctl.Move.x, 1);
+                    inp.move = Vector3.ClampMagnitude(fwd * Ctl.Move.y + right * Ctl.Move.x + testMove, 1);
                     inp.boost = Ctl.Boost;
                     v.seatIn[0] = inp;
                 }

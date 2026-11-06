@@ -39,6 +39,8 @@ namespace BIS
         public string name;
         public int team;
         public bool isPlayer;
+        public bool remote;           // the other human in a Wi-Fi game (host: the guest; guest: the host)
+        public bool Human => isPlayer || remote;
         public Unit unit;
         public Vehicle shipOnly;      // space pilots who never left their seat
         public float respawn;
@@ -82,6 +84,7 @@ namespace BIS
             public Material mat;
             public bool player;
             public bool visual;          // a hitscan tracer: drawn only, the hit has already happened
+            public bool fake;            // a Wi-Fi guest's copy of the host's shot: effects only, no damage
         }
         readonly List<Shot> live = new List<Shot>(512);
         readonly Stack<Shot> pool = new Stack<Shot>();
@@ -117,9 +120,21 @@ namespace BIS
         public static void Fire(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul = 1, Transform homing = null, Vector3 inheritVel = default)
         {
             if (!I) return;
-            if (w.Hitscan && homing == null) { I.FireHitscan(w, from, dir.normalized, team, owner, ignore, col, dmgMul); return; }
-            Shot s = I.pool.Count > 0 ? I.pool.Pop() : new Shot();
-            s.visual = false;
+            Net.NetHost.OnShot(w, from, dir, team, ignore, col, homing, inheritVel);
+            I.Launch(w, from, dir, team, owner, ignore, col, dmgMul, homing, inheritVel, false);
+        }
+
+        /// <summary>A Wi-Fi guest draws the host's shot: it flies and sparks / explodes where it lands, but hurts nothing.</summary>
+        public static void FireVisual(WeaponDef w, Vector3 from, Vector3 dir, int team, Transform ignore, Color col, Transform homing, Vector3 inheritVel)
+        {
+            if (I) I.Launch(w, from, dir, team, null, ignore, col, 1, homing, inheritVel, true);
+        }
+
+        void Launch(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul, Transform homing, Vector3 inheritVel, bool fake)
+        {
+            if (w.Hitscan && homing == null) { FireHitscan(w, from, dir.normalized, team, owner, ignore, col, dmgMul, fake); return; }
+            Shot s = pool.Count > 0 ? pool.Pop() : new Shot();
+            s.visual = false; s.fake = fake;
             s.pos = s.prev = from; s.vel = dir.normalized * w.speed + inheritVel; s.life = w.range / Mathf.Max(1, w.speed) * 1.1f + 0.2f;
             s.w = w; s.team = team; s.owner = owner; s.ignore = ignore; s.col = col; s.dmgMul = dmgMul; s.homing = homing;
             s.grenade = w.kind == WKind.Grenade; s.trailTimer = 0;
@@ -128,15 +143,15 @@ namespace BIS
             if (s.grenade) s.life = 4f;
             float boost = w.kind == WKind.Rocket || w.kind == WKind.Missile || w.kind == WKind.Torpedo ? 1.6f : 1.3f;
             s.mat = Mats.Additive(new Color(col.r * boost, col.g * boost, col.b * boost, 1));
-            I.live.Add(s);
+            live.Add(s);
         }
 
         /// <summary>Instant hit along the line, then a tracer that races to the hit point (or full range on a miss).</summary>
-        void FireHitscan(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul)
+        void FireHitscan(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul, bool fake)
         {
             Shot s = pool.Count > 0 ? pool.Pop() : new Shot();
             s.w = w; s.team = team; s.owner = owner; s.ignore = ignore; s.col = col; s.dmgMul = dmgMul; s.homing = null;
-            s.grenade = false; s.trailTimer = 0; s.visual = false;
+            s.grenade = false; s.trailTimer = 0; s.visual = false; s.fake = fake;
             s.player = owner && owner.part != null && owner.part.isPlayer;
             if (s.player) PlayerShots++;
             s.pos = s.prev = from;
@@ -276,6 +291,16 @@ namespace BIS
             var w = s.w;
             DebugImpact?.Invoke(p, c, w, s.owner);
             IDamageable target = c ? c.GetComponentInParent<IDamageable>() : null;
+            if (s.fake)
+            {
+                if (w.splash > 0 || s.grenade) Fx.Explosion(p, Mathf.Clamp((s.grenade ? 6f : w.splash) / 4.5f, 0.6f, 2.2f), w.kind == WKind.Torpedo);
+                else
+                {
+                    Fx.Sparks(p, normal, s.col, w.kind == WKind.Sniper ? 12 : 5);
+                    if (target == null && c != null) Sfx.Play("hit", p, 0.18f, Random.Range(0.8f, 1.2f), 40);
+                }
+                return;
+            }
 
             // a Bladesworn hero blocking deflects bolts back
             if (target is Unit u && u.Blocking && w.kind != WKind.Rocket && w.kind != WKind.Missile && w.kind != WKind.Torpedo && !s.grenade && u.team != s.team)
@@ -305,7 +330,9 @@ namespace BIS
                 float r = s.grenade ? 6f : w.splash;
                 float sd = (s.grenade ? 260f : w.splashDmg) * s.dmgMul;
                 Splash(p, r, sd, w, s.owner, s.team, target);
+                Fx.netMute = true;     // the guest draws this explosion from its own copy of the shot
                 Fx.Explosion(p, Mathf.Clamp(r / 4.5f, 0.6f, 2.2f), w.kind == WKind.Torpedo);
+                Fx.netMute = false;
             }
             else
             {
@@ -316,13 +343,17 @@ namespace BIS
 
         public static void Deal(IDamageable target, float amount, WeaponDef w, Unit attacker, int team, Vector3 p, Vector3 dir, DmgType type)
         {
-            if (target == null || !target.Alive || target.Team == team) return;
+            if (target == null || !target.Alive || target.Team == team || Net.Session.IsClient) return;
             float mul = target.IsVehicle ? (w != null ? w.vsVehicle : 1) : (w != null ? w.vsInfantry : 1);
             if (attacker && attacker.DamageBoost > 1) mul *= attacker.DamageBoost;
             var b = Battle.I;
             if (b != null) mul *= b.DamageMul(team);
             target.TakeDamage(new DamageInfo { amount = amount * mul, type = type, attacker = attacker, team = team, point = p, dir = dir, weapon = w });
-            if (attacker && attacker.part != null && attacker.part.isPlayer && type != DmgType.Environment) HUD.HitMarker(!target.Alive, target.IsVehicle);
+            if (attacker && attacker.part != null && type != DmgType.Environment)
+            {
+                if (attacker.part.isPlayer) HUD.HitMarker(!target.Alive, target.IsVehicle);
+                else if (attacker.part.remote) Net.NetHost.Hit(!target.Alive, target.IsVehicle);
+            }
         }
 
         public static void Splash(Vector3 p, float r, float dmg, WeaponDef w, Unit attacker, int team, IDamageable skip)

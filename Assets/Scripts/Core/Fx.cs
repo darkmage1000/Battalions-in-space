@@ -53,8 +53,11 @@ namespace BIS
             ps.Emit(ep, 1);
         }
 
+        public static bool netMute;      // set around effects a Wi-Fi guest makes for itself
+
         public static void Burst(Vector3 pos, Color col, int count, float speed, float size, float life)
         {
+            if (!netMute) Net.NetHost.OnBurst(pos, col, count, speed, size, life);
             for (int i = 0; i < count; i++)
                 Emit(pos, Random.insideUnitSphere * speed, col, size * Random.Range(0.6f, 1.3f), life * Random.Range(0.6f, 1.2f));
         }
@@ -71,6 +74,7 @@ namespace BIS
 
         public static void Explosion(Vector3 pos, float scale = 1, bool big = false)
         {
+            if (!netMute) Net.NetHost.OnExplosion(pos, scale, big);
             Color fire = new Color(1f, 0.6f, 0.2f, 1), core = new Color(1f, 0.9f, 0.6f, 1);
             Emit(pos, Vector3.zero, core, 4 * scale, 0.25f);
             for (int i = 0; i < 14 * scale + 6; i++)

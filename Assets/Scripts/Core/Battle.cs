@@ -37,6 +37,14 @@ namespace BIS
         public bool[] lockedClasses;          // conquest: player's side cannot use these roles yet
         public string title;
         public bool conquest;
+        // Wi-Fi play
+        public bool netHost, netClient;
+        public int remoteTeam;                 // host: the guest's side
+        public string remoteName;
+        public string[] rosterNames;           // guest: everyone in the host's order
+        public int[] rosterTeams;
+        public bool[] rosterHuman;
+        public int localIndex;                 // guest: which of them is us
     }
 
     public class BattleResult
@@ -140,21 +148,37 @@ namespace BIS
             }
 
             // people
-            player = new Participant { name = "You", team = cfg.playerTeam, isPlayer = true, aimSkill = 1 };
-            people.Add(player);
-            for (int t = 0; t < 2; t++)
+            if (cfg.netClient)
             {
-                var f = Faction(t);
-                int n = cfg.botsPerTeam - (t == cfg.playerTeam ? 1 : 0);
-                for (int i = 0; i < n; i++)
+                // a Wi-Fi guest: the same people in the same order as the host (so squads come out the same); only the names matter here
+                for (int i = 0; i < cfg.rosterNames.Length; i++)
                 {
-                    float skill = Mathf.Clamp01(0.25f + cfg.difficulty * 0.3f + Random.Range(-0.15f, 0.15f));
-                    var p = new Participant { name = f.names[i % f.names.Length], team = t, aimSkill = skill, respawn = Random.Range(0.2f, 3.5f) };
-                    p.classChoice = PickBotClass(t);
+                    var p = new Participant { name = cfg.rosterNames[i], team = cfg.rosterTeams[i], aimSkill = 1, respawn = 999 };
+                    if (i == cfg.localIndex) { p.isPlayer = true; player = p; }
+                    else p.remote = cfg.rosterHuman[i];
                     people.Add(p);
                 }
             }
-            foreach (var p in people) p.heroCost = BonusOf(p.team) == Bonus.VeteranOfficers ? 18 : p.isPlayer ? 36 : 52;
+            else
+            {
+                player = new Participant { name = cfg.netHost ? Net.Session.localName : "You", team = cfg.playerTeam, isPlayer = true, aimSkill = 1 };
+                people.Add(player);
+                if (cfg.netHost) people.Add(new Participant { name = cfg.remoteName, team = cfg.remoteTeam, remote = true, aimSkill = 1, respawn = 999 });
+                for (int t = 0; t < 2; t++)
+                {
+                    var f = Faction(t);
+                    int humans = 0; foreach (var hp in people) if (hp.team == t) humans++;
+                    int n = cfg.botsPerTeam - humans;
+                    for (int i = 0; i < n; i++)
+                    {
+                        float skill = Mathf.Clamp01(0.25f + cfg.difficulty * 0.3f + Random.Range(-0.15f, 0.15f));
+                        var p = new Participant { name = f.names[i % f.names.Length], team = t, aimSkill = skill, respawn = Random.Range(0.2f, 3.5f) };
+                        p.classChoice = PickBotClass(t);
+                        people.Add(p);
+                    }
+                }
+            }
+            foreach (var p in people) p.heroCost = BonusOf(p.team) == Bonus.VeteranOfficers ? 18 : p.Human ? 36 : 52;
             if (land) commander = new Commander(this);
 
             var pc = gameObject.AddComponent<PlayerControl>();
@@ -163,6 +187,33 @@ namespace BIS
             gameObject.AddComponent<HUD>().battle = this;
             Sfx.PlayMusic(true);
             Ctl.LockCursor(false);
+            if (cfg.netHost) Net.NetHost.Begin(this);
+        }
+
+        /// <summary>The other human in a Wi-Fi game (null otherwise).</summary>
+        public Participant RemoteHuman { get { foreach (var p in people) if (p.remote) return p; return null; } }
+
+        int nextNetId;
+        public Vehicle VehicleById(int id)
+        {
+            foreach (var v in vehicles) if (v && v.netId == id) return v;
+            return null;
+        }
+
+        /// <summary>Swap a living soldier for a hero on the spot (the H key / HERO button).</summary>
+        public Unit MakeHeroNow(Participant p, int prefer)
+        {
+            var me = p.unit;
+            if (me == null || !me.Alive || !p.heroReady || me.IsHero) return null;
+            if (me.InVehicle) me.vehicle.Leave(me, true);
+            Vector3 pos = me.transform.position; float yaw = me.yaw;
+            var hero = FreeHero(p.team, prefer);
+            units.Remove(me);
+            Destroy(me.gameObject);
+            p.heroReady = false; p.pointsAtHero = p.points; p.everHero = true;
+            var u = SpawnUnit(p, null, hero, pos + Vector3.up * 0.2f, yaw);
+            Fx.Burst(pos + Vector3.up, hero.glow, 40, 6, 0.5f, 0.8f);
+            return u;
         }
 
         static Color TeamTint(FactionDef f, int t)
@@ -204,10 +255,12 @@ namespace BIS
             go.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, yaw, 0));
             var u = go.AddComponent<Unit>();
             u.Init(this, p, Faction(p.team), c, h);
-            if (!p.isPlayer) { u.bot = new BotBrain(u); }
+            if (!p.isPlayer && !p.remote && !cfg.netClient) { u.bot = new BotBrain(u); }
+            if (p.remote && cfg.netHost) u.net = Unit.NetMode.HostRemote;
             p.unit = u;
             p.lifeKills = 0;
             units.Add(u);
+            Net.NetHost.OnUnitSpawned(u);
             return u;
         }
 
@@ -217,6 +270,8 @@ namespace BIS
             v.transform.SetParent(root, true);
             if (BonusOf(1 - team) == Bonus.Saboteurs) v.hp *= 0.75f;
             vehicles.Add(v);
+            v.netId = ++nextNetId;
+            Net.NetHost.OnVehicleSpawned(v);
             return v;
         }
 
@@ -393,13 +448,15 @@ namespace BIS
             control.Tick(dt);
             if (dt <= 0) return;
             time += dt;
+            if (cfg.netClient) { ClientFrame(dt); return; }
+            if (cfg.netHost) Net.NetHost.PreUnits(dt);
 
             if (!over)
             {
                 // bot respawns
                 foreach (var p in people)
                 {
-                    if (p.isPlayer || (p.unit && p.unit.Alive)) continue;
+                    if (p.isPlayer || p.remote || (p.unit && p.unit.Alive)) continue;
                     p.respawn -= dt;
                     if (p.respawn > 0) continue;
                     if (!CanSpawn(p.team)) { p.respawn = 2; continue; }
@@ -435,12 +492,67 @@ namespace BIS
                 overTime += dt;
                 if (space) foreach (var s in space.ships) s.Tick(dt);
             }
+            if (cfg.netHost) Net.NetHost.PostFrame(dt);
+        }
+
+        /// <summary>A Wi-Fi guest's frame: messages in, draw the host's world, our own soldier / vehicle moves here, input out.</summary>
+        void ClientFrame(float dt)
+        {
+            Net.NetClient.PreUnits(dt);
+            if (Net.NetClient.Current != this) return;
+            for (int i = units.Count - 1; i >= 0; i--)
+            {
+                var u = units[i];
+                if (!u) { units.RemoveAt(i); continue; }
+                if (over && u.Alive) { u.input.fire = false; u.input.move = Vector3.zero; }
+                u.Tick(dt);
+            }
+            for (int i = vehicles.Count - 1; i >= 0; i--)
+            {
+                var v = vehicles[i];
+                if (!v) { vehicles.RemoveAt(i); continue; }
+                v.Tick(dt);
+            }
+            Physics.SyncTransforms();
+            teams[0].posts = teams[1].posts = 0;
+            foreach (var p in posts) { p.VisualTick(dt); if (p.owner >= 0) teams[p.owner].posts++; }
+            if (space) foreach (var s in space.ships) s.Tick(dt);
+            if (over) overTime += dt;
+            Net.NetClient.PostFrame(dt);
+        }
+
+        /// <summary>Guest: a post changed hands in the host's battle - say so from our side.</summary>
+        public void NetPostChanged(CommandPost cp, int was, int now)
+        {
+            if (now >= 0)
+            {
+                bool mine = now == player.team;
+                HUD.Message($"{(mine ? "We captured" : "The enemy captured")} {cp.postName}", mine ? new Color(0.5f, 1f, 0.6f) : new Color(1f, 0.5f, 0.4f), 3);
+                Sfx.Play2D(mine ? "capture" : "lost", 0.7f);
+            }
+            else if (was == player.team) { HUD.Message($"We lost {cp.postName}", new Color(1f, 0.5f, 0.4f), 3); Sfx.Play2D("lost", 0.6f); }
+        }
+
+        /// <summary>Guest: the host's battle ended.</summary>
+        public void NetEnd(int winner, string reason, string mvp)
+        {
+            if (over) return;
+            over = true;
+            result = new BattleResult { winner = winner, reason = reason, mvp = mvp };
+            result.playerPoints = player.points; result.playerKills = player.kills; result.playerDeaths = player.deaths; result.playerCaptures = player.captures;
+            result.awards.AddRange(player.awardsEarned);
+            result.ticketsLeft[0] = Mathf.Max(0, Mathf.RoundToInt(teams[0].tickets));
+            result.ticketsLeft[1] = Mathf.Max(0, Mathf.RoundToInt(teams[1].tickets));
+            Sfx.Play2D(winner == player.team ? "award" : "lost", 1f);
+            Sfx.PlayMusic(false);
         }
 
         void BotSpawn(Participant p)
         {
             HeroDef hero = null;
-            if (p.heroReady && !TeamHasHero(p.team) && !(player.team == p.team && (player.heroReady || (player.unit && player.unit.IsHero))))
+            var rh = RemoteHuman;
+            if (p.heroReady && !TeamHasHero(p.team) && !(player.team == p.team && (player.heroReady || (player.unit && player.unit.IsHero)))
+                && !(rh != null && rh.team == p.team && (rh.heroReady || (rh.unit && rh.unit.IsHero))))
                 hero = FreeHero(p.team);
             if (space)
             {
@@ -500,7 +612,14 @@ namespace BIS
             rideT -= dt;
             if (rideT > 0) return;
             rideT = 1f;
-            var me = player.unit;
+            FillVehicleOf(player);
+            var rh = RemoteHuman;
+            if (rh != null) FillVehicleOf(rh);
+        }
+
+        void FillVehicleOf(Participant human)
+        {
+            var me = human.unit;
             if (!land || !me || !me.Alive || !me.InVehicle || me.seat != 0) return;
             var v = me.vehicle;
             if (v.speed > 4 || v.def.IsShip) return;
@@ -508,7 +627,7 @@ namespace BIS
             int free = 0; foreach (var r in v.riders) if (!r) free++;
             foreach (var u in units) if (u && u.Alive && u.bot != null && u.bot.WantsRide && u.team == me.team) free--;
             if (free <= 0) return;
-            var sq = commander != null ? commander.SquadOf(player) : null;
+            var sq = commander != null ? commander.SquadOf(human) : null;
             var cands = new List<(Unit u, float score)>();
             foreach (var u in units)
             {
@@ -562,6 +681,7 @@ namespace BIS
                     {
                         p.heroReady = true;
                         if (p.isPlayer) { HUD.Message("HERO UNLOCKED - press H to become a hero now, or pick one at your next spawn", Color.yellow, 5); Sfx.Play2D("award", 0.8f); }
+                        else if (p.remote) Net.NetHost.Text("HERO UNLOCKED - tap HERO to become a hero now, or pick one at your next spawn", Color.yellow, 5, "award");
                     }
             }
 
@@ -618,10 +738,16 @@ namespace BIS
                             Sfx.Play2D("award", 0.9f);
                             player.awardsEarned.Add(killer.cls.awardName);
                         }
+                        else if (kp.remote)
+                        {
+                            Net.NetHost.Text($"AWARD: {killer.cls.awardName} for the {killer.cls.name} - yours for the rest of the battle", new Color(1f, 0.85f, 0.3f), 6, "award");
+                            Net.NetHost.Award(killer.cls.awardName);
+                        }
                     }
                 }
             }
             HUD.Kill(kname, killer ? killer.team : -1, victim.displayName, victim.team, w != null ? w.name : killer == null ? "accident" : "");
+            Net.NetHost.OnKill(kname, killer ? killer.team : -1, victim.displayName, victim.team, w != null ? w.name : killer == null ? "accident" : "");
             if (vp.isPlayer) control.OnPlayerDied(killer);
         }
 
@@ -629,6 +755,7 @@ namespace BIS
         {
             if (killer && killer.team != v.Team) AddPoints(killer.part, v.IsShip ? 2 : 3);
             if (killer && killer.part.isPlayer) HUD.Message($"Destroyed {v.def.name}", Color.white, 2);
+            else if (killer && killer.part.remote) Net.NetHost.Text($"Destroyed {v.def.name}", Color.white, 2, null);
             vehicles.Remove(v);
         }
 
@@ -659,12 +786,23 @@ namespace BIS
             HUD.Message($"{(mine ? "Our" : "Enemy")} {s.sysName} destroyed!{(s.critical ? " (critical system)" : "")}", mine ? new Color(1f, 0.5f, 0.4f) : new Color(0.5f, 1f, 0.6f), 4);
             Sfx.Play2D(mine ? "alarm" : "capture", 0.7f);
             if (s.kind == SysKind.Shield) HUD.Message(mine ? "Our shields are down!" : "Enemy shields are down - hit their systems!", Color.yellow, 4);
+            var rh = RemoteHuman;
+            if (rh != null)
+            {
+                bool theirs = ship.team == rh.team;
+                Net.NetHost.Text($"{(theirs ? "Our" : "Enemy")} {s.sysName} destroyed!{(s.critical ? " (critical system)" : "")}", theirs ? new Color(1f, 0.5f, 0.4f) : new Color(0.5f, 1f, 0.6f), 4, theirs ? "alarm" : "capture");
+                if (s.kind == SysKind.Shield) Net.NetHost.Text(theirs ? "Our shields are down!" : "Enemy shields are down - hit their systems!", Color.yellow, 4, null);
+            }
         }
 
         public void AlertShip(CapitalShip ship, Subsystem s)
         {
-            if (ship.team != player.team || shipAlertT > 0) return;
-            if (s.interior) { shipAlertT = 20; HUD.Message($"Intruders! Our {s.sysName} is under attack", new Color(1f, 0.6f, 0.3f), 4); Sfx.Play2D("alarm", 0.6f); }
+            if (shipAlertT > 0 || !s.interior) return;
+            bool told = false;
+            if (ship.team == player.team) { HUD.Message($"Intruders! Our {s.sysName} is under attack", new Color(1f, 0.6f, 0.3f), 4); Sfx.Play2D("alarm", 0.6f); told = true; }
+            var rh = RemoteHuman;
+            if (rh != null && ship.team == rh.team) { Net.NetHost.Text($"Intruders! Our {s.sysName} is under attack", new Color(1f, 0.6f, 0.3f), 4, "alarm"); told = true; }
+            if (told) shipAlertT = 20;
         }
 
         public void OnCapitalDestroyed(CapitalShip ship, Unit by)
@@ -692,6 +830,7 @@ namespace BIS
             if (p == null) return;
             p.points += n;
             if (p.isPlayer) HUD.Points(n);
+            else if (p.remote) Net.NetHost.Points(n);
         }
 
         // ── end ──────────────────────────────────────────────────────────
@@ -710,6 +849,7 @@ namespace BIS
             bool won = winner == player.team;
             Sfx.Play2D(won ? "award" : "lost", 1f);
             Sfx.PlayMusic(false);
+            Net.NetHost.OnEnd(winner, reason, result.mvp);
         }
 
         public void Finish(bool quit)

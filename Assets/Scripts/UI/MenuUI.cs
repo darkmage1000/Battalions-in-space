@@ -5,7 +5,7 @@ namespace BIS
     /// <summary>Main menu, Quickplay setup, options, how-to-play and credits. Conquest screens live in ConquestUI.</summary>
     public partial class MenuUI : MonoBehaviour
     {
-        public enum Screen { None, Main, Quick, Options, Help, Credits, ConquestSetup, Conquest }
+        public enum Screen { None, Main, Quick, Options, Help, Credits, ConquestSetup, Conquest, Multi }
         public Screen screen = Screen.Main;
         // quickplay choices
         int qpMode;         // 0 land, 1 space
@@ -31,6 +31,7 @@ namespace BIS
                 case Screen.Credits: Credits(); break;
                 case Screen.ConquestSetup: ConquestSetup(); break;
                 case Screen.Conquest: ConquestMapScreen(); break;
+                case Screen.Multi: Multi(); break;
             }
         }
 
@@ -45,8 +46,9 @@ namespace BIS
         {
             Title("Command posts, starfighters, capital ships and a galaxy to conquer");
             float w = UI.W;
-            float x = w / 2 - 230, y = 260;
-            if (UI.Button(new Rect(x, y, 460, 70), "QUICKPLAY", false, true, 30)) screen = Screen.Quick; y += 86;
+            float x = w / 2 - 230, y = 240;
+            if (UI.Button(new Rect(x, y, 460, 70), "QUICKPLAY", false, true, 30)) { qpHost = false; screen = Screen.Quick; } y += 86;
+            if (UI.Button(new Rect(x, y, 460, 70), "PLAY ON WI-FI", false, true, 30)) { Net.Session.status = ""; screen = Screen.Multi; } y += 86;
             if (UI.Button(new Rect(x, y, 460, 70), "GALACTIC CONQUEST", false, true, 30)) screen = Screen.ConquestSetup; y += 86;
             if (UI.Button(new Rect(x, y, 460, 70), "OPTIONS", false, true, 30)) screen = Screen.Options; y += 86;
             if (UI.Button(new Rect(x, y, 460, 70), "HOW TO PLAY", false, true, 30)) screen = Screen.Help; y += 86;
@@ -58,7 +60,7 @@ namespace BIS
 
         void Quick()
         {
-            Title("Quickplay");
+            Title(qpHost ? "Host a Wi-Fi game" : "Quickplay");
             float w = UI.W;
             Rect r = new Rect(w / 2 - 820, 190, 1640, 800);
             UI.Box(r);
@@ -102,7 +104,9 @@ namespace BIS
             int d = Mathf.RoundToInt(UI.Slider(new Rect(sx, y, 520, 40), "Bot skill", Settings.Difficulty, 0, 2, Settings.DifficultyNames[Settings.Difficulty]));
             if (d != Settings.Difficulty) { Settings.Difficulty = d; Settings.Save(); }
             y += 70;
+            if (qpHost) HostPanel(sx, y);
             var mf = Factions.All[qpFaction];
+            if (!qpHost) {
             UI.Text(new Rect(sx, y, 500, 30), mf.name, 24, mf.bolt); y += 32;
             UI.Text(new Rect(sx, y, 500, 80), mf.blurb, 18, UI.Dim, TextAnchor.UpperLeft, true); y += 70;
             string cls = ""; foreach (var c in mf.classes) cls += c.name + ", ";
@@ -112,9 +116,15 @@ namespace BIS
             UI.Text(new Rect(sx, y, 500, 60), $"Vehicles: {mf.tank.name}, {mf.transport.name}, {mf.air.name}", 17, Color.white, TextAnchor.UpperLeft, true); y += 52;
             string ss = ""; foreach (var s in mf.ships) ss += s.name + ", ";
             UI.Text(new Rect(sx, y, 500, 60), "Starships: " + ss.TrimEnd(',', ' '), 17, Color.white, TextAnchor.UpperLeft, true);
+            }
 
-            if (UI.Button(new Rect(r.x + 30, r.yMax + 20, 260, 64), "BACK", false, true, 26)) screen = Screen.Main;
-            if (UI.Button(new Rect(r.xMax - 360, r.yMax + 20, 360, 64), "START BATTLE", false, true, 30, new Color(0.2f, 0.6f, 0.3f)) || Ctl.Confirm)
+            bool guestHere = Net.Session.peerName != null && Net.Session.link != null && !Net.Session.link.Closed;
+            if (UI.Button(new Rect(r.x + 30, r.yMax + 20, 260, 64), "BACK", false, true, 26))
+            {
+                if (qpHost) { Net.Session.Shutdown(); qpHost = false; screen = Screen.Multi; }
+                else screen = Screen.Main;
+            }
+            if (UI.Button(new Rect(r.xMax - 360, r.yMax + 20, 360, 64), "START BATTLE", false, !qpHost || guestHere, 30, new Color(0.2f, 0.6f, 0.3f)) || (Ctl.Confirm && (!qpHost || guestHere)))
             {
                 var cfg = new BattleConfig
                 {
@@ -124,11 +134,13 @@ namespace BIS
                     factions = new[] { qpFaction, qpEnemy },
                     playerTeam = 0, tickets = qpTickets, botsPerTeam = qpBots, difficulty = Settings.Difficulty,
                 };
+                bool hosted = qpHost;
+                if (hosted) HostConfig(cfg);
                 Game.I.StartBattle(cfg, r2 =>
                 {
                     lastResult = r2.quit ? null : (r2.winner == 0 ? "Last battle: VICTORY - " : "Last battle: defeat - ") + r2.reason;
                     Game.I.ShowMenu();
-                    screen = Screen.Quick;
+                    if (hosted) { Net.NetHost.Reset(); ShowMulti(); } else screen = Screen.Quick;
                 });
             }
         }

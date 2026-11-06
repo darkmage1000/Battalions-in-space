@@ -22,6 +22,7 @@ namespace BIS
             int qi = args.IndexOf("-quality");
             if (qi >= 0 && qi + 1 < args.Count && int.TryParse(args[qi + 1], out int q)) { Settings.Quality = Mathf.Clamp(q, 0, 2); Settings.Apply(); }
             if (args.Contains("-autotest")) new GameObject("AutoTest").AddComponent<AutoTest>();
+            else NetTest.MaybeStart(args);
         }
 
         static string AndroidExtra(string key)

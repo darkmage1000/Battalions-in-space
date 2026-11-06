@@ -78,6 +78,17 @@ namespace BIS
         AudioSource jetLoop;
         public float rallyUntil, frenzyUntil, cloakUntil, dashUntil, invulnUntil;
         public float spreadMul = 1;   // set by PlayerControl for the player
+
+        // -- Wi-Fi play --
+        // HostRemote: on the host, the guest's soldier (its position comes from the guest's device, everything else runs here).
+        // Replica: on the guest, a copy of a host soldier drawn from snapshots. GuestLocal: on the guest, your own soldier
+        // (moves here so it feels instant; shots, damage and abilities happen on the host).
+        public enum NetMode : byte { None, HostRemote, Replica, GuestLocal }
+        public NetMode net;
+        public Vector3 netPos, netVel;
+        public float netYaw, netPitch, netAge;
+        public bool netGrounded;
+        public int netFlags;          // 1 crouch, 2 grounded, 4 cloaked, 8 blocking, 16 in vehicle, 32 second weapon, 64 firing
         Vector3 dashDir;
         readonly HashSet<IDamageable> dashHit = new HashSet<IDamageable>();
 
@@ -130,6 +141,8 @@ namespace BIS
         // ── damage ───────────────────────────────────────────────────────
         public void TakeDamage(DamageInfo d)
         {
+            if (net == NetMode.Replica) return;
+            if (net == NetMode.GuestLocal) { if (d.team == -1 && Alive) Net.NetClient.SelfDamage(null, d.amount, d.type); return; }
             if (!Alive || Time.time < invulnUntil) return;
             if (InVehicle && d.type != DmgType.Environment) return;
             float amt = d.amount;
@@ -139,6 +152,7 @@ namespace BIS
             if (d.attacker) lastAttacker = d.attacker;
             if (bot != null) bot.OnHurt(d);
             if (part.isPlayer) HUD.Hurt(d.point);
+            else if (part.remote) Net.NetHost.Hurt(d.point);
             if (Cloaked) cloakUntil = Time.time + 0.4f;
             if (hp <= 0) Die(d.attacker, d.dir, d.weapon);
         }
@@ -149,13 +163,14 @@ namespace BIS
             hp = Mathf.Min(maxHp, hp + amt);
         }
 
-        public void Push(Vector3 v) { push += v; }
+        public void Push(Vector3 v) { if (net == NetMode.HostRemote) Net.NetHost.Push(v); push += v; }
 
         public void Die(Unit killer, Vector3 dir, WeaponDef w = null)
         {
-            if (dead) return;
+            if (dead || net == NetMode.Replica || net == NetMode.GuestLocal) return;
             dead = true; hp = 0;
             if (InVehicle) vehicle.Leave(this, false);
+            Net.NetHost.OnUnitDied(this, killer, dir);
             cc.enabled = false;
             rig.Die(dir.sqrMagnitude > 0.01f ? dir : -transform.forward);
             rig.SetCloak(false);
@@ -172,13 +187,14 @@ namespace BIS
         public void Tick(float dt)
         {
             if (dead) { rig.Animate(0, true, false, 0, dt, false); return; }
+            if (net == NetMode.Replica) { ReplicaTick(dt); return; }
             if (InVehicle) { vehicle.PlaceRider(this); return; }
 
             for (int i = 0; i < 2; i++) weapons[i]?.Tick(dt);
             abilityCd -= dt;
 
             // hero health slowly drains (kills restore it)
-            if (hero != null)
+            if (hero != null && net != NetMode.GuestLocal)
             {
                 heroDrainAcc += dt;
                 if (heroDrainAcc > 1) { heroDrainAcc -= 1; hp -= maxHp * 0.006f; if (hp <= 0) { Die(null, Vector3.zero); return; } }
@@ -189,16 +205,17 @@ namespace BIS
             if (aimDir.sqrMagnitude < 0.01f) aimDir = transform.forward;
             aimDir.Normalize();
             float targetYaw = Mathf.Atan2(aimDir.x, aimDir.z) * Mathf.Rad2Deg;
-            yaw = Mathf.MoveTowardsAngle(yaw, targetYaw, (part.isPlayer ? 2000 : 540) * dt);
+            yaw = Mathf.MoveTowardsAngle(yaw, targetYaw, (part.Human ? 2000 : 540) * dt);
             pitch = -Mathf.Asin(Mathf.Clamp(aimDir.y, -1, 1)) * Mathf.Rad2Deg;
             transform.rotation = Quaternion.Euler(0, yaw, 0);
 
-            Move(dt);
-            Actions(dt);
+            if (net == NetMode.HostRemote) NetFollow(dt); else Move(dt);
+            if (net != NetMode.GuestLocal) Actions(dt);
+            else if (Weapon.def.kind == WKind.Beam) BeamVisual((netFlags & 64) != 0, (input.aimPoint - MuzzlePos).normalized);
 
             // rig + cloak
             Vector3 hv = new Vector3(velocity.x, 0, velocity.z);
-            bool bladeSwing = swingTimer > 0;
+            bool bladeSwing = swingTimer > 0 || (net == NetMode.GuestLocal && (netFlags & 64) != 0 && Weapon.def.kind == WKind.Blade);
             rig.Animate(hv.magnitude, grounded, crouching, pitch, dt, bladeSwing);
             swingTimer = 0;
             rig.SetCloak(Cloaked);
@@ -279,10 +296,104 @@ namespace BIS
         }
 
         bool InSpaceZeroG() => false;
-        float lavaT;
+        float lavaT, netAirT;
+
+        /// <summary>Host: the guest's soldier goes where the guest's device says; dashes and space falls are judged here.</summary>
+        void NetFollow(float dt)
+        {
+            Vector3 p = transform.position;
+            p = (netPos - p).sqrMagnitude > 9 ? netPos : Vector3.Lerp(p, netPos, 1 - Mathf.Exp(-25 * dt));
+            transform.position = p;
+            velocity = netVel;
+            grounded = netGrounded;
+            crouching = (netFlags & 1) != 0 && hero == null && grounded;
+            push = Vector3.zero;
+            if (Time.time < dashUntil) DashDamage();
+            if (battle.space != null)
+            {
+                bool jetting = cls != null && cls.special == Special.Jetpack && !grounded && velocity.y > 0;
+                netAirT = grounded || jetting ? 0 : netAirT + dt;
+                if (netAirT > 4f) Kill("lost in space");
+            }
+        }
+
+        /// <summary>Guest: a host soldier, drawn where the snapshots say (a little ahead by its speed so it doesn't lag).</summary>
+        void ReplicaTick(float dt)
+        {
+            netAge += dt;
+            if ((netFlags & 4) != 0) cloakUntil = Time.time + 0.2f;
+            if (InVehicle) { vehicle.PlaceRider(this); return; }
+            Vector3 target = netPos + netVel * Mathf.Min(netAge, 0.25f);
+            Vector3 p = transform.position;
+            p = (target - p).sqrMagnitude > 25 ? target : Vector3.Lerp(p, target, 1 - Mathf.Exp(-14 * dt));
+            transform.position = p;
+            yaw = Mathf.LerpAngle(yaw, netYaw, 1 - Mathf.Exp(-16 * dt));
+            pitch = Mathf.Lerp(pitch, netPitch, 1 - Mathf.Exp(-16 * dt));
+            transform.rotation = Quaternion.Euler(0, yaw, 0);
+            velocity = netVel; grounded = netGrounded; crouching = (netFlags & 1) != 0;
+            int want = (netFlags & 32) != 0 && weapons[1] != null ? 1 : 0;
+            if (want != cur) { cur = want; rig.SetWeapon(Weapon.def); }
+            bool firing = (netFlags & 64) != 0;
+            rig.Animate(new Vector3(velocity.x, 0, velocity.z).magnitude, grounded, crouching, pitch, dt, firing && Weapon.def.kind == WKind.Blade);
+            rig.SetCloak(Cloaked);
+            if (Weapon.def.kind == WKind.Beam) BeamVisual(firing, Quaternion.Euler(pitch, yaw, 0) * Vector3.forward);
+            if (cls != null && cls.special == Special.Jetpack && !grounded && velocity.y > 1 && Random.value < 0.6f)
+                Fx.Emit(transform.position + Vector3.up * 0.9f - transform.forward * 0.3f, Vector3.down * 6 + Random.insideUnitSphere, new Color(1f, 0.6f, 0.25f, 1), 0.35f, 0.25f);
+        }
+
+        /// <summary>Guest: the host says this soldier fell.</summary>
+        public void ReplicaDie(Vector3 dir)
+        {
+            if (dead) return;
+            dead = true; hp = 0;
+            if (vehicle) { for (int i = 0; i < vehicle.riders.Length; i++) if (vehicle.riders[i] == this) vehicle.riders[i] = null; vehicle = null; }
+            cc.enabled = false;
+            rig.SetVisible(true);
+            rig.Die(dir.sqrMagnitude > 0.01f ? dir : -transform.forward);
+            rig.SetCloak(false);
+            if (beamLine) beamLine.enabled = false;
+            if (jetLoop) jetLoop.volume = 0;
+            Destroy(gameObject, 6f);
+        }
+
+        /// <summary>Guest: start a Bladesworn dash on your own soldier at once (the host runs its damage).</summary>
+        public void LocalDash()
+        {
+            dashDir = new Vector3(input.aimPoint.x - transform.position.x, 0, input.aimPoint.z - transform.position.z).normalized;
+            if (dashDir.sqrMagnitude < 0.1f) dashDir = transform.forward;
+            dashUntil = Time.time + 0.45f;
+            abilityCd = AbilityCooldown;
+            Sfx.Play("blade", transform.position, 0.8f, 0.7f);
+        }
+
+        void BeamVisual(bool on, Vector3 dir)
+        {
+            if (!beamLine)
+            {
+                beamLine = new GameObject("beam").AddComponent<LineRenderer>();
+                beamLine.transform.SetParent(transform, false);
+                beamLine.material = Mats.Additive(hero != null ? hero.glow : Color.cyan);
+                beamLine.widthMultiplier = 0.18f; beamLine.positionCount = 8; beamLine.useWorldSpace = true;
+            }
+            beamLine.enabled = on;
+            if (!on) return;
+            Vector3 from = MuzzlePos;
+            Vector3 end = from + dir * Weapon.def.range;
+            if (Physics.Raycast(from, dir, out var hit, Weapon.def.range, Layers.ShotMask, QueryTriggerInteraction.Ignore) && !hit.collider.transform.IsChildOf(transform)) end = hit.point;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 q = Vector3.Lerp(from, end, i / 7f);
+                if (i > 0 && i < 7) q += Random.insideUnitSphere * 0.35f;
+                beamLine.SetPosition(i, q);
+            }
+            beamSound -= Time.deltaTime;
+            if (beamSound <= 0) { beamSound = 0.25f; Sfx.Play("zap", from, 0.4f, Random.Range(0.9f, 1.2f)); }
+        }
 
         public void Kill(string why)
         {
+            if (net == NetMode.GuestLocal) { if (Alive) Net.NetClient.SelfDamage(null, 99999, DmgType.Environment); return; }
+            if (net == NetMode.Replica) return;
             if (!Alive) return;
             hp = 0;
             Die(null, Vector3.down);

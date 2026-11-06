@@ -48,8 +48,9 @@ namespace BIS
 
         public void Tick(float dt)
         {
-            if (destroyed)
+            if (destroyed || Net.Session.IsClient)
             {
+                if (!destroyed) return;
                 smokeT -= dt;
                 if (smokeT <= 0 && Game.Cam && (Game.Cam.transform.position - transform.position).sqrMagnitude < 900 * 900)
                 {
@@ -488,12 +489,24 @@ namespace BIS
         }
 
         // ── runtime ──────────────────────────────────────────────────────
+        /// <summary>Wi-Fi guest: hull and system health from the host's snapshot.</summary>
+        public void NetSet(float hullHp, float[] sys)
+        {
+            hull = hullHp;
+            if (hull <= 0) destroyed = true;
+            for (int i = 0; i < sys.Length && i < systems.Count; i++)
+            {
+                systems[i].hp = sys[i];
+                if (sys[i] <= 0 && !systems[i].destroyed) systems[i].destroyed = true;
+            }
+        }
+
         public void Tick(float dt)
         {
             foreach (var s in systems) s.Tick(dt);
             if (shieldBubble) shieldBubble.enabled = ShieldUp && !destroyed;
             if (hangarField) hangarField.enabled = HangarOpen;
-            if (destroyed || battle.over) return;
+            if (destroyed || battle.over || Net.Session.IsClient) return;
             // ambient broadsides at the enemy capital ship
             broadside -= dt;
             if (broadside <= 0)

@@ -54,6 +54,7 @@ namespace BIS.EditorTools
             PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.Standalone, "com.battalions.space");
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel26;
+            PlayerSettings.Android.forceInternetPermission = true;     // Wi-Fi games
             AddPadAxes();
             AssetDatabase.SaveAssets();
             if (verbose) Debug.Log("[Battalions] project setup done");

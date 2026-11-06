@@ -123,7 +123,7 @@ namespace BIS
                 {
                     if (!e || !e.Alive || e.team == u.team || e.InVehicle || e.Cloaked) continue;
                     float d2 = (e.transform.position - eye).sqrMagnitude;
-                    if (d2 < bd) cand.Add((e, d2 * (preferVehicles ? 2.5f : 1f) * (e.part.isPlayer ? 0.8f : 1f)));
+                    if (d2 < bd) cand.Add((e, d2 * (preferVehicles ? 2.5f : 1f) * (e.part.Human ? 0.8f : 1f)));
                 }
             foreach (var v in b.vehicles)
             {
@@ -558,7 +558,7 @@ namespace BIS
         void Passenger(Vehicle v, float dt)
         {
             // riding with the player: stay aboard while they drive; get out when they stop at a post that isn't ours
-            if (v.Driver && v.Driver.part.isPlayer)
+            if (v.Driver && v.Driver.part.Human)
             {
                 if (v.speed < 1.5f && v.CanExitHere())
                     foreach (var cp in b.posts)

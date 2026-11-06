@@ -666,7 +666,7 @@ namespace BIS
                         if (pick) UI.Text(new Rect(q.x - 80, q.y + 6, 160, 18), u.part.name, 13, SquadColor, TextAnchor.UpperCenter);
                         if (pick && Event.current.type == EventType.MouseDown && new Rect(q.x - 14, q.y - 14, 28, 28).Contains(Event.current.mousePosition)) { pc.selMate = u.part; Sfx.Play2D("ui"); }
                     }
-                    else UI.Dot(q, u.part.isPlayer ? 5 : 2.5f, u.part.isPlayer ? Color.white : b.TeamColor(u.team));
+                    else UI.Dot(q, u.part.Human ? 5 : 2.5f, u.part.isPlayer ? Color.white : u.part.remote ? UI.Gold : b.TeamColor(u.team));
                 }
             if (mySquad != null && mySquad.target) { var q = M(mySquad.target.Pos); UI.Frame(new Rect(q.x - 22, q.y - 22, 44, 44), SquadColor, 2); }
             foreach (var v in b.vehicles)
@@ -737,7 +737,7 @@ namespace BIS
                 {
                     if (y > r.yMax - 24) break;
                     string cls = p.unit && p.unit.Alive ? p.unit.ClassName : "-";
-                    Color col = p.isPlayer ? UI.Gold : Color.white;
+                    Color col = p.isPlayer ? UI.Gold : p.remote ? new Color(1f, 0.95f, 0.65f) : Color.white;
                     UI.Text(new Rect(x, y, 260, 24), p.name, 17, col);
                     UI.Text(new Rect(x + 260, y, 240, 24), cls, 17, p.unit && p.unit.IsHero ? UI.Gold : UI.Dim);
                     UI.Text(new Rect(x + 500, y, 50, 24), p.points.ToString(), 17, col, TextAnchor.UpperRight);

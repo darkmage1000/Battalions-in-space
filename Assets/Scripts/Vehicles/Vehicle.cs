@@ -43,6 +43,15 @@ namespace BIS
         public CapitalShip parkedIn;
         public Transform forcedLock;
         public float spawnTime;
+        // Wi-Fi play: netId names the vehicle in messages. On the guest a vehicle is a Replica (drawn from snapshots) or,
+        // while the guest drives it, GuestLocal (driven here, its weapons fire on the host). On the host a vehicle the
+        // guest drives takes its pose from the guest (Driver.net == HostRemote).
+        public int netId;
+        public Unit.NetMode net;
+        public Vector3 netPos, netVel;
+        public Quaternion netRot = Quaternion.identity, netTurret = Quaternion.identity, netGun = Quaternion.identity, netGunner = Quaternion.identity;
+        public float netSpeed, netThrottle, netAge;
+        public bool netLanded;
         float lavaT;   // the player's target lock (missiles home on it)
         bool destroyed;
         int muzzleIdx, gunnerIdx;
@@ -174,6 +183,7 @@ namespace BIS
             u.rig.SetVisible(true);
             u.velocity = def.IsShip ? Vector3.zero : vel * 0.3f;
             IdleTime = 0;
+            if (u.net == Unit.NetMode.HostRemote) Net.NetHost.Warp(u);
         }
 
         public void PlaceRider(Unit u)
@@ -191,6 +201,8 @@ namespace BIS
 
         public void TakeDamage(DamageInfo d)
         {
+            if (net == Unit.NetMode.Replica) return;
+            if (net == Unit.NetMode.GuestLocal) { if (d.team == -1 && Alive) Net.NetClient.SelfDamage(this, d.amount, d.type); return; }
             if (!Alive) return;
             DebugDamage?.Invoke(this, d);
             if (LaunchShield && d.type != DmgType.Crush) d.amount *= 0.2f;
@@ -199,7 +211,7 @@ namespace BIS
             hp -= d.amount;
             lastHurt = Time.time;
             if (d.attacker) lastAttacker = d.attacker;
-            foreach (var r in riders) if (r && r.part.isPlayer) HUD.Hurt(d.point);
+            foreach (var r in riders) if (r && r.part.isPlayer) HUD.Hurt(d.point); else if (r && r.part.remote) Net.NetHost.Hurt(d.point);
             if (Driver && Driver.bot != null) Driver.bot.OnVehicleHurt(d);
             if (hp <= 0) Explode(d.attacker);
         }
@@ -216,10 +228,13 @@ namespace BIS
         {
             if (destroyed) return;
             destroyed = true; hp = 0;
+            Fx.netMute = true;      // the guest blows up its own copy when it hears VehGone
             Fx.Explosion(transform.position, def.IsShip ? 1.6f : 2.2f, true);
+            Fx.netMute = false;
             for (int i = 0; i < 6; i++) Fx.Emit(transform.position, Random.onUnitSphere * 14, new Color(1, 0.6f, 0.2f, 1), 0.6f, 1.2f);
             foreach (var r in (Unit[])riders.Clone())
                 if (r) { Leave(r, false); r.vehicle = null; r.cc.enabled = false; r.Die(killer, Vector3.up); }
+            Net.NetHost.OnVehicleGone(this, true);
             battle.OnVehicleDestroyed(this, killer);
             if (hum) hum.volume = 0;
             Destroy(gameObject, 0.05f);
@@ -229,6 +244,7 @@ namespace BIS
         {
             if (destroyed || !IsEmpty) return;
             destroyed = true;
+            Net.NetHost.OnVehicleGone(this, false);
             Fx.Smoke(transform.position, 3, 2);
             Destroy(gameObject);
         }
@@ -239,6 +255,7 @@ namespace BIS
         public void Tick(float dt)
         {
             if (!Alive) return;
+            if (net == Unit.NetMode.Replica) { ReplicaTick(dt); Effects(dt); return; }
             prim?.Tick(dt); sec?.Tick(dt); gunW?.Tick(dt);
             if (wasLanded && !landed) launchTime = Time.time;
             wasLanded = landed;
@@ -247,17 +264,29 @@ namespace BIS
 
             var drv = Driver;
             var din = drv ? seatIn[0] : default;
-            if (def.IsGround) MoveGround(din, drv != null, dt);
+            if (drv && drv.net == Unit.NetMode.HostRemote) NetPose(dt);
+            else if (def.IsGround) MoveGround(din, drv != null, dt);
             else MoveFlyer(din, drv != null, dt);
 
-            if (drv) DriverWeapons(din, dt);
-            if (gunnerT && riders.Length > 1)
+            if (net == Unit.NetMode.GuestLocal)
             {
-                var g = riders[1];
-                if (g) GunnerWeapons(seatIn[1], g, dt);
+                // the host fires our guns; the gunner's turret is wherever the host says
+                if (gunnerT) gunnerT.localRotation = Quaternion.Slerp(gunnerT.localRotation, netGunner, 1 - Mathf.Exp(-15 * dt));
             }
+            else
+            {
+                if (drv) DriverWeapons(din, dt);
+                if (gunnerT && riders.Length > 1)
+                {
+                    var g = riders[1];
+                    if (g) GunnerWeapons(seatIn[1], g, dt);
+                }
+            }
+            Effects(dt);
+        }
 
-            // effects
+        void Effects(float dt)
+        {
             float sp = def.IsGround ? vel.magnitude : speed;
             if (hum) { hum.volume = Mathf.MoveTowards(hum.volume, (IsEmpty && (landed || def.IsGround) ? 0.05f : 0.35f) * Sfx.Gain(def.IsShip ? "fighter" : "engine"), dt); hum.pitch = 0.8f + sp / Mathf.Max(1, def.speed) * 0.6f; }
             fxT -= dt;
@@ -366,9 +395,14 @@ namespace BIS
                 }
             }
 
+            Crush(hv, pos, dt);
+        }
+
+        void Crush(Vector3 hv, Vector3 pos, float dt)
+        {
             // crush infantry
             float spd = hv.magnitude;
-            if (spd > 6)
+            if (spd > 6 && !Net.Session.IsClient)
                 foreach (var u in battle.units)
                 {
                     if (!u || !u.Alive || u.InVehicle || u.team == Team) continue;
@@ -378,6 +412,117 @@ namespace BIS
                         u.Push(hv.normalized * 8 + Vector3.up * 3);
                     }
                 }
+        }
+
+        // -- Wi-Fi play ----------------------------------------------------
+        /// <summary>Host: the guest drives this vehicle on their device; take its pose (the guns still fire here).</summary>
+        void NetPose(float dt)
+        {
+            Vector3 p = transform.position;
+            p = (netPos - p).sqrMagnitude > 64 ? netPos : Vector3.Lerp(p, netPos, 1 - Mathf.Exp(-25 * dt));
+            transform.SetPositionAndRotation(p, Quaternion.Slerp(transform.rotation, netRot, 1 - Mathf.Exp(-25 * dt)));
+            if (turret) turret.localRotation = netTurret;
+            if (gun) gun.localRotation = netGun;
+            vel = netVel; speed = netSpeed; throttle = netThrottle;
+            if (landed && !netLanded && parkedIn) parkedIn = null;
+            landed = netLanded;
+            yaw = transform.eulerAngles.y;
+            if (def.IsGround) Crush(new Vector3(vel.x, 0, vel.z), transform.position, dt);
+        }
+
+        /// <summary>Guest: a host vehicle, drawn where the snapshots say.</summary>
+        void ReplicaTick(float dt)
+        {
+            netAge += dt;
+            Vector3 target = netPos + netVel * Mathf.Min(netAge, 0.3f);
+            Vector3 p = transform.position;
+            float k = 1 - Mathf.Exp(-12 * dt);
+            p = (target - p).sqrMagnitude > 400 ? target : Vector3.Lerp(p, target, k);
+            transform.SetPositionAndRotation(p, Quaternion.Slerp(transform.rotation, netRot, k));
+            float kt = 1 - Mathf.Exp(-15 * dt);
+            if (turret) turret.localRotation = Quaternion.Slerp(turret.localRotation, netTurret, kt);
+            if (gun) gun.localRotation = Quaternion.Slerp(gun.localRotation, netGun, kt);
+            if (gunnerT)
+            {
+                var g = riders.Length > 1 ? riders[1] : null;
+                if (g && g.net == Unit.NetMode.GuestLocal)
+                {
+                    // we are the gunner: turn the turret to our crosshair here, at once
+                    Vector3 to = seatIn[1].aimPoint - gunnerT.position;
+                    if (to.sqrMagnitude > 0.1f)
+                    {
+                        Vector3 local = body.InverseTransformDirection(to);
+                        if (def.kind == VKind.Bomber && local.z > 0) local.z = -local.z * 0.2f - 0.1f;
+                        gunnerT.localRotation = Quaternion.RotateTowards(gunnerT.localRotation, Quaternion.LookRotation(local), 720 * dt);
+                    }
+                }
+                else gunnerT.localRotation = Quaternion.Slerp(gunnerT.localRotation, netGunner, kt);
+            }
+            vel = netVel; speed = netSpeed; throttle = netThrottle; landed = netLanded;
+        }
+
+        /// <summary>Guest: we took the driver's seat - carry on from where the host had it.</summary>
+        public void BeginLocal()
+        {
+            if (net == Unit.NetMode.GuestLocal) return;
+            net = Unit.NetMode.GuestLocal;
+            transform.SetPositionAndRotation(netPos, netRot);
+            vel = netVel; speed = netSpeed; throttle = netThrottle; landed = netLanded;
+            yaw = transform.eulerAngles.y;
+            tilt = Quaternion.FromToRotation(Vector3.up, transform.up);
+            wasLanded = landed;
+        }
+
+        /// <summary>Guest: who sits where, from the host's snapshot.</summary>
+        public void NetSetRiders(Unit[] now)
+        {
+            for (int i = 0; i < riders.Length; i++)
+            {
+                var old = riders[i];
+                if (old && System.Array.IndexOf(now, old) < 0) ReleaseRider(old);
+            }
+            for (int i = 0; i < riders.Length && i < now.Length; i++)
+            {
+                var u = now[i];
+                riders[i] = u;
+                if (!u) continue;
+                if (u.vehicle && u.vehicle != this) u.vehicle.ReleaseRider(u);
+                bool fresh = u.vehicle != this;
+                u.vehicle = this; u.seat = i;
+                if (fresh)
+                {
+                    u.cc.enabled = false; u.rig.SetVisible(false); u.velocity = Vector3.zero;
+                    if (u.part.isPlayer) Sfx.Play2D("ui2", 0.7f);
+                }
+            }
+            bool mine = riders.Length > 0 && riders[0] && riders[0].net == Unit.NetMode.GuestLocal;
+            if (mine) BeginLocal(); else net = Unit.NetMode.Replica;
+        }
+
+        /// <summary>Guest: a rider got out (the host placed them).</summary>
+        public void ReleaseRider(Unit u)
+        {
+            for (int i = 0; i < riders.Length; i++) if (riders[i] == u) riders[i] = null;
+            if (u.vehicle == this) u.vehicle = null;
+            if (!u.dead) { u.cc.enabled = true; u.rig.SetVisible(true); }
+            if (net == Unit.NetMode.GuestLocal && (riders.Length == 0 || !riders[0] || riders[0].net != Unit.NetMode.GuestLocal)) net = Unit.NetMode.Replica;
+        }
+
+        /// <summary>Guest: the host's vehicle exploded or was recalled.</summary>
+        public void NetGone(bool exploded)
+        {
+            if (destroyed) return;
+            destroyed = true; hp = 0;
+            foreach (var r in (Unit[])riders.Clone()) if (r) ReleaseRider(r);
+            if (exploded)
+            {
+                Fx.Explosion(transform.position, def.IsShip ? 1.6f : 2.2f, true);
+                for (int i = 0; i < 6; i++) Fx.Emit(transform.position, Random.onUnitSphere * 14, new Color(1, 0.6f, 0.2f, 1), 0.6f, 1.2f);
+            }
+            else Fx.Smoke(transform.position, 3, 2);
+            if (hum) hum.volume = 0;
+            battle.vehicles.Remove(this);
+            Destroy(gameObject, 0.05f);
         }
 
         void MoveFlyer(VehicleInput inp, bool driven, float dt)

@@ -79,11 +79,25 @@ namespace BIS
             beamR.sharedMaterial = Mats.Additive(new Color(c.r, c.g, c.b, 0.18f), false);
         }
 
-        public void Tick(float dt)
+        /// <summary>Wi-Fi guest: the post's state from the host's snapshot.</summary>
+        public void NetSet(int own, int cap, float prog, int p0, int p1)
+        {
+            int was = owner;
+            owner = own; capTeam = cap; progress = prog;
+            present[0] = p0; present[1] = p1; contested = p0 > 0 && p1 > 0;
+            if (was != own) { Recolor(); battle.NetPostChanged(this, was, own); }
+        }
+
+        public void VisualTick(float dt)
         {
             spin += dt * 60;
             holo.localRotation = Quaternion.Euler(0, spin, 0) * Quaternion.Euler(90, 0, 0);
             holo.localPosition = new Vector3(0, 6.2f + Mathf.Sin(spin * 0.05f) * 0.25f, 0);
+        }
+
+        public void Tick(float dt)
+        {
+            VisualTick(dt);
 
             present[0] = present[1] = 0;
             float r2 = radius * radius;
