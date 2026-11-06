@@ -81,6 +81,7 @@ namespace BIS
             public float trailTimer;
             public Material mat;
             public bool player;
+            public bool visual;          // a hitscan tracer: drawn only, the hit has already happened
         }
         readonly List<Shot> live = new List<Shot>(512);
         readonly Stack<Shot> pool = new Stack<Shot>();
@@ -116,7 +117,9 @@ namespace BIS
         public static void Fire(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul = 1, Transform homing = null, Vector3 inheritVel = default)
         {
             if (!I) return;
+            if (w.Hitscan && homing == null) { I.FireHitscan(w, from, dir.normalized, team, owner, ignore, col, dmgMul); return; }
             Shot s = I.pool.Count > 0 ? I.pool.Pop() : new Shot();
+            s.visual = false;
             s.pos = s.prev = from; s.vel = dir.normalized * w.speed + inheritVel; s.life = w.range / Mathf.Max(1, w.speed) * 1.1f + 0.2f;
             s.w = w; s.team = team; s.owner = owner; s.ignore = ignore; s.col = col; s.dmgMul = dmgMul; s.homing = homing;
             s.grenade = w.kind == WKind.Grenade; s.trailTimer = 0;
@@ -128,6 +131,49 @@ namespace BIS
             I.live.Add(s);
         }
 
+        /// <summary>Instant hit along the line, then a tracer that races to the hit point (or full range on a miss).</summary>
+        void FireHitscan(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul)
+        {
+            Shot s = pool.Count > 0 ? pool.Pop() : new Shot();
+            s.w = w; s.team = team; s.owner = owner; s.ignore = ignore; s.col = col; s.dmgMul = dmgMul; s.homing = null;
+            s.grenade = false; s.trailTimer = 0; s.visual = false;
+            s.player = owner && owner.part != null && owner.part.isPlayer;
+            if (s.player) PlayerShots++;
+            s.pos = s.prev = from;
+            s.vel = dir * Mathf.Max(w.speed, 1);
+            float dist = w.range;
+            float boost = 1.3f;
+            s.mat = Mats.Additive(new Color(col.r * boost, col.g * boost, col.b * boost, 1));
+            if (Cast(s, from, dir, w.range, out var hit))
+            {
+                dist = hit.distance;
+                s.prev = from;
+                Impact(s, hit.point, hit.normal, hit.collider);
+            }
+            else if (s.player) NoteMiss(from, from + dir * w.range, team);
+            // the tracer: fast enough to read as instant, slow enough to see where it went
+            float tracer = Mathf.Max(w.speed * 3f, 420f);
+            s.vel = dir * tracer;
+            s.pos = from + dir * Mathf.Min(w.boltLen, dist);
+            s.life = Mathf.Max(0.02f, (dist - Mathf.Min(w.boltLen, dist)) / tracer);
+            s.visual = true;
+            live.Add(s);
+        }
+
+        static void NoteMiss(Vector3 a, Vector3 p, int team)
+        {
+            if (Battle.I == null) return;
+            float best = 6;
+            foreach (var eu in Battle.I.units)
+                if (eu && eu.Alive && eu.team != team && !eu.InVehicle)
+                {
+                    Vector3 ab = p - a; float t = Mathf.Clamp01(Vector3.Dot(eu.AimPoint - a, ab) / Mathf.Max(0.0001f, ab.sqrMagnitude));
+                    float d = Vector3.Distance(a + ab * t, eu.AimPoint);
+                    if (d < best) best = d;
+                }
+            if (best < 6) { LastMissBy = best; LastMissTime = Time.time; }
+        }
+
         void Update()
         {
             float dt = Time.deltaTime;
@@ -137,7 +183,11 @@ namespace BIS
                 var s = live[i];
                 s.life -= dt;
                 bool done = s.life <= 0;
-                if (!done)
+                if (s.visual)
+                {
+                    if (!done) { s.prev = s.pos; s.pos += s.vel * dt; }
+                }
+                else if (!done)
                 {
                     // homing / guided
                     if (s.homing && (s.w.lockOn || s.w.guided))
@@ -183,7 +233,7 @@ namespace BIS
                         }
                     }
                 }
-                else if (s.grenade || s.w.splash > 0) Impact(s, s.pos, Vector3.up, null);
+                else if (!s.visual && (s.grenade || s.w.splash > 0)) Impact(s, s.pos, Vector3.up, null);
 
                 if (done) { live.RemoveAt(i); pool.Push(s); continue; }
 
@@ -241,19 +291,7 @@ namespace BIS
             if (s.player && !s.grenade)
             {
                 if (target != null && target.Alive && target.Team != s.team) PlayerHits++;
-                else if (Battle.I != null)
-                {
-                    // how far did the miss pass from the nearest enemy?
-                    float best = 6;
-                    foreach (var eu in Battle.I.units)
-                        if (eu && eu.Alive && eu.team != s.team && !eu.InVehicle)
-                        {
-                            Vector3 a = s.prev, b2 = p; Vector3 ab = b2 - a; float t = Mathf.Clamp01(Vector3.Dot(eu.AimPoint - a, ab) / Mathf.Max(0.0001f, ab.sqrMagnitude));
-                            float d = Vector3.Distance(a + ab * t, eu.AimPoint);
-                            if (d < best) best = d;
-                        }
-                    if (best < 6) { LastMissBy = best; LastMissTime = Time.time; }
-                }
+                else NoteMiss(s.prev, p, s.team);      // how far did the miss pass from the nearest enemy?
             }
             if (target != null && target.Alive && target.Team != s.team)
             {

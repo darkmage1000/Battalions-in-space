@@ -291,7 +291,7 @@ namespace BIS
                     if (objective && pushing && toObj.magnitude > objective.radius * 0.8f) move += Toward(pos, flanking ? squad.via : objective.Pos) * (d > 15 ? 0.9f : 0.5f);
                     else if (objective && toObj.magnitude > 30 && d > 35) move += Toward(pos, objective.Pos) * 0.6f;
                 }
-                float boltSpeed = u.Weapon.def.speed;
+                float boltSpeed = u.Weapon.def.Hitscan ? 1e6f : u.Weapon.def.speed;
                 Vector3 lead = Lead(u.Eye, target, boltSpeed);
                 aimPoint = AimWithError(u.Eye, lead, dt);
                 // shoot in bursts, and do not cook the weapon

@@ -173,7 +173,7 @@ namespace BIS
             float zoomMul = me.input.aim && me.Weapon.def.zoomFov > 0 ? 0.25f : me.input.aim ? 0.6f : 1f;
             var wd = me.Weapon.def;
             float range = wd.EffectiveRange;
-            float lookMul = Assist(me.transform, range, wd.kind == WKind.Beam || wd.kind == WKind.Blade ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade);
+            float lookMul = Assist(me.transform, range, wd.kind == WKind.Beam || wd.kind == WKind.Blade || wd.Hitscan ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade);
             camYaw += Ctl.Look.x * zoomMul * lookMul;
             camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * zoomMul * lookMul, -70, 75);
             Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;

@@ -58,6 +58,8 @@ namespace BIS
             }
         }
         public bool UsesHeat => heatPerShot > 0;
+        /// <summary>Hand-held guns hit instantly along the aim line (a tracer is drawn); rockets, grenades and vehicle weapons fly.</summary>
+        public bool Hitscan => kind == WKind.Rifle || kind == WKind.Repeater || kind == WKind.Pistol || kind == WKind.Shotgun || kind == WKind.Sniper;
         public float Dps => damage * pellets * rate;
     }
 
