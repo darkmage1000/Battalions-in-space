@@ -96,12 +96,15 @@ namespace BIS
                 UI.Dot(StickOrigin + Vector2.ClampMagnitude(StickPos - StickOrigin, 110), 46, new Color(1, 1, 1, 0.3f));
             }
             else UI.Text(new Rect(40, UI.H - 200, 400, 30), "drag here to move", 18, new Color(1, 1, 1, 0.35f));
+            var me = Battle.I != null ? Battle.I.control.Me : null;
+            bool piloting = me != null && me.InVehicle && me.vehicle.Flies && me.seat == 0;
             foreach (var b in Buttons)
             {
                 var r = ScreenRect(b);
+                string label = b.id == "ability" && piloting ? (Battle.I.control.flyLock != null ? "FREE" : "LOCK") : b.label;
                 UI.Fill(r, b.held ? new Color(1f, 0.8f, 0.3f, 0.45f) : new Color(0.1f, 0.12f, 0.16f, 0.45f));
                 UI.Frame(r, new Color(1, 1, 1, 0.35f), 2);
-                UI.Text(r, b.label, b.id == "fire" ? 30 : 20, Color.white, TextAnchor.MiddleCenter);
+                UI.Text(r, label, b.id == "fire" ? 30 : 20, Color.white, TextAnchor.MiddleCenter);
             }
         }
     }

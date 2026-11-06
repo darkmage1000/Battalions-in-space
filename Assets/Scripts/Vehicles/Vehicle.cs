@@ -39,6 +39,7 @@ namespace BIS
         public Unit lastAttacker;
         public float radius = 2;
         public CapitalShip parkedIn;
+        public Transform forcedLock;   // the player's target lock (missiles home on it)
         bool destroyed;
         int muzzleIdx, gunnerIdx;
         float yaw, smokeT, crashCd, fxT;
@@ -544,6 +545,14 @@ namespace BIS
         void UpdateLock(float dt, WeaponDef w)
         {
             Transform best = null; float bestA = 14f;
+            if (forcedLock && Vector3.Angle(transform.forward, forcedLock.position - transform.position) < 35 && (forcedLock.position - transform.position).magnitude < w.range)
+            {
+                best = forcedLock; bestA = -1;
+                if (best != lockTarget) { lockTarget = best; lockTime = 0.4f; }
+                float before0 = lockTime; lockTime += dt * 1.6f;
+                if (Driver && Driver.part.isPlayer && before0 < 1f && lockTime >= 1f) Sfx.Play2D("lock", 0.8f);
+                return;
+            }
             foreach (var v in battle.vehicles)
             {
                 if (!v || v == this || !v.Alive || v.Team == Team || v.IsEmpty) continue;

@@ -120,6 +120,7 @@ namespace BIS
         {
             var me = Me;
             assistTarget = null;
+            if (flyLock != null && (me == null || !me.InVehicle || me.vehicle != lockVehicle || me.seat != 0)) DropLock(null);
             if (me == null) { if (mode == Mode.Play && b.player.unit == null) mode = Mode.Spawn; return; }
             if (Cursor.lockState != CursorLockMode.Locked && !showMap) Ctl.LockCursor(true);
 
@@ -215,6 +216,49 @@ namespace BIS
             return assistAngle <= AimAssist.MagnetCone * zoom ? assistPoint : raw;
         }
 
+        // target lock for gunships and starfighters
+        public IDamageable flyLock;
+        public Vector3 lockLead;
+        Vehicle lockVehicle;
+        float lockBreakT;
+
+        static Vector3 VelOf(IDamageable t) => t is Vehicle tv ? tv.vel : t is Unit tu ? tu.velocity : Vector3.zero;
+
+        public static string NameOf(IDamageable t)
+        {
+            if (t is Vehicle tv) return tv.def.name;
+            if (t is Unit tu) return tu.IsHero ? tu.hero.name : tu.displayName;
+            return "target";
+        }
+
+        void ToggleFlyLock(Vehicle v, Unit me, float shot)
+        {
+            if (flyLock != null) { DropLock("Lock released"); return; }
+            bool space = v.IsShip;
+            var t = AimAssist.Find(b, me.team, v.transform.position, v.transform.forward, space ? 26 : 22, space ? 1100 : 520, shot,
+                                   v.transform, !space, true, space, out _, out _);
+            if (t == null) { Say("No target near the crosshair", 1.5f); Sfx.Play2D("deny"); return; }
+            flyLock = t; lockVehicle = v; lockBreakT = 0;
+            Sfx.Play2D("lock", 0.9f); Sfx.Play2D("ui2", 0.5f);
+        }
+
+        bool LockValid(Vehicle v)
+        {
+            if (flyLock == null || !flyLock.Alive || !(flyLock is Component c) || !c) return false;
+            if (flyLock is Unit u && u.InVehicle) return false;
+            float max = v.IsShip ? 1400 : 700;
+            return (flyLock.AimPoint - v.transform.position).sqrMagnitude < max * max;
+        }
+
+        public void DropLock(string why)
+        {
+            if (flyLock == null) return;
+            flyLock = null;
+            if (lockVehicle) lockVehicle.forcedLock = null;
+            lockVehicle = null;
+            if (why != null) { Say(why, 1.2f); Sfx.Play2D("beep", 0.5f); }
+        }
+
         public Vehicle NearbyVehicle()
         {
             var me = Me; if (me == null || me.InVehicle) return null;
@@ -246,7 +290,8 @@ namespace BIS
             if (me.seat == 0 && v.Flies)
             {
                 float k = 0.5f;
-                stick = Vector2.Lerp(stick, new Vector2(Mathf.Clamp(Ctl.Look.x * k, -1, 1), Mathf.Clamp(Ctl.Look.y * k, -1, 1)), Mathf.Clamp01(dt * 18));
+                Vector2 rawStick = new Vector2(Mathf.Clamp(Ctl.Look.x * k, -1, 1), Mathf.Clamp(Ctl.Look.y * k, -1, 1));
+                stick = Vector2.Lerp(stick, rawStick, Mathf.Clamp01(dt * 18));
                 inp.steer = stick;
                 inp.throttle = Ctl.Throttle;
                 inp.roll = Ctl.Roll;
@@ -274,6 +319,43 @@ namespace BIS
                         stick = Vector2.ClampMagnitude(stick, 1);
                         inp.steer = stick;
                     }
+                }
+                // target lock: the craft follows the locked target; the player's own input blends over it
+                if (Ctl.Ability || Input.GetKeyDown(KeyCode.T) || Input.GetMouseButtonDown(2)) ToggleFlyLock(v, me, shot);
+                if (flyLock != null && !LockValid(v)) DropLock("Lock lost");
+                if (flyLock != null)
+                {
+                    Vector3 tpos = flyLock.AimPoint, tvel = VelOf(flyLock);
+                    Vector3 to = tpos - v.transform.position;
+                    float d = to.magnitude;
+                    lockLead = tpos + tvel * (d / Mathf.Max(100, shot)) * 0.9f;
+                    Vector3 follow = lockLead;
+                    if (!space && b.land != null)
+                    {
+                        follow.y = Mathf.Max(follow.y, b.GroundY(follow) + 14);
+                        if (v.AltitudeAboveGround() < 12) follow.y = Mathf.Max(follow.y, v.transform.position.y + 20);
+                    }
+                    Vector3 local = v.transform.InverseTransformDirection((follow - v.transform.position).normalized);
+                    Vector2 auto = new Vector2(Mathf.Clamp(Mathf.Atan2(local.x, local.z) * 2.2f, -1, 1),
+                                               Mathf.Clamp(Mathf.Atan2(local.y, Mathf.Max(0.05f, local.z)) * 2.2f, -1, 1));
+                    if (local.z < 0) auto.y = local.y >= 0 ? 1 : -1;      // target behind: loop round
+                    float own = rawStick.magnitude;
+                    float wOwn = Mathf.Clamp01(own * 1.8f);
+                    inp.steer = Vector2.Lerp(auto, stick, wOwn);
+                    stick = inp.steer;
+                    if (Mathf.Abs(Ctl.Roll) < 0.1f) inp.roll = Mathf.Clamp(-local.x * 1.1f - v.transform.right.y * 0.9f, -1, 1);
+                    if (Mathf.Abs(Ctl.Throttle) < 0.1f)
+                    {
+                        // match the target's speed and hold a little behind it, so it does not shoot past
+                        float hold = space ? 110 : 70;
+                        float want = Mathf.Clamp((tvel.magnitude + (d - hold) * 0.35f) / Mathf.Max(1, v.def.speed), space ? 0.25f : 0.15f, 1f);
+                        inp.throttle = Mathf.Clamp((want - v.throttle) * 4, -1, 1);
+                        if (d > hold * 4 && local.z > 0.9f) inp.boost = true;
+                    }
+                    // a strong, held input breaks the lock
+                    if (own > 0.75f) { lockBreakT += dt; if (lockBreakT > 0.45f) DropLock("Lock released"); } else lockBreakT = 0;
+                    if (flyLock != null && Vector3.Angle(v.transform.forward, lockLead - v.transform.position) < Mathf.Max(conv, 6)) aimPoint = lockLead;
+                    v.forcedLock = flyLock != null ? ((Component)flyLock).transform : null;
                 }
                 inp.aimPoint = aimPoint;
                 v.seatIn[0] = inp;

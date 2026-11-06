@@ -176,6 +176,51 @@ namespace BIS
                 UI.Fill(new Rect(0, 0, w, h), new Color(0.8f, 0, 0, hurtT * 0.12f));
             }
 
+            // pilot target lock (follow mode)
+            if (me.InVehicle && me.vehicle.Flies && me.seat == 0)
+            {
+                if (pc.flyLock != null)
+                {
+                    var tgt = pc.flyLock;
+                    Vector3 sp = cam.WorldToScreenPoint(tgt.AimPoint);
+                    float d = (tgt.AimPoint - me.vehicle.transform.position).magnitude;
+                    Color lc = new Color(0.4f, 1f, 1f);
+                    if (sp.z > 0 && sp.x > 0 && sp.x < Screen.width && sp.y > 0 && sp.y < Screen.height)
+                    {
+                        Vector2 g = new Vector2(sp.x / UI.S, (Screen.height - sp.y) / UI.S);
+                        float s2 = 26 + Mathf.Sin(Time.unscaledTime * 6) * 3;
+                        UI.Line(g + new Vector2(0, -s2), g + new Vector2(s2, 0), lc, 3); UI.Line(g + new Vector2(s2, 0), g + new Vector2(0, s2), lc, 3);
+                        UI.Line(g + new Vector2(0, s2), g + new Vector2(-s2, 0), lc, 3); UI.Line(g + new Vector2(-s2, 0), g + new Vector2(0, -s2), lc, 3);
+                        UI.Text(new Rect(g.x - 160, g.y + s2 + 4, 320, 22), $"{PlayerControl.NameOf(tgt)}  {Mathf.RoundToInt(d)} m", 16, lc, TextAnchor.UpperCenter);
+                        Vector3 lp = cam.WorldToScreenPoint(pc.lockLead);
+                        if (lp.z > 0)
+                        {
+                            Vector2 lg = new Vector2(lp.x / UI.S, (Screen.height - lp.y) / UI.S);
+                            UI.Line(g, lg, new Color(lc.r, lc.g, lc.b, 0.4f), 1);
+                            UI.Frame(new Rect(lg.x - 9, lg.y - 9, 18, 18), UI.Gold, 2);
+                            UI.Dot(lg, 2, UI.Gold);
+                        }
+                    }
+                    else
+                    {
+                        // off screen: arrow on the edge pointing toward the target
+                        Vector3 rel = cam.transform.InverseTransformPoint(tgt.AimPoint);
+                        Vector2 dir = new Vector2(rel.x, -rel.y);
+                        if (dir.sqrMagnitude < 0.0001f) dir = Vector2.down;
+                        dir.Normalize();
+                        Vector2 ctr = new Vector2(w / 2, h / 2);
+                        Vector2 edge = ctr + dir * Mathf.Min(w, h) * 0.42f;
+                        Vector2 side = new Vector2(-dir.y, dir.x);
+                        UI.Line(edge + dir * 22, edge - dir * 6 + side * 14, lc, 4);
+                        UI.Line(edge + dir * 22, edge - dir * 6 - side * 14, lc, 4);
+                        UI.Text(new Rect(edge.x - 120, edge.y + 18, 240, 22), $"{PlayerControl.NameOf(tgt)}  {Mathf.RoundToInt(d)} m", 15, lc, TextAnchor.UpperCenter);
+                    }
+                    string release = TouchInput.Active ? "LOCK again to release" : Ctl.PadActive ? "R3 to release" : "F to release";
+                    UI.Text(new Rect(0, h / 2 + 100, w, 26), $"FOLLOWING TARGET - steer to pull away, {release}", 18, lc, TextAnchor.MiddleCenter);
+                }
+                else UI.Text(new Rect(0, h / 2 + 100, w, 26), TouchInput.Active ? "LOCK: follow the target nearest the crosshair" : Ctl.PadActive ? "R3: lock on and follow a target" : "F / middle mouse: lock on and follow a target", 16, new Color(1, 1, 1, 0.45f), TextAnchor.MiddleCenter);
+            }
+
             // lock-on
             Transform lockT = null; float lockTime = 0;
             if (me.InVehicle && me.seat == 0) { lockT = me.vehicle.lockTarget; lockTime = me.vehicle.lockTime; if (me.vehicle.sec == null || !me.vehicle.sec.def.lockOn) lockT = null; }
@@ -629,6 +674,7 @@ namespace BIS
                 "WASD drive   Mouse aim turret   Left click main gun   Shift boost   Q change seat   E get out\n\n" +
                 "<b>GUNSHIPS AND STARFIGHTERS</b>\n" +
                 "Mouse steer   W / S throttle   A / D roll   Shift boost   Left click guns   Right click missiles / torpedoes / repair\n" +
+                "F or middle mouse: lock on - your craft follows the target; steer hard or press F again to break off\n" +
                 "Gunships: Space / Ctrl climb and descend.  Starfighters: fly into a hangar, slow down, E to land and get out.\n\n" +
                 "<b>GAMEPAD</b>\n" +
                 "Left stick move / throttle + roll   Right stick look / steer   RT fire   LT aim / secondary\n" +
