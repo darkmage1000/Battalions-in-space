@@ -136,8 +136,8 @@ namespace BIS
     public static class Settings
     {
         public static float MouseSens = 2f, PadSens = 3f, Volume = 0.8f, MusicVolume = 0.5f, Fov = 65f;
-        public static bool InvertY, InvertPad, ShowFps, ForceTouch;
-        public static int BotsPerTeam = 16, Difficulty = 1, Quality = 2;
+        public static bool InvertY, InvertPad, ShowFps, ForceTouch, MouseAssist;
+        public static int BotsPerTeam = 16, Difficulty = 1, Quality = 2, AimAssist = 2;
 
         public static void Load()
         {
@@ -150,6 +150,8 @@ namespace BIS
             InvertPad = PlayerPrefs.GetInt("invpad", 0) == 1;
             ShowFps = PlayerPrefs.GetInt("fps", 0) == 1;
             ForceTouch = PlayerPrefs.GetInt("touch", 0) == 1;
+            MouseAssist = PlayerPrefs.GetInt("mouseassist", 0) == 1;
+            AimAssist = PlayerPrefs.GetInt("aimassist", 2);
             BotsPerTeam = PlayerPrefs.GetInt("bots", 16);
             Difficulty = PlayerPrefs.GetInt("diff", 1);
             Quality = PlayerPrefs.GetInt("quality", Application.isMobilePlatform ? 0 : 2);
@@ -167,6 +169,8 @@ namespace BIS
             PlayerPrefs.SetInt("invpad", InvertPad ? 1 : 0);
             PlayerPrefs.SetInt("fps", ShowFps ? 1 : 0);
             PlayerPrefs.SetInt("touch", ForceTouch ? 1 : 0);
+            PlayerPrefs.SetInt("mouseassist", MouseAssist ? 1 : 0);
+            PlayerPrefs.SetInt("aimassist", AimAssist);
             PlayerPrefs.SetInt("bots", BotsPerTeam);
             PlayerPrefs.SetInt("diff", Difficulty);
             PlayerPrefs.SetInt("quality", Quality);

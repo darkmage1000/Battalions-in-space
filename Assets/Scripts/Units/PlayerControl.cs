@@ -119,6 +119,7 @@ namespace BIS
         void PlayTick(float dt)
         {
             var me = Me;
+            assistTarget = null;
             if (me == null) { if (mode == Mode.Play && b.player.unit == null) mode = Mode.Spawn; return; }
             if (Cursor.lockState != CursorLockMode.Locked && !showMap) Ctl.LockCursor(true);
 
@@ -152,8 +153,11 @@ namespace BIS
         void FootTick(Unit me, float dt)
         {
             float zoomMul = me.input.aim && me.Weapon.def.zoomFov > 0 ? 0.25f : me.input.aim ? 0.6f : 1f;
-            camYaw += Ctl.Look.x * zoomMul;
-            camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * zoomMul, -70, 75);
+            var wd = me.Weapon.def;
+            float range = wd.kind == WKind.Blade ? 12 : wd.kind == WKind.Repair ? 0 : Mathf.Clamp(wd.range, 25, 260);
+            float lookMul = Assist(me.transform, range, wd.kind == WKind.Beam || wd.kind == WKind.Blade ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade);
+            camYaw += Ctl.Look.x * zoomMul * lookMul;
+            camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * zoomMul * lookMul, -70, 75);
             Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;
             var inp = new UnitInput
             {
@@ -162,7 +166,7 @@ namespace BIS
                 jump = Ctl.Jump, jumpDown = Ctl.JumpDown, sprint = Ctl.Sprint, crouch = Ctl.Crouch,
                 reload = Ctl.Reload, swap = Ctl.Swap, equip = Ctl.Equip, ability = Ctl.Ability,
             };
-            aimPoint = CameraAim(me.transform);
+            aimPoint = Magnet(CameraAim(me.transform));
             inp.aimPoint = aimPoint;
             me.input = inp;
 
@@ -181,6 +185,34 @@ namespace BIS
                     flyCamRot = best.transform.rotation; camYaw = best.transform.eulerAngles.y;
                 }
             }
+        }
+
+        // aim assist for the third-person cameras
+        public IDamageable assistTarget;
+        Vector3 assistPoint; float assistAngle = 999;
+
+        /// <summary>Finds the assist target for the camera view, pulls the view toward it and returns the look-speed multiplier.</summary>
+        float Assist(Transform ignore, float range, float shotSpeed, bool infantry, bool vehicles, bool shipsOnly, float dt, bool pull)
+        {
+            assistTarget = null; assistAngle = 999;
+            if (!AimAssist.On || range <= 0) return 1;
+            var cam = Cam;
+            float zoom = cam.fieldOfView / Mathf.Max(20, Settings.Fov);          // smaller cones when zoomed in
+            float cone = AimAssist.PullCone * zoom;
+            var t = AimAssist.Find(b, b.player.team, cam.transform.position, cam.transform.forward, cone, range, shotSpeed, ignore, infantry, vehicles, shipsOnly, out assistPoint, out assistAngle);
+            assistTarget = t;
+            if (t == null) return 1;
+            bool engaging = Ctl.Look.sqrMagnitude > 0.0001f || Ctl.Fire || Ctl.Move.sqrMagnitude > 0.01f;
+            if (pull) AimAssist.PullView(ref camYaw, ref camPitch, cam.transform.position, assistPoint, AimAssist.PullRate * zoom * (engaging ? 1f : 0.35f), dt);
+            return assistAngle <= AimAssist.MagnetCone * zoom * 1.3f ? AimAssist.Friction : 1;
+        }
+
+        /// <summary>Bends the shot onto the assist target when it is inside the magnetism cone.</summary>
+        Vector3 Magnet(Vector3 raw)
+        {
+            if (assistTarget == null || !assistTarget.Alive) return raw;
+            float zoom = Cam.fieldOfView / Mathf.Max(20, Settings.Fov);
+            return assistAngle <= AimAssist.MagnetCone * zoom ? assistPoint : raw;
         }
 
         public Vehicle NearbyVehicle()
@@ -222,25 +254,38 @@ namespace BIS
                 inp.boost = Ctl.Boost;
                 inp.fire = Ctl.Fire; inp.alt = Ctl.Alt;
                 aimPoint = v.transform.position + v.transform.forward * 400;
-                // aim assist: converge on a ship near the nose
-                float bestA = 4f;
-                foreach (var o in b.vehicles)
+                // guns converge on a target near the nose (always a little; more with aim assist on),
+                // and with aim assist the stick is nudged toward it
+                bool space = v.IsShip;
+                float conv = AimAssist.On ? Mathf.Min(10f, Mathf.Max(4f, AimAssist.MagnetCone * (space ? 1.8f : 1.4f))) : 4f;
+                float pullCone = AimAssist.On ? AimAssist.PullCone * (space ? 1.6f : 1.3f) : 0;
+                float shot = v.prim != null ? v.prim.def.speed : 300;
+                var t = AimAssist.Find(b, me.team, v.transform.position, v.transform.forward, Mathf.Max(conv, pullCone), space ? 650 : 350, shot,
+                                       v.transform, !space, true, space, out var tp, out var ta);
+                assistTarget = t;
+                if (t != null)
                 {
-                    if (!o || o == v || !o.Alive || o.Team == me.team || o.IsEmpty) continue;
-                    Vector3 to = o.transform.position - v.transform.position;
-                    if (to.magnitude > 600) continue;
-                    float a = Vector3.Angle(v.transform.forward, to);
-                    if (a < bestA) { bestA = a; aimPoint = o.transform.position + o.vel * (to.magnitude / Mathf.Max(100, v.prim.def.speed)); }
+                    if (ta <= conv) aimPoint = tp;
+                    if (ta <= pullCone)
+                    {
+                        Vector3 local = v.transform.InverseTransformDirection((tp - v.transform.position).normalized);
+                        float g = AimAssist.PullRate / 60f;
+                        stick += new Vector2(Mathf.Clamp(local.x * 6, -1, 1), Mathf.Clamp(local.y * 6, -1, 1)) * g * Mathf.Clamp01(dt * 12);
+                        stick = Vector2.ClampMagnitude(stick, 1);
+                        inp.steer = stick;
+                    }
                 }
                 inp.aimPoint = aimPoint;
                 v.seatIn[0] = inp;
             }
             else
             {
-                camYaw += Ctl.Look.x;
-                camPitch = Mathf.Clamp(camPitch - Ctl.Look.y, -40, 60);
+                var gw = me.seat == 0 ? v.prim : me.seat == 1 ? v.gunW : null;
+                float lookMul = gw != null ? Assist(v.transform, Mathf.Clamp(gw.def.range, 60, 300), gw.def.speed, true, true, false, dt, true) : 1;
+                camYaw += Ctl.Look.x * lookMul;
+                camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * lookMul, -40, 60);
                 Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;
-                aimPoint = CameraAim(v.transform);
+                aimPoint = gw != null ? Magnet(CameraAim(v.transform)) : CameraAim(v.transform);
                 inp.aimPoint = aimPoint;
                 inp.fire = Ctl.Fire; inp.alt = Ctl.Alt;
                 if (me.seat == 0)

@@ -150,7 +150,7 @@ namespace BIS
                 if (ap.z > 0 && (pc.aimPoint - (me.vehicle.transform.position + me.vehicle.transform.forward * 400)).sqrMagnitude > 4)
                     UI.Frame(new Rect(ap.x / UI.S - 10, (Screen.height - ap.y) / UI.S - 10, 20, 20), UI.Gold, 2);
             }
-            Color cc = hitT > 0 ? UI.Bad : Color.white;
+            Color cc = hitT > 0 ? UI.Bad : pc.assistTarget != null ? new Color(1f, 0.6f, 0.45f) : Color.white;
             bool zoom = !me.InVehicle && me.input.aim && me.Weapon.def.zoomFov > 0;
             if (zoom)
             {
