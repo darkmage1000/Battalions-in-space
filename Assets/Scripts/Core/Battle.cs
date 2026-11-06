@@ -426,6 +426,7 @@ namespace BIS
             {
                 foreach (var p in posts) p.Tick(dt);
                 commander?.Tick(dt);
+                FillPlayerVehicle(dt);
                 if (space) foreach (var s in space.ships) s.Tick(dt);
                 Rules(dt);
             }
@@ -490,6 +491,35 @@ namespace BIS
             int n = 0;
             foreach (var u in units) if (u && u.Alive && u.team == t && !u.InVehicle) n++;
             return n;
+        }
+
+        float rideT;
+        /// <summary>Friendly bots nearby (squadmates first) climb into the player's free seats when the player is driving and slow.</summary>
+        void FillPlayerVehicle(float dt)
+        {
+            rideT -= dt;
+            if (rideT > 0) return;
+            rideT = 1f;
+            var me = player.unit;
+            if (!land || !me || !me.Alive || !me.InVehicle || me.seat != 0) return;
+            var v = me.vehicle;
+            if (v.speed > 4 || v.def.IsShip) return;
+            if (v.def.Flies && !v.landed && v.AltitudeAboveGround() > 4) return;
+            int free = 0; foreach (var r in v.riders) if (!r) free++;
+            foreach (var u in units) if (u && u.Alive && u.bot != null && u.bot.WantsRide && u.team == me.team) free--;
+            if (free <= 0) return;
+            var sq = commander != null ? commander.SquadOf(player) : null;
+            var cands = new List<(Unit u, float score)>();
+            foreach (var u in units)
+            {
+                if (!u || !u.Alive || u.bot == null || u.team != me.team || u.InVehicle || u.IsHero || u.bot.WantsRide) continue;
+                float d = (u.transform.position - v.transform.position).magnitude;
+                if (d > 35 || Time.time - u.lastHurt < 3) continue;
+                bool mate = sq != null && sq.members.Contains(u.part);
+                cands.Add((u, d - (mate ? 30 : 0)));
+            }
+            cands.Sort((a, c) => a.score.CompareTo(c.score));
+            for (int i = 0; i < cands.Count && free > 0; i++, free--) cands[i].u.bot.RideWith(v);
         }
 
         void Rules(float dt)

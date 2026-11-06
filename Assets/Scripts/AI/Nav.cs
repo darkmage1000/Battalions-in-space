@@ -69,7 +69,50 @@ namespace BIS
                     if (veh[k] == 0) blockedVeh++;
                 }
             System.Array.Copy(f2, foot, foot.Length); System.Array.Copy(v2, veh, veh.Length);
+            OpenHouses(l);
         }
+
+        // buildings you can walk into: cells inside them and the doorway are opened by hand, and every step that
+        // touches one of those cells must not pass through a wall (checked with a ray), so routes use the door
+        readonly HashSet<int> houseCells = new HashSet<int>();
+        readonly Dictionary<int, Vector3> cellPos = new Dictionary<int, Vector3>();
+        const int WallMask = (1 << Layers.Default) | (1 << Layers.Hull);
+        public int houseCount;
+        readonly List<(Vector2 c, float r)> houseZones = new List<(Vector2, float)>();
+
+        void OpenHouses(LandWorld l)
+        {
+            foreach (var h in l.houses)
+            {
+                houseCount++;
+                houseZones.Add((new Vector2(h.center.x, h.center.z), Mathf.Sqrt(h.w * h.w + h.d * h.d) * 0.5f + 1.5f));
+                var inv = Quaternion.Inverse(h.rot);
+                // interior cells
+                float r = Mathf.Max(h.w, h.d);
+                for (float dz = -r; dz <= r; dz += Cell * 0.5f)
+                    for (float dx = -r; dx <= r; dx += Cell * 0.5f)
+                    {
+                        Vector3 q = h.center + new Vector3(dx, 0, dz);
+                        Vector3 lq = inv * (q - h.center);
+                        if (Mathf.Abs(lq.x) > h.w / 2 - 0.9f || Mathf.Abs(lq.z) > h.d / 2 - 0.9f) continue;
+                        int k = CellOf(q);
+                        if (k < 0 || houseCells.Contains(k)) continue;
+                        // the cell centre may lie outside the building: put the cell's point inside it
+                        Vector3 cc = Center(k); Vector3 lc = inv * (cc - h.center);
+                        lc.x = Mathf.Clamp(lc.x, -h.w / 2 + 1, h.w / 2 - 1); lc.z = Mathf.Clamp(lc.z, -h.d / 2 + 1, h.d / 2 - 1);
+                        Vector3 inside = h.center + h.rot * lc; inside.y = h.center.y;
+                        houseCells.Add(k); cellPos[k] = inside; foot[k] = 12; top[k] = h.center.y;
+                    }
+                foreach (var pt in new[] { h.doorIn, h.door, h.doorOut })
+                {
+                    int k = CellOf(pt);
+                    if (k < 0) continue;
+                    houseCells.Add(k); cellPos[k] = pt; foot[k] = 12; top[k] = pt.y;
+                }
+            }
+        }
+
+        Vector3 CellPoint(int k) => cellPos.TryGetValue(k, out var p) ? p : Center(k);
 
         bool NearBlocked(byte[] g, int i, int j)
         {
@@ -98,7 +141,14 @@ namespace BIS
             if (g[b] == 0) return false;
             int ai = a % n, aj = a / n, bi = b % n, bj = b / n;
             float dist = Cell * Mathf.Sqrt((ai - bi) * (ai - bi) + (aj - bj) * (aj - bj));
-            return Mathf.Abs(top[b] - top[a]) <= (g == foot ? FootRise : VehRise) * dist;
+            if (Mathf.Abs(top[b] - top[a]) > (g == foot ? FootRise : VehRise) * dist) return false;
+            if (houseCells.Count > 0 && (houseCells.Contains(a) || houseCells.Contains(b)))
+            {
+                if (g != foot) return false;
+                Vector3 pa = CellPoint(a) + Vector3.up * 0.9f, pb = CellPoint(b) + Vector3.up * 0.9f;
+                if (Physics.Linecast(pa, pb, WallMask, QueryTriggerInteraction.Ignore)) return false;
+            }
+            return true;
         }
 
         /// <summary>Nearest open cell to p within a few cells (for goals that land in a rock or a wall).</summary>
@@ -138,13 +188,32 @@ namespace BIS
             Vector3 d = b - a; d.y = 0;
             float len = d.magnitude;
             int steps = Mathf.CeilToInt(len / 2f);
+            // a line that passes a building must not go through its walls (one sphere cast along the whole line)
+            Vector2 a2 = new Vector2(a.x, a.z), b2 = new Vector2(b.x, b.z);
+            foreach (var hz in houseZones)
+            {
+                Vector2 ab = b2 - a2; float tt = ab.sqrMagnitude > 0.0001f ? Mathf.Clamp01(Vector2.Dot(hz.c - a2, ab) / ab.sqrMagnitude) : 0;
+                if ((a2 + ab * tt - hz.c).sqrMagnitude > hz.r * hz.r) continue;
+                int kb = CellOf(b); float ya = top[prev] + 0.9f, yb = (kb >= 0 ? top[kb] : top[prev]) + 0.9f;
+                Vector3 pa = new Vector3(a.x, ya, a.z), pb = new Vector3(b.x, yb, b.z);
+                if (Physics.SphereCast(pa, 0.35f, pb - pa, out _, (pb - pa).magnitude, WallMask, QueryTriggerInteraction.Ignore)) return false;
+                break;
+            }
+            Vector3 prevP = a;
             for (int s = 1; s <= steps; s++)
             {
-                int k = CellOf(a + d * (s / (float)steps));
+                Vector3 q = a + d * (s / (float)steps);
+                int k = CellOf(q);
                 if (k < 0) return false;
                 if (k == prev) continue;
                 if (g[k] == 0 || g[k] >= 40 || !Step(g, prev, k)) return false;
-                prev = k;
+                // near a building the real line matters, not the cell points: it must not clip a wall
+                if (houseCells.Count > 0 && (houseCells.Contains(prev) || houseCells.Contains(k)))
+                {
+                    Vector3 pa = new Vector3(prevP.x, top[prev] + 0.9f, prevP.z), pb = new Vector3(q.x, top[k] + 0.9f, q.z);
+                    if (Physics.SphereCast(pa, 0.35f, pb - pa, out _, (pb - pa).magnitude, WallMask, QueryTriggerInteraction.Ignore)) return false;
+                }
+                prev = k; prevP = q;
             }
             return true;
         }
@@ -192,7 +261,7 @@ namespace BIS
             }
             if (!found) return false;
             outPath.Clear();
-            for (int k = t; k >= 0; k = from[k]) outPath.Add(Center(k));
+            for (int k = t; k >= 0; k = from[k]) outPath.Add(CellPoint(k));
             outPath.Reverse();
             // pull the route tight
             var tight = new List<Vector3> { outPath[0] };

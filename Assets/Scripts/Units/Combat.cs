@@ -319,7 +319,7 @@ namespace BIS
             var b = Battle.I;
             if (b != null) mul *= b.DamageMul(team);
             target.TakeDamage(new DamageInfo { amount = amount * mul, type = type, attacker = attacker, team = team, point = p, dir = dir, weapon = w });
-            if (attacker && attacker.part != null && attacker.part.isPlayer && type != DmgType.Environment) HUD.HitMarker();
+            if (attacker && attacker.part != null && attacker.part.isPlayer && type != DmgType.Environment) HUD.HitMarker(!target.Alive, target.IsVehicle);
         }
 
         public static void Splash(Vector3 p, float r, float dmg, WeaponDef w, Unit attacker, int team, IDamageable skip)

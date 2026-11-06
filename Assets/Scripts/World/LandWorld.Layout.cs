@@ -70,6 +70,9 @@ namespace BIS
             }
         }
 
+        /// <summary>A building you can walk into: its doorway (outside / middle / inside points), centre and footprint.</summary>
+        public class House { public Vector3 doorOut, door, doorIn, center; public Quaternion rot; public float w, d; }
+        public readonly List<House> houses = new List<House>();
         readonly List<Line> ridges = new List<Line>(), roads = new List<Line>(), channels = new List<Line>();
         readonly List<Bridge> bridges = new List<Bridge>();
         readonly List<(Vector2 c, float r, float level)> lakes = new List<(Vector2, float, float)>();
@@ -527,6 +530,36 @@ namespace BIS
                 Vector3 above = centre + Vector3.up * ((gapY + gapH + hh) / 2);
                 k.Box(above, new Vector3(gap, hh - gapY - gapH, t), wq, wall); Col(above, new Vector3(gap, hh - gapY - gapH, t), wq);
                 if (gapY > 0) { Vector3 below = centre + Vector3.up * (gapY / 2); k.Box(below, new Vector3(gap, gapY, t), wq, wall); Col(below, new Vector3(gap, gapY, t), wq); }
+            }
+            {
+                Vector3 n = door == 0 ? Vector3.forward : door == 1 ? Vector3.right : door == 2 ? Vector3.back : Vector3.left;
+                float half = door % 2 == 0 ? dp / 2 : w / 2;
+                Vector3 dn = rot * n;
+                Vector3 dm = new Vector3(p.x, 0, p.z) + dn * (half - t / 2);
+                var hs = new House { door = dm, doorOut = dm + dn * 2.6f, doorIn = dm - dn * 1.6f, center = new Vector3(p.x, 0, p.z), rot = rot, w = w, d = dp };
+                hs.door.y = p.y + 0.2f; hs.doorIn.y = p.y + 0.2f; hs.center.y = p.y + 0.2f; hs.doorOut.y = Height(hs.doorOut.x, hs.doorOut.z);
+                houses.Add(hs);
+                // steps up to a doorway that stands above the ground outside it
+                float floorTop = p.y + 0.2f;
+                Vector3 o1 = dm + dn * 1.2f;
+                float diff = floorTop - Height(o1.x, o1.z);
+                if (diff > 0.3f)
+                {
+                    int ns = Mathf.CeilToInt(diff / 0.35f);
+                    var dq = Quaternion.LookRotation(dn);
+                    for (int i = 0; i < ns; i++)
+                    {
+                        float topY = floorTop - diff * (i + 1) / (ns + 1f);
+                        Vector3 sc = dm + dn * (0.55f + i * 0.6f);
+                        float gy = Height(sc.x, sc.z) - 0.3f;
+                        float hgt = Mathf.Max(0.1f, topY - gy);
+                        Vector3 c0 = new Vector3(sc.x, gy + hgt / 2, sc.z);
+                        k.Box(c0, new Vector3(2.4f, hgt, 0.62f), dq, dark);
+                        var sg = new GameObject("step"); sg.transform.SetParent(colRoot, false); sg.transform.SetPositionAndRotation(c0, dq);
+                        sg.AddComponent<BoxCollider>().size = new Vector3(2.4f, hgt, 0.62f); sg.layer = Layers.Ground;
+                    }
+                    hs.doorOut = dm + dn * (0.9f + ns * 0.6f); hs.doorOut.y = Height(hs.doorOut.x, hs.doorOut.z);
+                }
             }
             Vector3 roof = b + Vector3.up * (hh + 0.2f);
             k.Box(roof, new Vector3(w + 0.4f, 0.4f, dp + 0.4f), rot, dark);

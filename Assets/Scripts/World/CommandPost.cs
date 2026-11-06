@@ -89,8 +89,16 @@ namespace BIS
             float r2 = radius * radius;
             foreach (var u in battle.units)
             {
-                if (!u || !u.Alive || u.InVehicle) continue;
-                Vector3 d = u.transform.position - Pos;
+                if (!u || !u.Alive) continue;
+                Vector3 at = u.transform.position;
+                if (u.InVehicle)
+                {
+                    // everyone aboard a ground vehicle (or a gunship sitting on the ground) counts
+                    var v = u.vehicle;
+                    if (v.def.IsShip || (v.def.Flies && !v.landed && v.AltitudeAboveGround() > 4f)) continue;
+                    at = v.transform.position;
+                }
+                Vector3 d = at - Pos;
                 if (d.y > 8 || d.y < -6) continue;
                 d.y = 0;
                 if (d.sqrMagnitude < r2) present[u.team]++;

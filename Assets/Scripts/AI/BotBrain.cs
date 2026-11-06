@@ -172,12 +172,36 @@ namespace BIS
         Squad squad;
         int squadVersion = -1;
         bool flanking;
+        bool houseGoal;          // moveGoal is a spot inside a building: hold there a while
+        public static int HousePicks;
+        float holdT;
+
+        /// <summary>Defenders and snipers sometimes take a building near the objective instead of standing in the open.</summary>
+        bool PickHouse(Vector3 near, float within)
+        {
+            var land = b.land;
+            if (land == null || land.houses.Count == 0) return false;
+            LandWorld.House best = null; float bd = within * within;
+            foreach (var h in land.houses)
+            {
+                float d = (h.center - near).sqrMagnitude + Random.Range(0, 900f);
+                if (d < bd) { bd = d; best = h; }
+            }
+            if (best == null) return false;
+            Vector3 l = new Vector3(Random.Range(-best.w * 0.3f, best.w * 0.3f), 0, Random.Range(-best.d * 0.3f, best.d * 0.3f));
+            moveGoal = best.center + best.rot * l;
+            houseGoal = true; holdT = Random.Range(15f, 32f);
+            objT = 60; HousePicks++;
+            return true;
+        }
         public string OrderText => squad != null ? Commander.OrderName(squad.order) + (squad.target ? " " + squad.target.postName : "") : "";
 
         void PickObjective()
         {
             objT = Random.Range(8, 14);
             squad = b.commander != null ? b.commander.SquadOf(u.part) : null;
+            // still on the way to (or holding) a building for the same orders: keep it
+            if (houseGoal && holdT > 0 && squad != null && squad.version == squadVersion) { objT = 10; return; }
             if (squad != null && squad.target != null)
             {
                 squadVersion = squad.version;
@@ -190,6 +214,10 @@ namespace BIS
                 if (flanking) moveGoal = squad.via + new Vector3(r2.x, 0, r2.y) * 0.5f;
                 // an attack wave waits at its staging point until enough of the squad is there
                 if (squad.gathering) { flanking = false; Vector2 r3 = Random.insideUnitCircle * 12; moveGoal = squad.stage + new Vector3(r3.x, 0, r3.y); }
+                houseGoal = false;
+                bool marks = u.RoleOf == Role.Marksman && !u.IsHero;
+                if (!squad.gathering && !flanking && (squad.order == SquadOrder.Defend ? Random.value < 0.5f : marks && Random.value < 0.6f))
+                    PickHouse(objective.Pos, marks ? 90 : 60);
                 return;
             }
             CommandPost best = null; float bs = float.MaxValue;
@@ -290,6 +318,13 @@ namespace BIS
                     Vector3 toObj = objective ? objective.Pos - pos : Vector3.zero; toObj.y = 0;
                     if (objective && pushing && toObj.magnitude > objective.radius * 0.8f) move += Toward(pos, flanking ? squad.via : objective.Pos) * (d > 15 ? 0.9f : 0.5f);
                     else if (objective && toObj.magnitude > 30 && d > 35) move += Toward(pos, objective.Pos) * 0.6f;
+                    if (houseGoal && d > 7)
+                    {
+                        // heading for a building: keep going and fight from inside it
+                        Vector3 tg = moveGoal - pos; tg.y = 0;
+                        if (tg.magnitude > 1.5f) move = Toward(pos, moveGoal) * 0.9f + side * 0.15f;
+                        else { move = Vector3.zero; crouch = Random.value < 0.6f; holdT -= dt; }
+                    }
                 }
                 float boltSpeed = u.Weapon.def.Hitscan ? 1e6f : u.Weapon.def.speed;
                 Vector3 lead = Lead(u.Eye, target, boltSpeed);
@@ -349,7 +384,13 @@ namespace BIS
                 Vector3 to = moveGoal - pos; to.y = 0;
                 float d = to.magnitude;
                 if (flanking && d < 10) { flanking = false; Vector2 r0 = Random.insideUnitCircle * objective.radius * 0.7f; moveGoal = objective.Pos + new Vector3(r0.x, 0, r0.y); }
-                if (d > 2) { move = Toward(pos, moveGoal); sprint = d > 30; }
+                if (houseGoal && d < 2.5f)
+                {
+                    // holding a building: crouch at the spot, look out, stay until the timer runs out
+                    holdT -= dt; crouch = Random.value < 0.5f;
+                    if (holdT <= 0) { houseGoal = false; objT = 0; }
+                }
+                else if (d > 2) { move = Toward(pos, moveGoal); sprint = d > 30; }
                 else
                 {
                     bool defending = squad != null && squad.order == SquadOrder.Defend;
@@ -509,8 +550,21 @@ namespace BIS
             if (!v.Driver && !v.def.Flies && Random.value < 0.01f) v.Leave(u, true);
         }
 
+        /// <summary>Asked to ride along: walk to the vehicle and get in.</summary>
+        public void RideWith(Vehicle v) { wantVehicle = v; enterT = 99; }
+        public bool WantsRide => wantVehicle != null;
+
         void Passenger(Vehicle v, float dt)
         {
+            // riding with the player: stay aboard while they drive; get out when they stop at a post that isn't ours
+            if (v.Driver && v.Driver.part.isPlayer)
+            {
+                if (v.speed < 1.5f && v.CanExitHere())
+                    foreach (var cp in b.posts)
+                        if (cp.owner != u.team && (cp.Pos - v.transform.position).sqrMagnitude < (cp.radius + 12) * (cp.radius + 12) && Random.value < 0.02f) { v.Leave(u, true); return; }
+                if (v.hp < v.maxHp * 0.15f && v.CanExitHere()) v.Leave(u, true);
+                return;
+            }
             if (!v.Driver && Random.value < 0.02f && v.CanExitHere()) v.Leave(u, true);
             if (v.hp < v.maxHp * 0.15f && v.CanExitHere()) v.Leave(u, true);
         }

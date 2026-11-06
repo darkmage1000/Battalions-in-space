@@ -33,14 +33,21 @@ namespace BIS
             if (kills.Count > 6) kills.RemoveAt(0);
         }
 
-        public static void HitMarker() { hitT = 0.18f; Sfx.Play2D("hitmark", 0.5f); }
+        static float killT; static bool hitVehicle;
+        /// <summary>X at the crosshair on every hit (bigger and red on a kill), with a tick sound.</summary>
+        public static void HitMarker(bool kill = false, bool vehicle = false)
+        {
+            hitT = 0.3f; hitVehicle = vehicle;
+            if (kill) { killT = 0.6f; Sfx.Play2D("hitmark", 0.8f, 0.75f); }
+            else Sfx.Play2D("hitmark", 0.5f);
+        }
         public static void Hurt(Vector3 from) { hurtT = 0.8f; hurtFrom = from; }
         public static void Points(int n) { if (pointsT <= 0) pointsShown = 0; pointsShown += n; pointsT = 1.8f; }
 
         void Update()
         {
             float dt = Time.unscaledDeltaTime;
-            hitT -= dt; hurtT -= dt; pointsT -= dt;
+            hitT -= dt; hurtT -= dt; pointsT -= dt; killT -= dt;
             fpsT += dt; if (fpsT > 0.5f) { fps = 1f / Mathf.Max(0.0001f, Time.unscaledDeltaTime); fpsT = 0; }
         }
 
@@ -165,7 +172,23 @@ namespace BIS
                 UI.Fill(new Rect(c.x - 1, c.y - g - 10, 2, 10), cc); UI.Fill(new Rect(c.x - 1, c.y + g, 2, 10), cc);
                 UI.Dot(c, 1.5f, cc);
             }
-            if (hitT > 0) { UI.Line(c + new Vector2(-14, -14), c + new Vector2(-6, -6), Color.white, 2); UI.Line(c + new Vector2(14, -14), c + new Vector2(6, -6), Color.white, 2); UI.Line(c + new Vector2(-14, 14), c + new Vector2(-6, 6), Color.white, 2); UI.Line(c + new Vector2(14, 14), c + new Vector2(6, 6), Color.white, 2); }
+            if (hitT > 0 || killT > 0)
+            {
+                bool kill = killT > 0;
+                float t = kill ? killT / 0.6f : hitT / 0.3f;
+                float r0 = kill ? 9 : 7, r1 = (kill ? 26 : 19) + (1 - t) * 4;
+                Color mc = kill ? new Color(1f, 0.25f, 0.2f, Mathf.Clamp01(t * 2)) : hitVehicle ? new Color(1f, 0.85f, 0.3f, Mathf.Clamp01(t * 2.5f)) : new Color(1f, 1f, 1f, Mathf.Clamp01(t * 2.5f));
+                Color sh = new Color(0, 0, 0, mc.a * 0.6f);
+                float wd = kill ? 4 : 3;
+                foreach (var dx in new[] { -1, 1 })
+                    foreach (var dy in new[] { -1, 1 })
+                    {
+                        var a = c + new Vector2(dx * r0, dy * r0); var e = c + new Vector2(dx * r1, dy * r1);
+                        UI.Line(a + Vector2.one, e + Vector2.one, sh, wd + 1);
+                        UI.Line(a, e, mc, wd);
+                    }
+                if (kill) UI.Text(new Rect(c.x - 60, c.y + 30, 120, 22), "KILL", 16, mc, TextAnchor.MiddleCenter);
+            }
             if (hurtT > 0)
             {
                 Vector3 to = hurtFrom - cam.transform.position; to.y = 0;
@@ -388,9 +411,18 @@ namespace BIS
                     UI.Frame(new Rect(g.x - sz, g.y - sz, sz * 2, sz * 2), s.critical ? UI.Bad : new Color(1, 0.7f, 0.4f), 2);
                     if (d < 700 || s.critical) UI.Text(new Rect(g.x - 100, g.y + sz + 2, 200, 20), $"{s.sysName} {Mathf.CeilToInt(s.hp / s.maxHp * 100)}%", 14, s.critical ? UI.Bad : new Color(1, 0.7f, 0.4f), TextAnchor.UpperCenter);
                 }
-                // hangar entrance marker
-                Vector3 hm = cam.WorldToScreenPoint(enemy.transform.TransformPoint(new Vector3(0, 10, 32)));
-                if (hm.z > 0 && enemy.HangarOpen) UI.Text(new Rect(hm.x / UI.S - 100, (Screen.height - hm.y) / UI.S - 10, 200, 20), "▼ ENEMY HANGAR", 15, UI.Gold, TextAnchor.MiddleCenter);
+                // hangar entrance marker (it can always be flown into, even with its control room destroyed)
+                Vector3 hmw = enemy.transform.TransformPoint(new Vector3(0, 10, 32));
+                Vector3 hm = cam.WorldToScreenPoint(hmw);
+                if (hm.z > 0 && me.InVehicle && me.vehicle.IsShip)
+                {
+                    float hd = (hmw - mp).magnitude;
+                    bool inside = b.space.HangarAt(mp) == enemy.hangar;
+                    string label = inside ? "" : hd < 260 ? $"ENEMY HANGAR {hd:0}m - fly in, guns can't reach you here" : $"ENEMY HANGAR {hd:0}m";
+                    if (label != "") UI.Text(new Rect(hm.x / UI.S - 220, (Screen.height - hm.y) / UI.S - 10, 440, 22), "▼ " + label, 16, UI.Gold, TextAnchor.MiddleCenter);
+                }
+                if (me.InVehicle && me.vehicle.IsShip && b.space.HangarAt(mp) == enemy.hangar)
+                    UI.Text(new Rect(UI.W / 2 - 300, UI.H * 0.62f, 600, 30), me.vehicle.CanExitHere() ? "In the enemy hangar - press E / EXIT to board" : "In the enemy hangar - slow down to get out", 22, UI.Gold, TextAnchor.MiddleCenter);
                 var home = b.space.ships[me.team];
                 Vector3 hh = cam.WorldToScreenPoint(home.transform.TransformPoint(new Vector3(0, 10, 32)));
                 if (hh.z > 0 && me.InVehicle) UI.Text(new Rect(hh.x / UI.S - 100, (Screen.height - hh.y) / UI.S - 10, 200, 20), "▼ our hangar", 14, UI.Good, TextAnchor.MiddleCenter);

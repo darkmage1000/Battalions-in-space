@@ -185,10 +185,15 @@ namespace BIS
         float launchTime = -99;
         bool wasLanded = true;
 
+        public static System.Action<Vehicle, DamageInfo> DebugDamage;   // test harness only
+
         public void TakeDamage(DamageInfo d)
         {
             if (!Alive) return;
+            DebugDamage?.Invoke(this, d);
             if (LaunchShield && d.type != DmgType.Crush) d.amount *= 0.2f;
+            // a boarding run: craft in the enemy's hangar lane or hangar take half damage
+            if (def.IsShip && battle.space != null && d.type != DmgType.Crush && Team >= 0 && battle.space.ships[1 - Team].InHangarApproach(transform.position)) d.amount *= 0.5f;
             hp -= d.amount;
             lastHurt = Time.time;
             if (d.attacker) lastAttacker = d.attacker;
@@ -381,6 +386,18 @@ namespace BIS
             if (driven)
             {
                 throttle = Mathf.Clamp01(throttle + inp.throttle * dt * 0.9f);
+                // inside any hangar the ship eases off by itself, so it can stop and its pilot can get out
+                if (space && !landed)
+                {
+                    bool inHangar = battle.space.HangarAt(pos) != null;
+                    bool mouth = false;
+                    foreach (var cs in battle.space.ships)
+                        if (cs && cs.InHangarApproach(pos) && cs.transform.InverseTransformPoint(pos).z < 95 && Vector3.Dot(transform.forward, -cs.transform.forward) > 0.3f) mouth = true;
+                    // flying in: the ship slows itself for the last stretch and the hangar, so it can stop and its pilot can get out
+                    if (inHangar && throttle > 0.12f) throttle = Mathf.MoveTowards(throttle, 0.12f, dt * 1.5f);
+                    float cap = inHangar ? 18 : mouth ? 32 : 9999;
+                    if (speed > cap) speed = Mathf.MoveTowards(speed, cap, 120 * dt);
+                }
                 if (landed && (throttle > 0.05f || inp.climb > 0.2f))
                 {
                     landed = false;

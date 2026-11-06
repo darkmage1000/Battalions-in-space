@@ -68,6 +68,7 @@ namespace BIS
                 foreach (var v in ship.battle.vehicles)
                 {
                     if (!v || !v.Alive || v.Team == ship.team || v.IsEmpty || !v.IsShip || v.LaunchShield) continue;
+                    if (ship.InHangarApproach(v.transform.position)) continue;   // the guns can't bear on the hangar mouth
                     float d2 = (v.transform.position - aim.position).sqrMagnitude;
                     if (d2 < best && Vector3.Dot(v.transform.position - aim.position, ship.transform.TransformDirection(TurretFacing)) > -0.2f) { best = d2; target = v; }
                 }
@@ -134,6 +135,13 @@ namespace BIS
         public bool IsVehicle => true;
         public Vector3 AimPoint => transform.position + transform.up * 10;
         public bool ShieldUp => systems.Exists(s => s.kind == SysKind.Shield && !s.destroyed);
+        /// <summary>The lane straight in front of the hangar (and the hangar itself): a blind spot for the point-defence guns, so boarding is possible.</summary>
+        public bool InHangarApproach(Vector3 world)
+        {
+            var l = transform.InverseTransformPoint(world);
+            return l.z > -6 && l.z < 260 && Mathf.Abs(l.x) < 34 + Mathf.Max(0, l.z - 30) * 0.2f && l.y > -12 && l.y < 30 + Mathf.Max(0, l.z - 30) * 0.12f;
+        }
+
         public bool HangarOpen => systems.Exists(s => s.kind == SysKind.Hangar && !s.destroyed);
         public Subsystem Sys(SysKind k) => systems.Find(s => s.kind == k);
         public float HullFrac => hull / maxHull;
@@ -234,11 +242,8 @@ namespace BIS
             AddEngine(new Vector3(-158, 6, 4));
             AddTurret(new Vector3(-100, 28.5f, 12), Vector3.up);
             AddTurret(new Vector3(100, 28.5f, 12), Vector3.up);
-            AddTurret(new Vector3(-30, 28.5f, 22), Vector3.up);
-            AddTurret(new Vector3(30, 28.5f, 22), Vector3.up);
             AddTurret(new Vector3(-110, 4, 31.5f), Vector3.forward);
             AddTurret(new Vector3(110, 4, 31.5f), Vector3.forward);
-            AddTurret(new Vector3(0, -17, 10), Vector3.down);
             AddHangarControl(new Vector3(0, 17.8f, 27));
             AddLifeSupport(new Vector3(-42, 0, -28));
             AddReactor(new Vector3(42, 0, -28));
