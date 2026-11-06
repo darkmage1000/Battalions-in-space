@@ -4,6 +4,8 @@
 # Pairing only has to be done once (adb pair IP:PORT CODE).
 # mDNS discovery does not work on this PC: pass the phone's "IP address & Port" from the Wireless debugging screen,
 #   bash Tools/deploy.sh 192.168.100.167:41307
+# or just the IP, and the open port is found by scanning 30000-49999 (Tools/findport.py):
+#   bash Tools/deploy.sh 192.168.100.167
 set -e
 ADB="/c/Program Files/Unity/Hub/Editor/6000.0.62f1/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,6 +15,7 @@ PKG="com.battalions.space"
 [ -f "$APK" ] || { echo "No APK at $APK - build first (Battalions > Build Android)"; exit 1; }
 "$ADB" start-server >/dev/null 2>&1
 EP="$1"
+if [ -n "$EP" ] && [[ "$EP" != *:* ]]; then PORT=$(python -I "$ROOT/Tools/findport.py" "$EP" | awk '{print $1}'); EP="$EP:$PORT"; echo "Found $EP"; fi
 for i in 1 2 3 4 5 6 7 8; do
   [ -n "$EP" ] && break
   EP=$("$ADB" mdns services | awk '/_adb-tls-connect/ {print $3; exit}')
