@@ -405,7 +405,7 @@ namespace BIS
                     var k = new MeshKit();
                     k.Cyl(pp + Vector3.up * 0.05f, pd.vehicles[v] == VKind.Air ? 6 : 5, 0.2f, Quaternion.identity, new Color(0.3f, 0.3f, 0.32f), 12);
                     k.Ring(pp + Vector3.up * 0.17f, (pd.vehicles[v] == VKind.Air ? 5.4f : 4.4f), (pd.vehicles[v] == VKind.Air ? 5.8f : 4.8f), MeshKit.Glow(new Color(0.9f, 0.75f, 0.3f) * 0.6f), 24);
-                    k.Make("pad", go.transform, false).layer = Layers.Default;
+                    var padGo = k.Make("pad", go.transform, false); padGo.layer = Layers.Default; padGo.transform.position = Vector3.zero;   // vertices are in world space
                 }
                 battle.posts.Add(cp);
             }
@@ -485,7 +485,55 @@ namespace BIS
                 Col(tp + q * new Vector3(0, 7.1f, 0), new Vector3(3.4f, 0.3f, 3.4f), q);
                 Col(tp + q * new Vector3(0, 3.5f, 0), new Vector3(2.6f, 7, 2.6f), q);
             }
-            k.Make("outpost", parent, true);
+            k.Make("outpost", parent, true).transform.position = Vector3.zero;   // vertices are in world space
+            KitProps(parent, p, big, idx, rad);
+        }
+
+        /// <summary>Kenney Space Kit (CC0) dressing round a post: a dish, an antenna or station, barrels, a console.</summary>
+        void KitProps(Transform parent, Vector3 p, bool big, int idx, float rad)
+        {
+            var r = new System.Random(def.seed + idx * 57);
+            float Rn(float a, float b) => a + (b - a) * (float)r.NextDouble();
+            int pads = def.posts[idx].vehicles.Length;
+            float Gap(float th)
+            {
+                float best = 999;
+                for (int v = 0; v < pads; v++) best = Mathf.Min(best, Mathf.Abs(Mathf.DeltaAngle(th, idx * 53 + v * 120 + 30)));
+                return best;
+            }
+            var used = new List<float>();
+            float Pick()
+            {
+                float bt = 0, bg = -1;
+                for (int c = 0; c < 36; c++)
+                {
+                    float th = c * 10 + Rn(0, 6);
+                    float g = Gap(th);
+                    foreach (var u in used) g = Mathf.Min(g, Mathf.Abs(Mathf.DeltaAngle(th, u)) * 0.9f);
+                    if (g > bg) { bg = g; bt = th; }
+                }
+                used.Add(bt);
+                return bt;
+            }
+            if (big) { used.Add(Pick()); used.Add(Pick()); }   // the bunker and tower took two directions (roughly)
+            void Put(string model, float dist, float scale, float colR)
+            {
+                float th = Pick() * Mathf.Deg2Rad;
+                Vector3 q = p + new Vector3(Mathf.Cos(th), 0, Mathf.Sin(th)) * dist;
+                q.y = Height(q.x, q.z) - 0.1f;
+                var m = ImportedModels.Load("Models/Kit/" + model, true, Quaternion.identity, 0, scale, true);
+                if (!m) return;
+                var rot = Quaternion.Euler(0, Rn(0, 360), 0);
+                var go = ImportedModels.Spawn(m, Mats.Lit, parent, q, rot, model);
+                go.GetComponent<MeshRenderer>().receiveShadows = true;
+                var c = new GameObject("c"); c.transform.SetParent(colRoot, false); c.transform.SetPositionAndRotation(q, rot);
+                var bc = c.AddComponent<BoxCollider>(); bc.center = m.bounds.center; bc.size = Vector3.Scale(m.bounds.size, new Vector3(colR, 1, colR));
+            }
+            Put(big ? "satelliteDishLarge" : "satelliteDish", rad + Rn(10, 14), big ? 0.85f : 0.6f, 0.7f);
+            Put(big ? "stationLarge" : "station", rad + Rn(9, 12), 0.75f, 0.8f);
+            Put("barrel", rad + Rn(3, 5), 1f, 0.9f);
+            Put("barrel", rad + Rn(3, 5), 1f, 0.9f);
+            if (big) { Put("console", rad + Rn(4, 6), 0.6f, 0.9f); Put("barrelLarge", rad + Rn(14, 18), 0.45f, 0.85f); }
         }
 
         // ── atmosphere ───────────────────────────────────────────────────

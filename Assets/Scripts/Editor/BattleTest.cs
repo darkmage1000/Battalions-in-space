@@ -83,8 +83,8 @@ namespace BIS.EditorTools
                 {
                     var m = VehicleModels.Get(d, fd);
                     var go = new GameObject(d.name); go.transform.SetParent(root.transform, false);
-                    void Part(Mesh mesh, Vector3 lp) { if (!mesh) return; var p = new GameObject("p"); p.transform.SetParent(go.transform, false); p.transform.localPosition = lp; p.AddComponent<MeshFilter>().sharedMesh = mesh; p.AddComponent<MeshRenderer>().sharedMaterial = Mats.Lit; }
-                    Part(m.body, Vector3.zero); Part(m.turret, m.turretPos); Part(m.gun, m.gunPos); if (d.gunner != null) Part(m.gunnerTurret, m.gunnerPos);
+                    void Part(Mesh mesh, Vector3 lp, Material mat = null) { if (!mesh) return; var p = new GameObject("p"); p.transform.SetParent(go.transform, false); p.transform.localPosition = lp; p.AddComponent<MeshFilter>().sharedMesh = mesh; p.AddComponent<MeshRenderer>().sharedMaterial = mat ? mat : Mats.Lit; }
+                    Part(m.body, Vector3.zero, m.mat); Part(m.turret, m.turretPos); Part(m.gun, m.gunPos); if (d.gunner != null) Part(m.gunnerTurret, m.gunnerPos);
                     float w = Mathf.Max(m.bounds.size.x, 6);
                     x += w / 2 + 2;
                     go.transform.localPosition = new Vector3(x, 1.5f + m.bounds.extents.y, f * 15);
@@ -142,6 +142,34 @@ namespace BIS.EditorTools
                     b.units.Remove(u); Object.DestroyImmediate(u.gameObject);
                 }
             return $"{fails} of {total} walks stuck\n" + sb;
+        }
+
+        /// <summary>Imported models in a row 3000 m up (flat ground, sun), camera looking at them; returns sizes.</summary>
+        public static string ModelRow(string[] paths, string[] textures, float size, float camYaw = 150, float rotX = 0)
+        {
+            Game.I.ClearBackdrop(); Game.I.menu.Hide();
+            var old = GameObject.Find("ModelRow"); if (old) Object.Destroy(old);
+            var root = new GameObject("ModelRow"); root.transform.position = new Vector3(0, 3000, 0);
+            var floor = GameObject.CreatePrimitive(PrimitiveType.Cube); floor.transform.SetParent(root.transform, false);
+            floor.transform.localScale = new Vector3(paths.Length * size * 1.4f + 20, 0.2f, size * 3); floor.transform.localPosition = new Vector3(0, -0.1f, 0); floor.GetComponent<Renderer>().sharedMaterial = Mats.Lit;
+            var sb = new StringBuilder();
+            float x = -(paths.Length - 1) * size * 0.7f;
+            for (int i = 0; i < paths.Length; i++)
+            {
+                var tex = textures != null && i < textures.Length && textures[i] != null ? ImportedModels.Tex(textures[i]) : null;
+                var m = ImportedModels.Load(paths[i], tex == null, Quaternion.Euler(rotX, 0, 0), size, 1, true);
+                if (!m) { sb.Append(paths[i] + " missing\n"); continue; }
+                ImportedModels.Spawn(m, tex ? Mats.LitTex(tex, Color.white) : Mats.Lit, root.transform, root.transform.position + new Vector3(x, 0.5f, 0), Quaternion.identity, paths[i]);
+                sb.Append($"{paths[i]} {m.bounds.size:0.0}\n");
+                x += size * 1.4f;
+            }
+            Game.I.sun.transform.rotation = Quaternion.Euler(45, 160, 0); Game.I.sun.shadows = LightShadows.Soft;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat; RenderSettings.ambientLight = new Color(0.5f, 0.5f, 0.55f); RenderSettings.fog = false;
+            var cam = Game.Cam; float span = paths.Length * size * 1.4f;
+            cam.transform.rotation = Quaternion.Euler(28, camYaw, 0);
+            cam.transform.position = root.transform.position + Vector3.up * 2 - cam.transform.forward * span * 0.75f;
+            cam.fieldOfView = 50;
+            return sb.ToString();
         }
 
         /// <summary>Builds a land map and saves Previews/Maps/&lt;name&gt;.png: the minimap beside the bot walk grid (grey walk, dark blocked, tan walk-only, blue wade).</summary>

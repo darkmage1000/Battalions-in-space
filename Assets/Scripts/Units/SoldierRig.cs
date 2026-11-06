@@ -4,8 +4,11 @@ using UnityEngine;
 namespace BIS
 {
     /// <summary>
-    /// Part-based soldier model (hips, torso, head, arms, legs, gun) built from MeshKit shapes per faction
-    /// body style, class and hero, animated procedurally. Meshes are cached by key.
+    /// Soldier model. On Medium / High graphics: the Quaternius Universal Animation Library mannequin (CC0) in the
+    /// faction's colours, animated by Resources/Models/Characters/Soldier.controller (built by
+    /// Battalions > Build Soldier Animator), with the faction helmet on its head bone, the code-built gun in its
+    /// right hand and the chest bent toward the aim. On Low (or if the files are missing): the original part-based
+    /// model built from MeshKit shapes and animated procedurally. Meshes are cached by key.
     /// </summary>
     public class SoldierRig : MonoBehaviour
     {
@@ -18,6 +21,32 @@ namespace BIS
         static readonly Dictionary<string, Mesh> cache = new Dictionary<string, Mesh>();
         FactionDef f;
         Color main, second, accent, skin, glow;
+        // animated mannequin
+        Animator anim;
+        Transform chest, handR, bodyRoot;
+        float pitchNow;
+        HeroDef heroDef;
+        Quaternion chestAnim, chestSet, headAnim, headSet;
+        static GameObject manPrefab;
+        static RuntimeAnimatorController manCtl;
+        static bool manTried;
+        static readonly Dictionary<string, Mesh> manMeshes = new Dictionary<string, Mesh>();
+        public bool Animated => anim != null;
+
+        public static bool MannequinAvailable
+        {
+            get
+            {
+                if (!manTried)
+                {
+                    manTried = true;
+                    manPrefab = Resources.Load<GameObject>("Models/Characters/UAL_Mannequin");
+                    manCtl = Resources.Load<RuntimeAnimatorController>("Models/Characters/Soldier");
+                }
+                return manPrefab && manCtl;
+            }
+        }
+        public static bool UseMannequin => Settings.Quality > 0 && MannequinAvailable;
         Body body;
         string key;
 
@@ -70,6 +99,8 @@ namespace BIS
             float hipY = body == Body.Slender ? 1.05f : body == Body.Machine ? 0.98f : 0.92f;
             float legLen = hipY;
             height = (body == Body.Slender ? 2.05f : 1.8f) * s;
+            heroDef = h;
+            if (UseMannequin && MakeMannequin(c, h, weapon)) return;
 
             hips = Part("hips", transform, new Vector3(0, hipY, 0), Cached(key + "_hips", k => BuildHips(k, c, h)));
             torso = Part("torso", hips, Vector3.zero, Cached(key + "_torso", k => BuildTorso(k, c, h)));
@@ -86,6 +117,98 @@ namespace BIS
             gun = Part("gun", torso, new Vector3(sh * 0.55f, shY - 0.18f, 0.32f), null);
             SetWeapon(weapon);
             rends = GetComponentsInChildren<Renderer>();
+        }
+
+        /// <summary>The faction-coloured copy of the mannequin mesh: body in the main colour, joints in the second.</summary>
+        static Mesh ColouredMannequin(SkinnedMeshRenderer smr, Color body, Color joints)
+        {
+            string k = ColorUtility.ToHtmlStringRGB(body) + ColorUtility.ToHtmlStringRGB(joints);
+            if (manMeshes.TryGetValue(k, out var m) && m) return m;
+            var src = smr.sharedMesh;
+            m = Object.Instantiate(src);
+            m.name = "mannequin_" + k;
+            var mats = smr.sharedMaterials;
+            // the joint material is the purple one (more blue than red); everything else is the body
+            int jointSub = -1; float best = -9;
+            for (int i = 0; i < mats.Length && i < src.subMeshCount; i++)
+                if (mats[i] && mats[i].HasProperty("_Color")) { var c = mats[i].color; if (c.b - c.r > best) { best = c.b - c.r; jointSub = i; } }
+            var cols = new Color[src.vertexCount];
+            for (int i = 0; i < cols.Length; i++) cols[i] = body;
+            if (jointSub >= 0 && src.subMeshCount > 1)
+                foreach (int t in src.GetTriangles(jointSub)) cols[t] = joints;
+            m.colors = cols;
+            manMeshes[k] = m;
+            return m;
+        }
+
+        bool MakeMannequin(ClassDef c, HeroDef h, WeaponDef weapon)
+        {
+            var inst = Object.Instantiate(manPrefab, transform);
+            inst.name = "body";
+            bodyRoot = inst.transform;
+            anim = inst.GetComponent<Animator>();
+            var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (!anim || !smr) { Object.Destroy(inst); anim = null; return false; }
+            float k = height / transform.localScale.y / 1.94f;
+            Vector3 sc = Vector3.one * k;
+            if (body == Body.Slender) { sc.x *= 0.88f; sc.z *= 0.88f; }
+            if (body == Body.Machine) { sc.x *= 1.08f; sc.z *= 1.08f; }
+            if (body == Body.Reptile) { sc.x *= 1.06f; sc.z *= 1.04f; }
+            bodyRoot.localPosition = Vector3.zero; bodyRoot.localRotation = Quaternion.identity; bodyRoot.localScale = sc;
+            anim.runtimeAnimatorController = manCtl;
+            anim.applyRootMotion = false;
+            anim.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
+            // body leans toward the faction's second colour (no plain white armour), joints dark
+            Color bodyCol = Color.Lerp(main, second, h != null ? 0.15f : 0.45f);
+            if (body == Body.Reptile || body == Body.Slender) bodyCol = Color.Lerp(bodyCol, skin, 0.25f);
+            bodyCol.a = 1;
+            Color jointCol = Dark(Color.Lerp(second, main, 0.3f), 0.45f);
+            smr.sharedMesh = ColouredMannequin(smr, bodyCol, jointCol);
+            var ms = new Material[smr.sharedMesh.subMeshCount]; for (int i = 0; i < ms.Length; i++) ms[i] = Mats.Lit;
+            smr.sharedMaterials = ms;
+            smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            hips = anim.GetBoneTransform(HumanBodyBones.Hips);
+            chest = anim.GetBoneTransform(HumanBodyBones.Chest) ?? anim.GetBoneTransform(HumanBodyBones.Spine);
+            torso = chest;
+            head = anim.GetBoneTransform(HumanBodyBones.Head);
+            handR = anim.GetBoneTransform(HumanBodyBones.RightHand);
+            armL = anim.GetBoneTransform(HumanBodyBones.LeftUpperArm); armR = anim.GetBoneTransform(HumanBodyBones.RightUpperArm);
+            legL = anim.GetBoneTransform(HumanBodyBones.LeftUpperLeg); legR = anim.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+            if (!chest || !head || !handR) { Object.Destroy(inst); anim = null; return false; }
+            // the faction helmet / head piece, upright in the bind pose and then carried by the head bone
+            var hm = Cached(key + "_head", kk => BuildHead(kk, c, h));
+            var helmet = new GameObject("helmet").transform;
+            helmet.SetParent(head, false);
+            helmet.rotation = transform.rotation;
+            helmet.position = head.position - transform.up * 0.13f * k;
+            helmet.localScale = Vector3.one * (k * 1.12f / Mathf.Max(0.0001f, head.lossyScale.x)) * transform.localScale.x;
+            helmet.gameObject.AddComponent<MeshFilter>().sharedMesh = hm;
+            helmet.gameObject.AddComponent<MeshRenderer>().sharedMaterial = Mats.Lit;
+            gun = Part("gun", transform, Vector3.zero, null);
+            SetWeapon(weapon);
+            anim.Play(h != null && h.kind == HeroKind.Blade ? "Sword" : h != null && h.kind == HeroKind.Mystic ? "Spell" : "Rifle", 1, Random.value);
+            anim.Play("Move", 0, Random.value);
+            rends = GetComponentsInChildren<Renderer>();
+            return true;
+        }
+
+        void LateUpdate()
+        {
+            if (!anim || deadT >= 0) return;
+            // lean the chest (and a little of the head) toward where the soldier aims. When the animator skipped a
+            // frame (off screen) the bones still hold last frame's bend: start from the animated pose, never stack.
+            if (chest.localRotation == chestSet) chest.localRotation = chestAnim;
+            if (head.localRotation == headSet) head.localRotation = headAnim;
+            chestAnim = chest.localRotation; headAnim = head.localRotation;
+            chest.rotation = Quaternion.AngleAxis(pitchNow * 0.65f, transform.right) * chest.rotation;
+            head.rotation = Quaternion.AngleAxis(pitchNow * 0.3f, transform.right) * head.rotation;
+            chestSet = chest.localRotation; headSet = head.localRotation;
+            if (gun)
+            {
+                bool blade = heroDef != null && heroDef.kind == HeroKind.Blade;
+                gun.position = handR.position + transform.rotation * new Vector3(0.02f, 0.02f, blade ? 0.02f : -0.06f);
+                gun.rotation = transform.rotation * Quaternion.Euler(pitchNow, 0, 0) * (blade ? Quaternion.Euler(-35 - swing * 80, 0, 0) : Quaternion.identity);
+            }
         }
 
         public void SetWeapon(WeaponDef w)
@@ -375,6 +498,17 @@ namespace BIS
         // ── animation ────────────────────────────────────────────────────
         public void Animate(float speed, bool grounded, bool crouch, float pitch, float dt, bool swingBlade)
         {
+            if (anim)
+            {
+                if (deadT >= 0) return;
+                anim.SetFloat("Speed", speed, 0.1f, dt);
+                anim.SetBool("Crouch", crouch);
+                anim.SetBool("Grounded", grounded);
+                pitchNow = Mathf.Clamp(pitch, -60, 60);
+                if (swingBlade) { swing = 1; anim.Play("Swing", 1, 0); }
+                swing = Mathf.MoveTowards(swing, 0, dt * 3f);
+                return;
+            }
             if (deadT >= 0)
             {
                 deadT += dt;
@@ -422,6 +556,7 @@ namespace BIS
         {
             if (deadT >= 0) return;
             deadT = 0;
+            if (anim) { anim.SetTrigger("Die"); return; }
             Vector3 local = transform.parent ? transform.parent.InverseTransformDirection(dir) : dir;
             local.y = 0;
             if (local.sqrMagnitude < 0.01f) local = Vector3.back;
@@ -434,8 +569,13 @@ namespace BIS
             if (cloaked == on) return;
             cloaked = on;
             if (rends == null) rends = GetComponentsInChildren<Renderer>();
+            var m = on ? Mats.Alpha(new Color(0.6f, 0.8f, 1f, 0.12f)) : Mats.Lit;
             foreach (var r in rends)
-                if (r) r.sharedMaterial = on ? Mats.Alpha(new Color(0.6f, 0.8f, 1f, 0.12f)) : Mats.Lit;
+            {
+                if (!r) continue;
+                if (r is SkinnedMeshRenderer sk) { var arr = new Material[sk.sharedMesh ? sk.sharedMesh.subMeshCount : 1]; for (int i = 0; i < arr.Length; i++) arr[i] = m; sk.sharedMaterials = arr; }
+                else r.sharedMaterial = m;
+            }
         }
 
         public void SetVisible(bool v)

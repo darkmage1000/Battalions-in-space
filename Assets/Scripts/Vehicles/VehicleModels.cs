@@ -12,6 +12,7 @@ namespace BIS
         public Bounds bounds;
         public float hover = 1.2f;
         public float camDist = 9, camHeight = 3;
+        public Material mat;          // null = Mats.Lit (vertex colours); imported ships use a textured material
     }
 
     public static class VehicleModels
@@ -36,8 +37,43 @@ namespace BIS
                 default: Support(m, f); break;
             }
             m.bounds = m.body.bounds;
+            if (d.IsShip) UseShipArt(m, d, f);
             cache[key] = m;
             return m;
+        }
+
+        // Quaternius "Ultimate Spaceships" (CC0) per faction and role: model, texture, size vs the code-built ship.
+        // Pancake and Spitfire are left out on purpose (too close to well-known film ships).
+        static readonly string[,] ShipArt =
+        {
+            //            Fighter                      Bomber                          Interceptor                  Support
+            /* Concord */ { "Striker:Striker_Blue",     "Executioner:Executioner_Blue", "Dispatcher:Dispatcher_Purple", "Insurgent:Insurgent_Blue" },
+            /* Vorrkai */ { "Zenith:Zenith_Red",        "Insurgent:Insurgent_Red",      "Bob:Bob_Orange",               "Imperial:Imperial_Red" },
+            /* Synod   */ { "Omen:Omen_Orange",         "Imperial:Imperial_Orange",     "Zenith:Zenith_Red",            "Challenger:Challenger_Green" },
+            /* Veil    */ { "Dispatcher:Dispatcher_Purple", "Insurgent:Insurgent_Purple", "Striker:Striker_Blue",       "Challenger:Challenger_Green" },
+        };
+
+        static void UseShipArt(VModel m, VehicleDef d, FactionDef f)
+        {
+            int fi = System.Array.IndexOf(Factions.All, f);
+            int role = d.kind == VKind.Fighter ? 0 : d.kind == VKind.Bomber ? 1 : d.kind == VKind.Interceptor ? 2 : 3;
+            if (fi < 0 || fi >= ShipArt.GetLength(0)) return;
+            var parts = ShipArt[fi, role].Split(':');
+            var tex = ImportedModels.Tex("Models/Ships/" + parts[1]);
+            var raw = ImportedModels.Load("Models/Ships/" + parts[0], false, Quaternion.identity, 0, 1, false);
+            if (!raw || !tex) return;
+            // as long as the code-built ship it replaces (a little longer for bombers and support craft)
+            float want = m.bounds.size.z * (role == 1 || role == 3 ? 1.15f : 1.05f);
+            float k = want / Mathf.Max(0.01f, raw.bounds.size.z);
+            var mesh = ImportedModels.Load("Models/Ships/" + parts[0], false, Quaternion.identity, 0, k, false);
+            Color tint = Color.Lerp(Color.white, f.second, 0.18f); tint.a = 1;
+            m.body = mesh;
+            m.mat = Mats.LitTex(tex, tint);
+            m.bounds = mesh.bounds;
+            // engines at the tail, guns at the front corners of the new hull
+            var b = mesh.bounds;
+            m.engines = new[] { new Vector3(-b.extents.x * 0.25f, b.center.y, b.min.z), new Vector3(b.extents.x * 0.25f, b.center.y, b.min.z) };
+            m.muzzles = new[] { new Vector3(-b.extents.x * 0.45f, b.center.y, b.max.z * 0.7f), new Vector3(b.extents.x * 0.45f, b.center.y, b.max.z * 0.7f) };
         }
 
         static void Repulsors(MeshKit k, float w, float l, Color glow)

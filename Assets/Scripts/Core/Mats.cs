@@ -26,6 +26,21 @@ namespace BIS
             }
         }
 
+        static Shader litTexS;
+        static readonly Dictionary<string, Material> texMats = new Dictionary<string, Material>();
+        public static Shader LitTexShader => litTexS ? litTexS : (litTexS = Resources.Load<Shader>("Shaders/BIS_LitTex"));
+
+        /// <summary>BIS/Lit with a texture, one material per texture + tint (imported textured models).</summary>
+        public static Material LitTex(Texture tex, Color tint)
+        {
+            string k = (tex ? tex.name : "none") + tint;
+            if (texMats.TryGetValue(k, out var m) && m) return m;
+            m = new Material(LitTexShader) { name = "BIS_LitTex_" + (tex ? tex.name : ""), enableInstancing = true, mainTexture = tex };
+            m.color = tint;
+            texMats[k] = m;
+            return m;
+        }
+
         /// <summary>Glowing round dot (particles, bolt heads).</summary>
         public static Texture2D Glow
         {

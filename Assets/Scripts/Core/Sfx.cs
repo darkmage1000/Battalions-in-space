@@ -36,6 +36,14 @@ namespace BIS
             ("engine", "engineCircular", 1, 1f), ("fighter", "spaceEngineSmall", 1, 1f),
         };
 
+        /// <summary>Game sound id -> exact files in Resources/Audio (Kenney Interface Sounds, CC0).</summary>
+        static readonly (string id, string[] files, float pitch)[] NamedMap =
+        {
+            ("ui", new[] { "Ui/click_001", "Ui/click_002" }, 1f), ("ui2", new[] { "Ui/confirmation_001", "Ui/confirmation_002" }, 1f),
+            ("deny", new[] { "Ui/error_004" }, 1f), ("lock", new[] { "Ui/toggle_001" }, 1.2f), ("beep", new[] { "Ui/switch_002" }, 1f),
+            ("hitmark", new[] { "Ui/select_001" }, 1.6f),
+        };
+
         static float Rms(AudioClip c)
         {
             if (!c) return 0;
@@ -61,6 +69,17 @@ namespace BIS
                     var c = Resources.Load<AudioClip>($"Audio/Sfx/{m.file}_{i:000}");
                     if (c) list.Add(c);
                 }
+                if (list.Count == 0) continue;
+                float synth = Rms(Get(m.id)), rec = Rms(list[0]);
+                gain[m.id] = synth > 0 && rec > 0 ? Mathf.Clamp(synth / rec, 0.25f, 2.5f) : 1f;
+                pitchMul[m.id] = m.pitch;
+                variants[m.id] = list.ToArray();
+                clips[m.id] = list[0];
+            }
+            foreach (var m in NamedMap)
+            {
+                var list = new List<AudioClip>();
+                foreach (var f in m.files) { var c = Resources.Load<AudioClip>("Audio/" + f); if (c) list.Add(c); }
                 if (list.Count == 0) continue;
                 float synth = Rms(Get(m.id)), rec = Rms(list[0]);
                 gain[m.id] = synth > 0 && rec > 0 ? Mathf.Clamp(synth / rec, 0.25f, 2.5f) : 1f;

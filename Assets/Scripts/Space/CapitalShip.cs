@@ -243,6 +243,8 @@ namespace BIS
             AddLifeSupport(new Vector3(-42, 0, -28));
             AddReactor(new Vector3(42, 0, -28));
 
+            InteriorProps();
+
             // interior lights
             Lamp(new Vector3(0, 16, 12), 55, new Color(0.9f, 0.93f, 1f), 1.6f);
             Lamp(new Vector3(0, 3.5f, -20), 24, new Color(0.9f, 0.93f, 1f), 1.4f);
@@ -254,6 +256,45 @@ namespace BIS
                                    new Vector3(36, 0, -27), new Vector3(41, 0, -20), new Vector3(-24, 0, 12), new Vector3(24, 0, 12), new Vector3(0, 0, 25) });
             int[][] e = { new[] { 9, 0 }, new[] { 7, 0 }, new[] { 8, 0 }, new[] { 0, 1 }, new[] { 1, 2 }, new[] { 2, 3 }, new[] { 3, 4 }, new[] { 2, 5 }, new[] { 5, 6 }, new[] { 7, 9 }, new[] { 8, 9 } };
             links.AddRange(e);
+        }
+
+        /// <summary>Quaternius "Ultimate Modular Sci-Fi" (CC0) props: crates and containers along the hangar walls, consoles and tanks in the system rooms.</summary>
+        void InteriorProps()
+        {
+            var r = new System.Random(team * 101 + 7);
+            float Rn(float a, float b) => a + (b - a) * (float)r.NextDouble();
+            void Put(string model, Vector3 local, float yaw, float height)
+            {
+                var raw = ImportedModels.Load("Models/Interior/" + model, true, Quaternion.identity, 0, 1, true);
+                if (!raw) return;
+                float k = height / Mathf.Max(0.01f, raw.bounds.size.y);
+                var m = ImportedModels.Load("Models/Interior/" + model, true, Quaternion.identity, 0, k, true);
+                var go = ImportedModels.Spawn(m, Mats.Lit, hullRoot, Vector3.zero, Quaternion.identity, model);
+                go.transform.localPosition = local; go.transform.localRotation = Quaternion.Euler(0, yaw, 0);
+                go.layer = Layers.Hull;
+                var bc = go.AddComponent<BoxCollider>(); bc.center = m.bounds.center; bc.size = m.bounds.size * 0.95f;
+            }
+            // hangar: stacks along both side walls, clear of the parking slots (x -24..24) and the door
+            string[] cargo = { "Props_Crate", "Props_CrateLong", "Props_ContainerFull", "Props_Crate", "Props_Capsule" };
+            for (int s = -1; s <= 1; s += 2)
+                for (int i = 0; i < 5; i++)
+                {
+                    string mdl = cargo[(i + (s > 0 ? 2 : 0)) % cargo.Length];
+                    float h = mdl == "Props_ContainerFull" ? 3.2f : mdl == "Props_Capsule" ? 3f : mdl == "Props_CrateLong" ? 1.4f : 1.6f;
+                    Put(mdl, new Vector3(s * Rn(32.2f, 33.4f), 0, 1 + i * 5.6f + Rn(-0.6f, 0.6f)), s > 0 ? -90 : 90, h);
+                }
+            Put("Props_Shelf_Tall", new Vector3(-30, 0, -5.2f), 0, 3.4f);
+            Put("Props_Shelf_Tall", new Vector3(30, 0, -5.2f), 0, 3.4f);
+            // system rooms: consoles and tanks against the outer walls, the system in the middle stays clear
+            for (int s = -1; s <= 1; s += 2)
+            {
+                float cx = 42 * s;
+                Put("Props_Computer", new Vector3(cx - 5, 0, -39), 0, 2.2f);
+                Put("Props_ComputerSmall", new Vector3(cx + 5, 0, -39), 0, 1.8f);
+                Put("Props_Vessel_Tall", new Vector3(49 * s, 0, -36), 0, 3.2f);
+                Put("Props_Vessel", new Vector3(49 * s, 0, -20), 0, 2.2f);
+                Put("Props_Shelf", new Vector3(cx + 4, 0, -16.9f), 180, 2.2f);
+            }
         }
 
         void Lamp(Vector3 p, float range, Color c, float inten)

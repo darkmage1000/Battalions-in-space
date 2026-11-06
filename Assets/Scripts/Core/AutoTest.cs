@@ -15,8 +15,29 @@ namespace BIS
 
         public static void MaybeStart()
         {
-            foreach (var a in System.Environment.GetCommandLineArgs())
-                if (a == "-autotest") { new GameObject("AutoTest").AddComponent<AutoTest>(); return; }
+            var args = new System.Collections.Generic.List<string>(System.Environment.GetCommandLineArgs());
+            // on a phone: adb shell am start -n com.battalions.space/com.unity3d.player.UnityPlayerGameActivity -e args "-autotest -quality 1"
+            string extra = AndroidExtra("args");
+            if (!string.IsNullOrEmpty(extra)) args.AddRange(extra.Split(' '));
+            int qi = args.IndexOf("-quality");
+            if (qi >= 0 && qi + 1 < args.Count && int.TryParse(args[qi + 1], out int q)) { Settings.Quality = Mathf.Clamp(q, 0, 2); Settings.Apply(); }
+            if (args.Contains("-autotest")) new GameObject("AutoTest").AddComponent<AutoTest>();
+        }
+
+        static string AndroidExtra(string key)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var up = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var act = up.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (var intent = act.Call<AndroidJavaObject>("getIntent"))
+                    return intent.Call<string>("getStringExtra", key);
+            }
+            catch { return null; }
+#else
+            return null;
+#endif
         }
 
         void Line(string s) { log.AppendLine(s); Debug.Log("[autotest] " + s); }
@@ -28,7 +49,7 @@ namespace BIS
         {
             Invoke(nameof(Bail), 300);
             Application.logMessageReceived += (c, st, t) => { if (t == LogType.Error || t == LogType.Exception) Line("ERROR " + c); };
-            Line($"start {Screen.width}x{Screen.height} {SystemInfo.graphicsDeviceName} shaders ok: {Mats.LitShader != null && Mats.LitShader.isSupported} {Mats.FxShader != null && Mats.FxShader.isSupported} {Mats.SkyShader != null && Mats.SkyShader.isSupported}");
+            Line($"start quality {Settings.Quality} animated soldiers {SoldierRig.UseMannequin} {Screen.width}x{Screen.height} {SystemInfo.graphicsDeviceName} shaders ok: {Mats.LitShader != null && Mats.LitShader.isSupported} {Mats.FxShader != null && Mats.FxShader.isSupported} {Mats.SkyShader != null && Mats.SkyShader.isSupported}");
             yield return new WaitForSeconds(1);
             for (int m = 0; m < Maps.Land.Length + Maps.Space.Length; m++)
             {

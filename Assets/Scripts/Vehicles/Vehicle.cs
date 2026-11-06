@@ -78,6 +78,7 @@ namespace BIS
             riders = new Unit[d.seats];
             model = VehicleModels.Get(d, f);
             body = MakePart("body", transform, Vector3.zero, model.body, true);
+            if (model.mat) body.GetComponent<MeshRenderer>().sharedMaterial = model.mat;
             if (model.turret) { turret = MakePart("turret", body, model.turretPos, model.turret, true); }
             if (model.gun) gun = MakePart("gun", turret ? turret : body, turret ? model.gunPos - model.turretPos : model.gunPos, model.gun, true);
             if (model.gunnerTurret && d.gunner != null) gunnerT = MakePart("gunner", body, model.gunnerPos, model.gunnerTurret, true);
