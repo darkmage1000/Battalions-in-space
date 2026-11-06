@@ -97,6 +97,53 @@ namespace BIS.EditorTools
             var cam = Game.Cam; cam.transform.position = new Vector3(0, 3040, -50); cam.transform.rotation = Quaternion.Euler(35, 0, 0); cam.fieldOfView = 55;
         }
 
+        /// <summary>
+        /// Walks a driverless test soldier out of every command post in 12 directions for `seconds` (with a
+        /// jump when it stops moving) and reports the walks that ended less than `need` metres from the post.
+        /// </summary>
+        public static string PostEscape(float seconds = 6, float need = 28)
+        {
+            var b = Battle.I;
+            var p = new Participant { name = "walker", team = 0 };
+            var sb = new StringBuilder();
+            int fails = 0, total = 0;
+            foreach (var cp in b.posts)
+                for (int k = 0; k < 12; k++)
+                {
+                    float a = k * 30 * Mathf.Deg2Rad;
+                    Vector3 dir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
+                    Vector3 start = cp.Pos + dir * 2; start.y = b.GroundY(start) + 0.3f;
+                    var u = b.SpawnUnit(p, Factions.Get(0).classes[0], null, start, 0);
+                    u.bot = null; u.invulnUntil = Time.time + 999;
+                    float lastD = 0, still = 0;
+                    for (float t = 0; t < seconds; t += 0.02f)
+                    {
+                        u.input = new UnitInput { move = dir, aimPoint = u.Eye + dir * 50, sprint = true };
+                        float d = Vector3.Distance(new Vector3(u.transform.position.x, 0, u.transform.position.z), new Vector3(cp.Pos.x, 0, cp.Pos.z));
+                        if (d - lastD < 0.01f) still += 0.02f; else still = 0;
+                        lastD = d;
+                        EditorApplication.Step();
+                    }
+                    float dist = Vector3.Distance(new Vector3(u.transform.position.x, 0, u.transform.position.z), new Vector3(cp.Pos.x, 0, cp.Pos.z));
+                    total++;
+                    if (dist < need)
+                    {
+                        fails++;
+                        string what = "";
+                        if (Physics.SphereCast(u.transform.position + Vector3.up * 0.8f, 0.35f, dir, out var h, 2f, Layers.MoveMask & ~(1 << Layers.Ground), QueryTriggerInteraction.Ignore)) what = "blocked by " + h.collider.name + "/" + (h.collider.transform.parent ? h.collider.transform.parent.name : "");
+                        else
+                        {
+                            Vector3 ahead = u.transform.position + dir * 3;
+                            float rise = b.GroundY(ahead) - b.GroundY(u.transform.position);
+                            what = $"slope rise {rise:0.0} m over 3 m";
+                        }
+                        sb.Append($"{cp.postName} dir {k * 30}: stopped at {dist:0.0} m ({what})\n");
+                    }
+                    b.units.Remove(u); Object.DestroyImmediate(u.gameObject);
+                }
+            return $"{fails} of {total} walks stuck\n" + sb;
+        }
+
         /// <summary>Put the player (on foot) at a position looking at a target.</summary>
         public static void Place(Vector3 p, Vector3 look)
         {

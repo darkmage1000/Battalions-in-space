@@ -420,10 +420,11 @@ namespace BIS
                 Col(wp + Vector3.up * (hh / 2 - 0.2f), new Vector3(len, hh, 0.7f), q);
             }
             // crates
-            int crates = big ? 8 : 4;
+            int crates = big ? 5 : 3;
             for (int c = 0; c < crates; c++)
             {
-                float a = Rn(0, 360); float d = Rn(5, rad - 2);
+                // crates sit just outside the cover ring, so the capture area itself stays open
+                float a = Rn(0, 360); float d = Rn(rad + 2.5f, rad + 5.5f);
                 Vector3 cpz = p + Quaternion.Euler(0, a, 0) * new Vector3(0, 0, d); cpz.y = Height(cpz.x, cpz.z);
                 float s = Rn(0.9f, 1.4f);
                 var q = Quaternion.Euler(0, Rn(0, 90), 0);
@@ -433,17 +434,30 @@ namespace BIS
             }
             if (big)
             {
-                // a bunker with a doorway and a watch tower
-                float a = idx * 47 + 200;
-                var q = Quaternion.Euler(0, a, 0);
-                Vector3 bp = p + q * new Vector3(0, 0, -7); bp.y = Height(bp.x, bp.z);
+                // a bunker with a doorway and a watch tower, outside the capture ring and away from the vehicle pads
+                int pads = def.posts[idx].vehicles.Length;
+                float AngGap(float th, float skip)
+                {
+                    float best = 999;
+                    for (int v = 0; v < pads; v++) best = Mathf.Min(best, Mathf.Abs(Mathf.DeltaAngle(th, idx * 53 + v * 120 + 30)));
+                    if (skip > -999) best = Mathf.Min(best, Mathf.Abs(Mathf.DeltaAngle(th, skip)) * 0.8f);
+                    return best;
+                }
+                float bTh = 0, bBest = -1;
+                for (int c = 0; c < 24; c++) { float th = c * 15; float g = AngGap(th, -9999); if (g > bBest) { bBest = g; bTh = th; } }
+                float tTh = 0, tBest = -1;
+                for (int c = 0; c < 24; c++) { float th = c * 15; float g = AngGap(th, bTh); if (g > tBest) { tBest = g; tTh = th; } }
+                Vector3 bDir = new Vector3(Mathf.Cos(bTh * Mathf.Deg2Rad), 0, Mathf.Sin(bTh * Mathf.Deg2Rad));
+                Vector3 bp = p + bDir * (rad + 9); bp.y = Height(bp.x, bp.z);
+                var q = Quaternion.LookRotation(-bDir);     // the open ends face the post and away from it
                 k.Box(bp + q * new Vector3(-2.6f, 1.4f, 0), new Vector3(2, 3, 6), q, wall);
                 k.Box(bp + q * new Vector3(2.6f, 1.4f, 0), new Vector3(2, 3, 6), q, wall);
                 k.Box(bp + q * new Vector3(0, 2.6f, 0), new Vector3(7.4f, 0.8f, 6.4f), q, dark);
                 Col(bp + q * new Vector3(-2.6f, 1.4f, 0), new Vector3(2, 3, 6), q);
                 Col(bp + q * new Vector3(2.6f, 1.4f, 0), new Vector3(2, 3, 6), q);
                 Col(bp + q * new Vector3(0, 2.6f, 0), new Vector3(7.4f, 0.8f, 6.4f), q);
-                Vector3 tp = p + q * new Vector3(8, 0, 6); tp.y = Height(tp.x, tp.z);
+                Vector3 tDir = new Vector3(Mathf.Cos(tTh * Mathf.Deg2Rad), 0, Mathf.Sin(tTh * Mathf.Deg2Rad));
+                Vector3 tp = p + tDir * (rad + 7); tp.y = Height(tp.x, tp.z);
                 for (int l = 0; l < 4; l++)
                 {
                     Vector3 o = new Vector3(l % 2 == 0 ? -1.2f : 1.2f, 3.5f, l < 2 ? -1.2f : 1.2f);
