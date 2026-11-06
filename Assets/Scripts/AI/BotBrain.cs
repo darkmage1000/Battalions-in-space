@@ -175,6 +175,7 @@ namespace BIS
         bool houseGoal;          // moveGoal is a spot inside a building: hold there a while
         public static int HousePicks;
         float holdT;
+        bool holdCrouch;
 
         /// <summary>Defenders and snipers sometimes take a building near the objective instead of standing in the open.</summary>
         bool PickHouse(Vector3 near, float within)
@@ -190,7 +191,7 @@ namespace BIS
             if (best == null) return false;
             Vector3 l = new Vector3(Random.Range(-best.w * 0.3f, best.w * 0.3f), 0, Random.Range(-best.d * 0.3f, best.d * 0.3f));
             moveGoal = best.center + best.rot * l;
-            houseGoal = true; holdT = Random.Range(15f, 32f);
+            houseGoal = true; holdT = Random.Range(15f, 32f); holdCrouch = Random.value < 0.5f;
             objT = 60; HousePicks++;
             return true;
         }
@@ -323,7 +324,7 @@ namespace BIS
                         // heading for a building: keep going and fight from inside it
                         Vector3 tg = moveGoal - pos; tg.y = 0;
                         if (tg.magnitude > 1.5f) move = Toward(pos, moveGoal) * 0.9f + side * 0.15f;
-                        else { move = Vector3.zero; crouch = Random.value < 0.6f; holdT -= dt; }
+                        else { move = Vector3.zero; crouch = holdCrouch; holdT -= dt; }
                     }
                 }
                 float boltSpeed = u.Weapon.def.Hitscan ? 1e6f : u.Weapon.def.speed;
@@ -387,7 +388,7 @@ namespace BIS
                 if (houseGoal && d < 2.5f)
                 {
                     // holding a building: crouch at the spot, look out, stay until the timer runs out
-                    holdT -= dt; crouch = Random.value < 0.5f;
+                    holdT -= dt; crouch = holdCrouch;   // one pose for the whole hold (a fresh roll every frame bobbed up and down)
                     if (holdT <= 0) { houseGoal = false; objT = 0; }
                 }
                 else if (d > 2) { move = Toward(pos, moveGoal); sprint = d > 30; }
