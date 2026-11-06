@@ -5,7 +5,7 @@ namespace BIS
     /// <summary>Main menu, Quickplay setup, options, how-to-play and credits. Conquest screens live in ConquestUI.</summary>
     public partial class MenuUI : MonoBehaviour
     {
-        public enum Screen { None, Main, Quick, Options, Help, Credits, ConquestSetup, Conquest, Multi }
+        public enum Screen { None, Main, Quick, Options, Help, Credits, ConquestSetup, Conquest, Multi, Profiles }
         public Screen screen = Screen.Main;
         // quickplay choices
         int qpMode;         // 0 land, 1 space
@@ -32,6 +32,7 @@ namespace BIS
                 case Screen.ConquestSetup: ConquestSetup(); break;
                 case Screen.Conquest: ConquestMapScreen(); break;
                 case Screen.Multi: Multi(); break;
+                case Screen.Profiles: ProfilesScreen(); break;
             }
         }
 
@@ -44,6 +45,7 @@ namespace BIS
 
         void Main()
         {
+            if (Profiles.Current == null) { screen = Screen.Profiles; return; }
             Title("Command posts, starfighters, capital ships and a galaxy to conquer");
             float w = UI.W;
             float x = w / 2 - 230, y = 240;
@@ -55,6 +57,10 @@ namespace BIS
             if (UI.Button(new Rect(x, y, 460, 70), "CREDITS", false, true, 30)) screen = Screen.Credits; y += 86;
             if (UI.Button(new Rect(x, y, 460, 70), "QUIT", false, true, 30)) Application.Quit();
             if (lastResult != null) UI.Text(new Rect(0, UI.H - 80, w, 40), lastResult, 22, UI.Dim, TextAnchor.MiddleCenter);
+            var pr = Profiles.Current;
+            UI.Text(new Rect(w - 620, 24, 400, 30), $"Playing as <b>{pr.name}</b>", 22, Color.white, TextAnchor.MiddleRight);
+            UI.Text(new Rect(w - 620, 52, 400, 26), $"{pr.battles} battles, {pr.wins} won, {pr.kills} kills", 16, UI.Dim, TextAnchor.MiddleRight);
+            if (UI.Button(new Rect(w - 205, 22, 185, 56), "SWITCH", false, true, 20)) { confirmDelete = null; naming = false; screen = Screen.Profiles; }
             UI.Text(new Rect(20, UI.H - 40, 600, 30), "v0.9 - an original game; all names, art and sound made for it", 16, UI.Dim);
         }
 

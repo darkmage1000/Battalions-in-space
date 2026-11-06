@@ -208,6 +208,7 @@ namespace BIS.Net
                 if (!v || !v.Alive) continue;
                 v.netPos = pos; v.netRot = rot; v.netTurret = tq; v.netGun = gq; v.netGunner = gnq;
                 v.netSpeed = spd; v.netThrottle = thr; v.netVel = vel; v.netLanded = (f & 8) != 0; v.netAge = 0;
+                if (hp > v.hp + 0.5f) v.lastRepaired = Time.time;
                 v.hp = hp;
                 var now = new Unit[v.riders.Length];
                 for (int k = 0; k < now.Length && k < nr; k++) now[k] = riders[k];

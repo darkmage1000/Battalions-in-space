@@ -116,7 +116,7 @@ namespace BIS
         public PendingBattle pending = new PendingBattle();
         public int battlesWon, battlesLost;
 
-        public static string SavePath => Path.Combine(Application.persistentDataPath, "conquest.json");
+        public static string SavePath => Profiles.Current != null ? Path.Combine(Profiles.Dir(Profiles.Current), "conquest.json") : Path.Combine(Application.persistentDataPath, "conquest.json");
         public static bool HasSave => File.Exists(SavePath);
 
         public static Campaign New(int player, int[] opponents, int difficulty, int tickets, int bots)

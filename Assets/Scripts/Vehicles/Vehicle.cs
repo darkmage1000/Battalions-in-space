@@ -37,7 +37,7 @@ namespace BIS
         public float IdleTime { get; private set; }
         public Transform lockTarget;
         public float lockTime;
-        public float lastHurt = -99;
+        public float lastHurt = -99, lastRepaired = -99;   // lastRepaired: the HUD shows a filling health bar for a while
         public Unit lastAttacker;
         public float radius = 2;
         public CapitalShip parkedIn;
@@ -221,6 +221,7 @@ namespace BIS
             if (!CanRepair) return 0;
             float before = hp;
             hp = Mathf.Min(maxHp, hp + amount);
+            if (hp > before) lastRepaired = Time.time;
             return hp - before;
         }
 
@@ -250,6 +251,10 @@ namespace BIS
         }
 
         public float AltitudeAboveGround() => transform.position.y - battle.GroundY(transform.position);
+
+        public const float StallFrac = 0.4f;       // gunships below this share of top speed start to sink
+        /// <summary>A planetary gunship flying too slowly (after the first 4 s off the ground).</summary>
+        public bool Stalling => def.Flies && !def.IsShip && !landed && Time.time - launchTime > 4f && speed < def.speed * StallFrac;
 
         // ── per frame ────────────────────────────────────────────────────
         public void Tick(float dt)
@@ -593,7 +598,13 @@ namespace BIS
             speed = Mathf.MoveTowards(speed, target, (space ? 22 : 16) * dt);
             Vector3 fwdDir = rot * Vector3.forward;
             vel = fwdDir * speed;
-            if (!space) vel += Vector3.up * inp.climb * 9;
+            if (!space)
+            {
+                // a gunship needs forward speed to stay up: hanging still over a post it loses lift, sinks and sets down
+                float lift = Stalling ? Mathf.Clamp01(speed / (def.speed * StallFrac)) : 1f;
+                vel += Vector3.up * inp.climb * 9 * Mathf.Max(0.25f, lift);
+                if (Stalling) vel += Vector3.down * (1 - lift) * 7f;
+            }
             Vector3 step = vel * dt;
 
             // collisions
@@ -622,6 +633,7 @@ namespace BIS
                     step += h.normal * into * dt * 1.05f;
                     if (h.collider.gameObject.layer != Layers.Vehicle) speed = Mathf.Max(speed * (soft ? 0.9f : 0.7f), Mathf.Min(speed, 8f));
                     if (soft && h.normal.y > 0.7f && driven == false) landed = true;
+                    if (!space && Stalling && h.normal.y > 0.6f && inp.climb <= 0) { landed = true; speed = 0; }   // a stalled gunship settles on what it sinks onto
                 }
             }
             crashCd -= dt;
@@ -637,6 +649,8 @@ namespace BIS
                     if (!driven || (throttle < 0.08f && inp.climb <= 0)) { landed = !driven || speed < 3; }
                 }
                 if (pos.y > gy + 140) pos.y = gy + 140;
+                // a stalled gunship that has sunk this low sets down (and can't shoot until it takes off again)
+                if (Stalling && pos.y - gy < 5f && inp.climb <= 0) { landed = true; speed = 0; }
                 if (!battle.land.InBounds(pos)) { rot = Quaternion.RotateTowards(rot, Quaternion.LookRotation(-new Vector3(pos.x, 0, pos.z)), 40 * dt); }
             }
             transform.SetPositionAndRotation(pos, rot);

@@ -107,9 +107,9 @@ namespace BIS
                 Vector3 at = u.transform.position;
                 if (u.InVehicle)
                 {
-                    // everyone aboard a ground vehicle (or a gunship sitting on the ground) counts
+                    // everyone aboard a ground vehicle (or a gunship landed on the ground - not one hovering over it) counts
                     var v = u.vehicle;
-                    if (v.def.IsShip || (v.def.Flies && !v.landed && v.AltitudeAboveGround() > 4f)) continue;
+                    if (v.def.IsShip || (v.def.Flies && !v.landed)) continue;
                     at = v.transform.position;
                 }
                 Vector3 d = at - Pos;

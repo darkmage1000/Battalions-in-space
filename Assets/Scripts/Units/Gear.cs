@@ -85,7 +85,7 @@ namespace BIS
     /// <summary>Heals and resupplies friendly infantry standing near it for a while.</summary>
     public class SupplyCrate : MonoBehaviour
     {
-        int team; float tick; static Mesh mesh;
+        int team; float tick; int ticks; static Mesh mesh;
         public static void Place(Unit u, Vector3 p)
         {
             if (Physics.Raycast(p + Vector3.up * 2, Vector3.down, out var h, 6, Layers.SolidMask)) p = h.point;
@@ -102,12 +102,13 @@ namespace BIS
         {
             tick -= Time.deltaTime;
             if (tick > 0 || Battle.I == null) return;
-            tick = 1f;
+            tick = 1f; ticks++;
             foreach (var u in Battle.I.units)
                 if (u && u.Alive && u.team == team && !u.InVehicle && (u.transform.position - transform.position).sqrMagnitude < 20)
                 {
                     u.Heal(u.maxHp * 0.08f);
-                    foreach (var w in u.weapons) if (w != null && w.def.clip > 0) w.ammo = Mathf.Min(w.def.ammo, w.ammo + Mathf.Max(1, w.def.clip / 2));
+                    // scoped rifles get one round every 3 s here, so a crate can't keep a sniper going for ever
+                    foreach (var w in u.weapons) if (w != null && w.def.clip > 0 && (w.def.zoomFov <= 0 || ticks % 3 == 0)) w.ammo = Mathf.Min(w.def.ammo, w.ammo + (w.def.zoomFov > 0 ? 1 : Mathf.Max(1, w.def.clip / 2)));
                     Fx.Emit(u.AimPoint, Vector3.up * 2, new Color(0.3f, 1f, 0.4f, 1), 0.3f, 0.5f);
                 }
         }

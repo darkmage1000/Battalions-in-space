@@ -161,7 +161,7 @@ namespace BIS
             }
             else
             {
-                player = new Participant { name = cfg.netHost ? Net.Session.localName : "You", team = cfg.playerTeam, isPlayer = true, aimSkill = 1 };
+                player = new Participant { name = Profiles.Name, team = cfg.playerTeam, isPlayer = true, aimSkill = 1 };
                 people.Add(player);
                 if (cfg.netHost) people.Add(new Participant { name = cfg.remoteName, team = cfg.remoteTeam, remote = true, aimSkill = 1, respawn = 999 });
                 for (int t = 0; t < 2; t++)
@@ -545,6 +545,7 @@ namespace BIS
             result.ticketsLeft[1] = Mathf.Max(0, Mathf.RoundToInt(teams[1].tickets));
             Sfx.Play2D(winner == player.team ? "award" : "lost", 1f);
             Sfx.PlayMusic(false);
+            if (winner >= 0) Profiles.Record(this, winner == player.team);
         }
 
         void BotSpawn(Participant p)
@@ -850,6 +851,7 @@ namespace BIS
             Sfx.Play2D(won ? "award" : "lost", 1f);
             Sfx.PlayMusic(false);
             Net.NetHost.OnEnd(winner, reason, result.mvp);
+            Profiles.Record(this, won);
         }
 
         public void Finish(bool quit)

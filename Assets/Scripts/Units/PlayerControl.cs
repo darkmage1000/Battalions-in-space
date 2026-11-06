@@ -211,6 +211,9 @@ namespace BIS
             // the player's own shots are tighter than the bots', tighter still on touch and when assist has a target
             me.spreadMul = (Settings.Current == Settings.InputDevice.Touch ? 0.45f : Settings.Current == Settings.InputDevice.Gamepad ? 0.55f : 0.7f) * (assistOnTarget ? 0.6f : 1f);
             me.input = inp;
+            var ws = me.Weapon;
+            if (inp.aim && wd.zoomFov > 0 && ws.clip == 0 && ws.ammo > 0) Say("Lower the scope to reload", 0.3f);
+            else if (wd.zoomFov > 0 && ws.clip == 0 && ws.ammo == 0) Say("Out of rifle rounds - find ammo or a supply crate", 0.3f);
 
             if (Ctl.Use)
             {
@@ -266,7 +269,7 @@ namespace BIS
         bool AutoFireOk(WeaponDef w)
         {
             if (!TouchInput.Active || !Settings.AutoFire || !AimAssist.On || !assistOnTarget || assistTarget == null) return false;
-            if (w.kind == WKind.Repair) return false;
+            if (w.kind == WKind.Repair || w.kind == WKind.Sniper) return false;     // snipers take their own shots
             if ((w.kind == WKind.Rocket || w.kind == WKind.Cannon) && assistTarget is Unit && w.lockOn) return false;
             return true;
         }
@@ -351,6 +354,7 @@ namespace BIS
                 stick = Vector2.Lerp(stick, rawStick, Mathf.Clamp01(dt * 18));
                 inp.steer = stick;
                 inp.throttle = Ctl.Throttle + testThrottle;
+                if (v.Stalling) Say("Too slow to stay up - speed up or land (gunships capture posts only when landed)", 0.3f);
                 inp.roll = Ctl.Roll;
                 inp.climb = v.IsShip ? 0 : Ctl.Climb;
                 inp.boost = Ctl.Boost;

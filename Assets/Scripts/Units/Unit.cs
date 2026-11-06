@@ -403,8 +403,14 @@ namespace BIS
         {
             var w = Weapon;
             if (input.swap && weapons[1] != null) { cur = 1 - cur; rig.SetWeapon(Weapon.def); w = Weapon; Sfx.Play("ui", transform.position, 0.3f); }
-            if (input.reload) w.StartReload();
-            if (w.NeedsReload) w.StartReload();
+            // a scoped rifle reloads only with the scope down (people, not bots): zooming in stops a reload
+            bool scoped = part.Human && w.def.zoomFov > 0 && input.aim;
+            if (scoped) { if (w.reload > 0) w.reload = 0; }
+            else
+            {
+                if (input.reload) w.StartReload();
+                if (w.NeedsReload) w.StartReload();
+            }
 
             // lock-on for launchers
             if (w.def.lockOn) UpdateLock(dt, w.def); else { lockTarget = null; lockTime = 0; }

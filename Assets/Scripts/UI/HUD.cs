@@ -395,6 +395,21 @@ namespace BIS
                     UI.Text(new Rect(sp.x / UI.S - 120, (Screen.height - sp.y) / UI.S - 22, 240, 22), "ENEMY HERO: " + u.hero.name, 15, UI.Bad, TextAnchor.LowerCenter);
                 }
             }
+            // vehicles being repaired: a health bar over them that fills as the repair goes in
+            foreach (var v in b.vehicles)
+            {
+                if (!v || !v.Alive || Time.time - v.lastRepaired > 2.5f) continue;
+                float d = (v.transform.position - mp).magnitude;
+                if (d > 140) continue;
+                Vector3 sp = cam.WorldToScreenPoint(v.transform.position + Vector3.up * (v.model.bounds.extents.y + v.model.bounds.center.y + 1.4f));
+                if (sp.z <= 0) continue;
+                Vector2 g = new Vector2(sp.x / UI.S, (Screen.height - sp.y) / UI.S);
+                float f = Mathf.Clamp01(v.hp / v.maxHp);
+                var br = new Rect(g.x - 80, g.y - 14, 160, 14);
+                UI.Fill(new Rect(br.x - 2, br.y - 2, br.width + 4, br.height + 4), new Color(0, 0, 0, 0.7f));
+                UI.Bar(br, f, Color.Lerp(UI.Bad, UI.Good, f), new Color(0.15f, 0.15f, 0.15f, 0.9f));
+                UI.Text(new Rect(g.x - 120, g.y - 38, 240, 22), f >= 0.999f ? $"{v.def.name} FULLY REPAIRED" : $"REPAIRING  {Mathf.FloorToInt(f * 100)}%", 15, f >= 0.999f ? UI.Good : new Color(0.6f, 1f, 0.7f), TextAnchor.LowerCenter);
+            }
             if (b.space)
             {
                 var enemy = b.space.ships[1 - me.team];

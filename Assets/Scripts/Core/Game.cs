@@ -31,6 +31,7 @@ namespace BIS
             DontDestroyOnLoad(gameObject);
             Application.targetFrameRate = Application.isMobilePlatform ? 60 : 144;
             Settings.Load();
+            Profiles.Load();
             foreach (var c in FindObjectsByType<Camera>(FindObjectsSortMode.None)) if (c.gameObject.scene.IsValid()) Destroy(c.gameObject);
             foreach (var l in FindObjectsByType<Light>(FindObjectsSortMode.None)) Destroy(l.gameObject);
             var camGo = new GameObject("MainCamera") { tag = "MainCamera" };
