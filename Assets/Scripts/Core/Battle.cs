@@ -161,7 +161,7 @@ namespace BIS
             control = pc;
             pc.Init(this);
             gameObject.AddComponent<HUD>().battle = this;
-            Sfx.Music.Stop();
+            Sfx.PlayMusic(true);
             Ctl.LockCursor(false);
         }
 
@@ -679,7 +679,7 @@ namespace BIS
             result.mvp = mvp != null ? $"{mvp.name} ({Faction(mvp.team).shortName}) - {mvp.points} pts" : "";
             bool won = winner == player.team;
             Sfx.Play2D(won ? "award" : "lost", 1f);
-            Sfx.Music.Play();
+            Sfx.PlayMusic(false);
         }
 
         public void Finish(bool quit)

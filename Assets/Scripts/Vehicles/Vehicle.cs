@@ -251,7 +251,7 @@ namespace BIS
 
             // effects
             float sp = def.IsGround ? vel.magnitude : speed;
-            if (hum) { hum.volume = Mathf.MoveTowards(hum.volume, IsEmpty && (landed || def.IsGround) ? 0.05f : 0.35f, dt); hum.pitch = 0.8f + sp / Mathf.Max(1, def.speed) * 0.6f; }
+            if (hum) { hum.volume = Mathf.MoveTowards(hum.volume, (IsEmpty && (landed || def.IsGround) ? 0.05f : 0.35f) * Sfx.Gain(def.IsShip ? "fighter" : "engine"), dt); hum.pitch = 0.8f + sp / Mathf.Max(1, def.speed) * 0.6f; }
             fxT -= dt;
             if (fxT <= 0 && model.engines != null && (!IsEmpty || !def.IsGround))
             {

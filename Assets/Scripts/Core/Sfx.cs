@@ -4,7 +4,12 @@ using UnityEngine;
 
 namespace BIS
 {
-    /// <summary>Every sound is synthesised at start-up (no audio files). 3D one-shots come from a pool.</summary>
+    /// <summary>
+    /// Sounds are synthesised at start-up; where a recorded sound exists in Resources/Audio/Sfx (Kenney's CC0
+    /// Sci-Fi Sounds, see FileMap) it replaces the synthesised one, with its loudness matched to it, a random
+    /// variant per play and an optional pitch. Music: Resources/Audio/Music (CC0 orchestral tracks), falling back
+    /// to the synthesised march. 3D one-shots come from a pool.
+    /// </summary>
     public static class Sfx
     {
         const int Rate = 44100;
@@ -15,6 +20,76 @@ namespace BIS
         static System.Random rng = new System.Random(7);
         static Transform root;
         public static AudioSource Music;
+        static readonly Dictionary<string, AudioClip[]> variants = new Dictionary<string, AudioClip[]>();
+        static readonly Dictionary<string, float> gain = new Dictionary<string, float>();
+        static readonly Dictionary<string, float> pitchMul = new Dictionary<string, float>();
+        static AudioClip menuMusic, battleMusic, marchMusic;
+
+        /// <summary>Game sound id -> recorded files (prefix_000..), pitch. Ids not listed keep their synthesised sound.</summary>
+        static readonly (string id, string file, int count, float pitch)[] FileMap =
+        {
+            ("blaster", "laserSmall", 5, 1f), ("blaster2", "laserRetro", 5, 0.9f), ("blaster3", "laserSmall", 5, 1.15f),
+            ("pistol", "laserSmall", 5, 1.3f), ("repeater", "laserRetro", 5, 1.25f),
+            ("heavy", "laserLarge", 5, 0.8f), ("sniper", "laserLarge", 5, 1.1f), ("cannon", "laserLarge", 5, 0.6f), ("laser", "laserRetro", 5, 0.75f),
+            ("rocket", "thrusterFire", 5, 1f), ("explode", "explosionCrunch", 5, 1f), ("explode_big", "lowFrequency_explosion", 2, 1f),
+            ("hit", "impactMetal", 5, 1.2f), ("zap", "forceField", 5, 1.3f), ("repair", "computerNoise", 4, 1f),
+            ("engine", "engineCircular", 1, 1f), ("fighter", "spaceEngineSmall", 1, 1f),
+        };
+
+        static float Rms(AudioClip c)
+        {
+            if (!c) return 0;
+            try
+            {
+                var d = new float[c.samples * c.channels];
+                if (!c.GetData(d, 0)) return 0;
+                // loudness of the loud part: skip silence so a short shot isn't judged by its tail
+                double s = 0; int n = 0;
+                for (int i = 0; i < d.Length; i++) { float a = Mathf.Abs(d[i]); if (a > 0.02f) { s += a * a; n++; } }
+                return n > 0 ? Mathf.Sqrt((float)(s / n)) : 0;
+            }
+            catch { return 0; }
+        }
+
+        static void LoadFiles()
+        {
+            foreach (var m in FileMap)
+            {
+                var list = new List<AudioClip>();
+                for (int i = 0; i < m.count; i++)
+                {
+                    var c = Resources.Load<AudioClip>($"Audio/Sfx/{m.file}_{i:000}");
+                    if (c) list.Add(c);
+                }
+                if (list.Count == 0) continue;
+                float synth = Rms(Get(m.id)), rec = Rms(list[0]);
+                gain[m.id] = synth > 0 && rec > 0 ? Mathf.Clamp(synth / rec, 0.25f, 2.5f) : 1f;
+                pitchMul[m.id] = m.pitch;
+                variants[m.id] = list.ToArray();
+                clips[m.id] = list[0];
+            }
+            menuMusic = Resources.Load<AudioClip>("Audio/Music/theme_qazijamjam");
+            battleMusic = Resources.Load<AudioClip>("Audio/Music/battle_determined_pursuit");
+        }
+
+        static AudioClip Pick(string id, AudioClip fallback) => variants.TryGetValue(id, out var v) ? v[UnityEngine.Random.Range(0, v.Length)] : fallback;
+        public static float Gain(string id) => GainOf(id);
+        public static int FileCount => variants.Count;
+        static float GainOf(string id) => gain.TryGetValue(id, out var g) ? g : 1f;
+        static float PitchOf(string id) => pitchMul.TryGetValue(id, out var p) ? p : 1f;
+
+        /// <summary>Menu theme, or the battle track (quieter, under the gunfire).</summary>
+        public static void PlayMusic(bool battle)
+        {
+            if (Music == null) return;
+            var want = battle ? (battleMusic ? battleMusic : null) : (menuMusic ? menuMusic : marchMusic);
+            float vol = Settings.MusicVolume * (battle ? 0.28f : 0.5f);
+            if (want == null) { Music.Stop(); return; }
+            if (Music.clip != want) { Music.clip = want; Music.Play(); }
+            else if (!Music.isPlaying) Music.Play();
+            Music.volume = vol;
+        }
+        public static bool InBattleMusic => Music != null && Music.clip == battleMusic && battleMusic != null;
 
         static float Rnd() => (float)rng.NextDouble() * 2 - 1;
 
@@ -117,7 +192,10 @@ namespace BIS
             ui = u.AddComponent<AudioSource>(); ui.playOnAwake = false; ui.spatialBlend = 0;
             var mu = new GameObject("music"); mu.transform.SetParent(root, false);
             Music = mu.AddComponent<AudioSource>(); Music.playOnAwake = false; Music.spatialBlend = 0; Music.loop = true;
-            Music.clip = MakeMusic(); Music.volume = Settings.MusicVolume * 0.5f;
+            marchMusic = MakeMusic();
+            Music.clip = marchMusic; Music.volume = Settings.MusicVolume * 0.5f;
+            LoadFiles();
+            if (menuMusic) Music.clip = menuMusic;
         }
 
         public static AudioClip Get(string id) => clips.TryGetValue(id, out var c) ? c : null;
@@ -129,15 +207,15 @@ namespace BIS
             if (cam && (cam.transform.position - pos).sqrMagnitude > range * range * 1.1f) return;
             var a = pool[next]; next = (next + 1) % pool.Length;
             a.transform.position = pos;
-            a.clip = c; a.volume = vol; a.pitch = pitch * (1 + Rnd() * 0.04f); a.maxDistance = range;
+            a.clip = Pick(id, c); a.volume = vol * GainOf(id); a.pitch = pitch * PitchOf(id) * (1 + Rnd() * 0.04f); a.maxDistance = range;
             a.Play();
         }
 
         public static void Play2D(string id, float vol = 1, float pitch = 1)
         {
             if (ui == null || !clips.TryGetValue(id, out var c)) return;
-            ui.pitch = pitch;
-            ui.PlayOneShot(c, vol);
+            ui.pitch = pitch * PitchOf(id);
+            ui.PlayOneShot(Pick(id, c), vol * GainOf(id));
         }
 
         public static AudioSource Loop(string id, Transform parent, float vol, float range = 90)
@@ -145,7 +223,7 @@ namespace BIS
             var go = new GameObject("loop_" + id);
             go.transform.SetParent(parent, false);
             var a = go.AddComponent<AudioSource>();
-            a.clip = Get(id); a.loop = true; a.spatialBlend = 1; a.volume = vol; a.rolloffMode = AudioRolloffMode.Linear;
+            a.clip = Get(id); a.loop = true; a.spatialBlend = 1; a.volume = vol * GainOf(id); a.pitch = PitchOf(id); a.rolloffMode = AudioRolloffMode.Linear;
             a.minDistance = 5; a.maxDistance = range; a.dopplerLevel = 0;
             if (a.clip) a.time = UnityEngine.Random.value * a.clip.length * 0.8f;
             a.Play();

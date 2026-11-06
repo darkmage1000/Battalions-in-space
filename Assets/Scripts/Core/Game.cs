@@ -68,7 +68,7 @@ namespace BIS
         {
             menu.Show(MenuUI.Screen.Main);
             BuildBackdrop();
-            if (!Sfx.Music.isPlaying) Sfx.Music.Play();
+            Sfx.PlayMusic(false);
             Ctl.LockCursor(false);
         }
 

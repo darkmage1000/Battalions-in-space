@@ -142,8 +142,8 @@ namespace BIS
             float x = r.x + 40, y = r.y + 16, rw = r.width - 80;
             Settings.Fov = UI.Slider(new Rect(x, y, rw, 44), "Field of view", Settings.Fov, 50, 95, Settings.Fov.ToString("0")); y += 54;
             Settings.Volume = UI.Slider(new Rect(x, y, rw, 44), "Volume", Settings.Volume, 0, 1, Mathf.RoundToInt(Settings.Volume * 100) + "%"); y += 54;
-            Settings.MusicVolume = UI.Slider(new Rect(x, y, rw, 44), "Menu music", Settings.MusicVolume, 0, 1, Mathf.RoundToInt(Settings.MusicVolume * 100) + "%"); y += 54;
-            Sfx.Music.volume = Settings.MusicVolume * 0.5f;
+            Settings.MusicVolume = UI.Slider(new Rect(x, y, rw, 44), "Music", Settings.MusicVolume, 0, 1, Mathf.RoundToInt(Settings.MusicVolume * 100) + "%"); y += 54;
+            Sfx.Music.volume = Settings.MusicVolume * (Sfx.InBattleMusic ? 0.28f : 0.5f);
             Settings.Quality = Mathf.RoundToInt(UI.Slider(new Rect(x, y, rw, 44), "Graphics", Settings.Quality, 0, 2, new[] { "Low", "Medium", "High" }[Settings.Quality])); y += 54;
             UI.Text(new Rect(x, y + 8, 260, 30), "Controls", 22);
             for (int d = 0; d < 4; d++)

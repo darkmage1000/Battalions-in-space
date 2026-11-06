@@ -43,7 +43,7 @@ namespace BIS
                 while (Time.realtimeSinceStartup - t0 < 12) { frames++; yield return null; }
                 int alive = 0; foreach (var u in b.units) if (u && u.Alive) alive++;
                 int kills = 0; foreach (var p in b.people) kills += p.kills;
-                Line($"{(space ? cfg.spaceMap.name : cfg.land.name)} {Factions.Get(f0).shortName} v {Factions.Get(f1).shortName}: {frames / 12f:0} fps, alive {alive}, vehicles {b.vehicles.Count}, kills {kills}, tickets {b.teams[0].tickets:0}/{b.teams[1].tickets:0}, player {(b.player.unit && b.player.unit.Alive ? "alive" : "dead")}");
+                Line($"{(space ? cfg.spaceMap.name : cfg.land.name)} {Factions.Get(f0).shortName} v {Factions.Get(f1).shortName}: {frames / 12f:0} fps, alive {alive}, vehicles {b.vehicles.Count}, kills {kills}, tickets {b.teams[0].tickets:0}/{b.teams[1].tickets:0}, player {(b.player.unit && b.player.unit.Alive ? "alive" : "dead")}, music {(Sfx.Music && Sfx.Music.clip ? Sfx.Music.clip.name : "none")} {(Sfx.Music && Sfx.Music.isPlaying ? "playing" : "silent")}, sfx files {Sfx.FileCount}");
                 b.Finish(true);
                 yield return new WaitForSeconds(1);
             }
