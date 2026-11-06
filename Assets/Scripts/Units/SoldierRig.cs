@@ -150,19 +150,16 @@ namespace BIS
             var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>();
             if (!anim || !smr) { Object.Destroy(inst); anim = null; return false; }
             float k = height / transform.localScale.y / 1.94f;
+            // uniform scale only: a squashed humanoid skeleton bends its arms wrongly
             Vector3 sc = Vector3.one * k;
-            if (body == Body.Slender) { sc.x *= 0.88f; sc.z *= 0.88f; }
-            if (body == Body.Machine) { sc.x *= 1.08f; sc.z *= 1.08f; }
-            if (body == Body.Reptile) { sc.x *= 1.06f; sc.z *= 1.04f; }
             bodyRoot.localPosition = Vector3.zero; bodyRoot.localRotation = Quaternion.identity; bodyRoot.localScale = sc;
             anim.runtimeAnimatorController = manCtl;
             anim.applyRootMotion = false;
             anim.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
-            // body leans toward the faction's second colour (no plain white armour), joints dark
-            Color bodyCol = Color.Lerp(main, second, h != null ? 0.15f : 0.45f);
-            if (body == Body.Reptile || body == Body.Slender) bodyCol = Color.Lerp(bodyCol, skin, 0.25f);
+            // the mannequin is the undersuit (dark, or the skin for scaled / alien bodies); the armour pieces carry the look
+            Color bodyCol = body == Body.Reptile || body == Body.Slender ? Color.Lerp(skin, Dark(main, 0.6f), 0.35f) : body == Body.Machine ? Dark(main, 0.55f) : Dark(Color.Lerp(main, second, 0.5f), 0.42f);
             bodyCol.a = 1;
-            Color jointCol = Dark(Color.Lerp(second, main, 0.3f), 0.45f);
+            Color jointCol = Dark(second, 0.35f);
             smr.sharedMesh = ColouredMannequin(smr, bodyCol, jointCol);
             var ms = new Material[smr.sharedMesh.subMeshCount]; for (int i = 0; i < ms.Length; i++) ms[i] = Mats.Lit;
             smr.sharedMaterials = ms;
@@ -184,12 +181,98 @@ namespace BIS
             helmet.localScale = Vector3.one * (k * 1.12f / Mathf.Max(0.0001f, head.lossyScale.x)) * transform.localScale.x;
             helmet.gameObject.AddComponent<MeshFilter>().sharedMesh = hm;
             helmet.gameObject.AddComponent<MeshRenderer>().sharedMaterial = Mats.Lit;
+            AttachArmour(c, h);
             gun = Part("gun", transform, Vector3.zero, null);
             SetWeapon(weapon);
             anim.Play(h != null && h.kind == HeroKind.Blade ? "Sword" : h != null && h.kind == HeroKind.Mystic ? "Spell" : "Rifle", 1, Random.value);
             anim.Play("Move", 0, Random.value);
             rends = GetComponentsInChildren<Renderer>();
             return true;
+        }
+
+        /// <summary>
+        /// The faction and class look on top of the animated body: the code-built torso (armour, packs, cloaks,
+        /// spikes, hero capes), hips (the reptile tail) and limb armour in two pieces per limb so elbows and knees
+        /// still bend. Each piece is placed in the bind pose and then carried by its bone.
+        /// </summary>
+        void AttachArmour(ClassDef c, HeroDef h)
+        {
+            Transform B(HumanBodyBones hb) => anim.GetBoneTransform(hb);
+            float ws = transform.lossyScale.x;
+            void Put(Transform bone, Mesh m, Vector3 at, Vector3 down, string n)
+            {
+                if (!bone || !m) return;
+                var t = new GameObject(n).transform;
+                t.SetParent(bone, false);
+                t.position = at;
+                t.rotation = down.sqrMagnitude > 0.001f ? Quaternion.FromToRotation(-transform.up, down.normalized) * transform.rotation : transform.rotation;
+                t.localScale = Vector3.one * (ws / Mathf.Max(0.0001f, bone.lossyScale.x));
+                t.gameObject.AddComponent<MeshFilter>().sharedMesh = m;
+                var r = t.gameObject.AddComponent<MeshRenderer>(); r.sharedMaterial = Mats.Lit;
+            }
+            Vector3 Dir(HumanBodyBones a, HumanBodyBones b) { var x = B(a); var y = B(b); return x && y ? y.position - x.position : -transform.up; }
+            var hipsB = B(HumanBodyBones.Hips);
+            Vector3 hipAt = hipsB.position;
+            Put(chest, Cached(key + "_torso", kk => BuildTorso(kk, c, h)), hipAt, Vector3.zero, "torsoArmour");
+            Put(hipsB, Cached(key + "_hips", kk => BuildHips(kk, c, h)), hipAt, Vector3.zero, "hipArmour");
+            var up = Cached(key + "_uarm", kk => BuildArmPart(kk, c, h, true));
+            var lo = Cached(key + "_larm", kk => BuildArmPart(kk, c, h, false));
+            var th = Cached(key + "_thigh", kk => BuildLegPart(kk, true));
+            var sh = Cached(key + "_shin", kk => BuildLegPart(kk, false));
+            foreach (var side in new[] { 0, 1 })
+            {
+                var ua = side == 0 ? HumanBodyBones.LeftUpperArm : HumanBodyBones.RightUpperArm;
+                var la = side == 0 ? HumanBodyBones.LeftLowerArm : HumanBodyBones.RightLowerArm;
+                var hd = side == 0 ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand;
+                var ul = side == 0 ? HumanBodyBones.LeftUpperLeg : HumanBodyBones.RightUpperLeg;
+                var ll = side == 0 ? HumanBodyBones.LeftLowerLeg : HumanBodyBones.RightLowerLeg;
+                var ft = side == 0 ? HumanBodyBones.LeftFoot : HumanBodyBones.RightFoot;
+                if (B(ua)) Put(B(ua), up, B(ua).position, Dir(ua, la), "upperArm");
+                if (B(la)) Put(B(la), lo, B(la).position, Dir(la, hd), "forearm");
+                if (B(ul)) Put(B(ul), th, B(ul).position, Dir(ul, ll), "thigh");
+                if (B(ll)) Put(B(ll), sh, B(ll).position, Dir(ll, ft), "shin");
+            }
+        }
+
+        /// <summary>Upper arm (shoulder to elbow) or forearm (elbow to hand) armour, hanging along -y from the joint.</summary>
+        void BuildArmPart(MeshKit k, ClassDef c, HeroDef h, bool upper)
+        {
+            float w = body == Body.Machine ? 0.1f : body == Body.Reptile ? 0.15f : 0.12f;
+            bool heavy = (c != null && c.role == Role.Heavy) || (h != null && h.kind == HeroKind.Juggernaut);
+            if (upper)
+            {
+                if (body == Body.Machine) { k.Sphere(Vector3.zero, Vector3.one * 0.13f, Quaternion.identity, main, 6, 4); k.Cyl(new Vector3(0, -0.14f, 0), w * 0.5f, 0.24f, Quaternion.identity, Dark(main, 0.7f), 6); }
+                else k.Box(new Vector3(0, -0.13f, 0), new Vector3(w + 0.035f, 0.24f, w + 0.035f), main);
+                // shoulder plate
+                k.Box(new Vector3(0, 0.02f, 0), new Vector3(w + (heavy ? 0.12f : 0.06f), 0.1f, w + (heavy ? 0.1f : 0.05f)), heavy ? second : Dark(main, 0.8f));
+            }
+            else
+            {
+                Color fc = body == Body.Reptile ? skin : body == Body.Slender ? second : Dark(main, 0.75f);
+                if (body == Body.Machine) k.Cyl(new Vector3(0, -0.12f, 0), w * 0.45f, 0.22f, Quaternion.identity, Dark(main, 0.6f), 6);
+                else k.Box(new Vector3(0, -0.12f, 0), new Vector3(w + 0.02f, 0.2f, w + 0.02f), fc);
+                k.Box(new Vector3(0, -0.2f, 0), new Vector3(w + 0.03f, 0.05f, w + 0.03f), body == Body.Human ? Dark(second, 0.6f) : accent);
+            }
+        }
+
+        /// <summary>Thigh (hip to knee) or shin (knee to ankle, with the boot) armour, along -y from the joint.</summary>
+        void BuildLegPart(MeshKit k, bool upper)
+        {
+            float w = body == Body.Machine ? 0.11f : body == Body.Reptile ? 0.17f : 0.15f;
+            if (upper)
+            {
+                Color tc = body == Body.Slender ? second : Dark(main, 0.85f);
+                if (body == Body.Machine) k.Cyl(new Vector3(0, -0.2f, 0), w * 0.5f, 0.38f, Quaternion.identity, Dark(main, 0.7f), 6);
+                else k.Box(new Vector3(0, -0.21f, 0), new Vector3(w + 0.02f, 0.36f, w + 0.03f), body == Body.Reptile ? main : tc);
+            }
+            else
+            {
+                Color sc2 = body == Body.Reptile ? skin : body == Body.Slender ? Dark(second, 0.7f) : main;
+                if (body == Body.Machine) { k.Sphere(Vector3.zero, Vector3.one * 0.1f, Quaternion.identity, main, 6, 4); k.Cyl(new Vector3(0, -0.2f, 0), w * 0.45f, 0.36f, Quaternion.identity, Dark(main, 0.7f), 6); }
+                else k.Box(new Vector3(0, -0.19f, 0.01f), new Vector3(w, 0.34f, w + 0.02f), sc2);
+                // boot / foot, toes forward
+                k.Box(new Vector3(0, -0.4f, 0.05f), new Vector3(w + 0.03f, 0.09f, 0.26f), body == Body.Reptile ? skin : Dark(second, 0.4f));
+            }
         }
 
         void LateUpdate()

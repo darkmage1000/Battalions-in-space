@@ -144,6 +144,31 @@ namespace BIS.EditorTools
             return $"{fails} of {total} walks stuck\n" + sb;
         }
 
+        /// <summary>Every faction's five classes and a hero standing in rows on a floor 3000 m up (needs a land battle running).</summary>
+        public static string SoldierLineup()
+        {
+            var b = Battle.I;
+            var old = GameObject.Find("LineupFloor"); if (old) Object.Destroy(old);
+            var floor = GameObject.CreatePrimitive(PrimitiveType.Cube); floor.name = "LineupFloor";
+            floor.transform.position = new Vector3(0, 2999.9f, 10); floor.transform.localScale = new Vector3(40, 0.2f, 40); floor.GetComponent<Renderer>().sharedMaterial = Mats.Lit;
+            floor.layer = Layers.Ground;
+            int n = 0;
+            for (int f = 0; f < 4; f++)
+                for (int ci = 0; ci < 6; ci++)
+                {
+                    var p = new Participant { name = "L" + f + ci, team = f % 2 };
+                    var fd = Factions.All[f];
+                    Vector3 pos = new Vector3((ci - 2.5f) * 1.9f, 3000.2f, f * 3.2f);
+                    var u = b.SpawnUnit(p, ci < 5 ? fd.classes[ci] : null, ci < 5 ? null : fd.heroes[f % fd.heroes.Length], pos, 180);
+                    u.bot = null; u.invulnUntil = Time.time + 9999;
+                    u.input = new UnitInput { aimPoint = u.Eye + u.transform.forward * 30 };
+                    n++;
+                }
+            RenderSettings.fog = false;
+            Game.I.sun.transform.rotation = Quaternion.Euler(40, 200, 0);
+            return n + " soldiers";
+        }
+
         /// <summary>Imported models in a row 3000 m up (flat ground, sun), camera looking at them; returns sizes.</summary>
         public static string ModelRow(string[] paths, string[] textures, float size, float camYaw = 150, float rotX = 0)
         {
