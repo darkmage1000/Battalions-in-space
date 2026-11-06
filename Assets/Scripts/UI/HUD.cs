@@ -56,6 +56,7 @@ namespace BIS
                 case PlayerControl.Mode.Spawn: TopBar(); SpawnScreen(pc); Feed(); break;
                 case PlayerControl.Mode.Over: Results(); break;
             }
+            if (pc.mode == PlayerControl.Mode.Play && !pc.paused) TouchInput.Draw();
             if (pc.showScore && pc.mode != PlayerControl.Mode.Over) Scoreboard();
             if (pc.showMap && pc.mode == PlayerControl.Mode.Play) BigMap(pc);
             if (pc.paused) Pause(pc);

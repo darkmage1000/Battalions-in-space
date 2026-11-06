@@ -11,7 +11,6 @@ namespace BIS
     {
         public Transform hips, torso, head, armL, armR, legL, legR, gun, muzzle;
         Renderer[] rends;
-        Material[] baseMats;
         float phase, deadT = -1, swing;
         Vector3 deadAxis;
         public float height = 1.8f;
@@ -101,7 +100,6 @@ namespace BIS
             muzzle.localPosition = new Vector3(0, 0.03f, MuzzleZ(w));
             gun.localPosition = new Vector3(w.kind == WKind.Rocket ? 0.16f : gun.localPosition.x, gun.localPosition.y, w.kind == WKind.Blade ? 0.38f : 0.32f);
             rends = GetComponentsInChildren<Renderer>();
-            baseMats = null;
         }
 
         static float MuzzleZ(WeaponDef w)
@@ -221,7 +219,7 @@ namespace BIS
             if (h != null)
             {
                 // cape for every hero, coloured accent
-                k.Taper(new Vector3(0, 0.05f, -0.2f), new Vector2(0.6f, 0.03f), new Vector2(0.42f, 0.03f), 0.95f, Quaternion.Euler(-10, 0, 0), h.accent);
+                k.Taper(new Vector3(0, 0.12f, -0.19f), new Vector2(0.44f, 0.03f), new Vector2(0.36f, 0.03f), 0.8f, Quaternion.Euler(-10, 0, 0), h.accent);
                 k.Box(new Vector3(0, 0.6f, 0.06f), new Vector3(0.5f, 0.08f, 0.32f), Dark(h.accent, 0.7f));
             }
         }

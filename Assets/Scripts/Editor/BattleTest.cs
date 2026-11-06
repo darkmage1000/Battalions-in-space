@@ -67,6 +67,36 @@ namespace BIS.EditorTools
             b.control.TrySpawn(false);
         }
 
+        /// <summary>Every faction's tank, transport, gunship and four starships in rows high above the world.</summary>
+        public static void VehicleLineup()
+        {
+            Game.I.ClearBackdrop(); Game.I.menu.Hide();
+            var root = new GameObject("VehicleLineup"); root.transform.position = new Vector3(0, 3000, 0);
+            var floor = GameObject.CreatePrimitive(PrimitiveType.Cube); floor.transform.SetParent(root.transform, false);
+            floor.transform.localScale = new Vector3(160, 0.2f, 90); floor.transform.localPosition = new Vector3(0, -0.1f, 24); floor.GetComponent<Renderer>().sharedMaterial = Mats.Lit;
+            for (int f = 0; f < 4; f++)
+            {
+                var fd = Factions.All[f];
+                var defs = new[] { fd.tank, fd.transport, fd.air, fd.ships[0], fd.ships[1], fd.ships[2], fd.ships[3] };
+                float x = -64;
+                foreach (var d in defs)
+                {
+                    var m = VehicleModels.Get(d, fd);
+                    var go = new GameObject(d.name); go.transform.SetParent(root.transform, false);
+                    void Part(Mesh mesh, Vector3 lp) { if (!mesh) return; var p = new GameObject("p"); p.transform.SetParent(go.transform, false); p.transform.localPosition = lp; p.AddComponent<MeshFilter>().sharedMesh = mesh; p.AddComponent<MeshRenderer>().sharedMaterial = Mats.Lit; }
+                    Part(m.body, Vector3.zero); Part(m.turret, m.turretPos); Part(m.gun, m.gunPos); if (d.gunner != null) Part(m.gunnerTurret, m.gunnerPos);
+                    float w = Mathf.Max(m.bounds.size.x, 6);
+                    x += w / 2 + 2;
+                    go.transform.localPosition = new Vector3(x, 1.5f + m.bounds.extents.y, f * 15);
+                    go.transform.localRotation = Quaternion.Euler(0, 150, 0);
+                    x += w / 2;
+                }
+            }
+            Game.I.sun.transform.rotation = Quaternion.Euler(45, 160, 0); Game.I.sun.shadows = LightShadows.Soft;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat; RenderSettings.ambientLight = new Color(0.5f, 0.5f, 0.55f);
+            var cam = Game.Cam; cam.transform.position = new Vector3(0, 3040, -50); cam.transform.rotation = Quaternion.Euler(35, 0, 0); cam.fieldOfView = 55;
+        }
+
         /// <summary>Put the player (on foot) at a position looking at a target.</summary>
         public static void Place(Vector3 p, Vector3 look)
         {

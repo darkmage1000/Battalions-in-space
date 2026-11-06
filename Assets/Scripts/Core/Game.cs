@@ -47,6 +47,7 @@ namespace BIS
             Fx.Init(transform);
             menu = gameObject.AddComponent<MenuUI>();
             ShowMenu();
+            AutoTest.MaybeStart();
         }
 
         void Update()
@@ -74,6 +75,7 @@ namespace BIS
         public void StartBattle(BattleConfig cfg, System.Action<BattleResult> onEnd)
         {
             if (backdrop) Destroy(backdrop);
+            foreach (var g in FindObjectsByType<GalaxyView>(FindObjectsSortMode.None)) Destroy(g.gameObject);
             menu.Hide();
             Time.timeScale = 1;
             battle = Battle.Create(cfg, r => { battle = null; onEnd?.Invoke(r); });

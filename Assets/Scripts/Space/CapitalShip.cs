@@ -243,11 +243,23 @@ namespace BIS
             AddLifeSupport(new Vector3(-42, 0, -28));
             AddReactor(new Vector3(42, 0, -28));
 
+            // interior lights
+            Lamp(new Vector3(0, 16, 12), 55, new Color(0.9f, 0.93f, 1f), 1.6f);
+            Lamp(new Vector3(0, 3.5f, -20), 24, new Color(0.9f, 0.93f, 1f), 1.4f);
+            Lamp(new Vector3(-42, 6, -28), 20, new Color(0.5f, 0.9f, 1f), 1.6f);
+            Lamp(new Vector3(42, 6, -28), 20, new Color(1f, 0.7f, 0.45f), 1.6f);
+
             // nav nodes (local)
             nodes.AddRange(new[] { new Vector3(0, 0, 10), new Vector3(0, 0, -4), new Vector3(0, 0, -27), new Vector3(-36, 0, -27), new Vector3(-41, 0, -21),
                                    new Vector3(36, 0, -27), new Vector3(41, 0, -20), new Vector3(-24, 0, 12), new Vector3(24, 0, 12), new Vector3(0, 0, 25) });
             int[][] e = { new[] { 9, 0 }, new[] { 7, 0 }, new[] { 8, 0 }, new[] { 0, 1 }, new[] { 1, 2 }, new[] { 2, 3 }, new[] { 3, 4 }, new[] { 2, 5 }, new[] { 5, 6 }, new[] { 7, 9 }, new[] { 8, 9 } };
             links.AddRange(e);
+        }
+
+        void Lamp(Vector3 p, float range, Color c, float inten)
+        {
+            var lg = new GameObject("lamp"); lg.transform.SetParent(transform, false); lg.transform.localPosition = p;
+            var l = lg.AddComponent<Light>(); l.type = LightType.Point; l.range = range; l.color = c; l.intensity = inten; l.shadows = LightShadows.None;
         }
 
         static Color Hull(FactionDef f) => f.body == Body.Reptile ? new Color(0.36f, 0.2f, 0.17f) : f.body == Body.Machine ? new Color(0.36f, 0.37f, 0.38f) : f.body == Body.Slender ? new Color(0.5f, 0.66f, 0.68f) : new Color(0.72f, 0.74f, 0.78f);

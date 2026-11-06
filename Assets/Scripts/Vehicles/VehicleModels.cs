@@ -285,22 +285,27 @@ namespace BIS
 
         static void Interceptor(VModel m, FactionDef f)
         {
+            // a long dart: needle nose, low delta wings, twin canted tail fins, one big engine
             var k = new MeshKit();
             Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt, eng = new Color(1f, 0.6f, 0.3f);
-            k.Sphere(Vector3.zero, new Vector3(1.8f, 1.8f, 2.2f), Quaternion.identity, a, 8, 5);
-            k.Sphere(new Vector3(0, 0, 1.0f), new Vector3(1.0f, 1.0f, 0.4f), Quaternion.identity, G(D(glow, 0.5f)), 8, 4);
-            float tilt = f.body == Body.Reptile ? 25 : f.body == Body.Slender ? -20 : 0;
-            for (int s = -1; s <= 1; s += 2)
-            {
-                var q = Quaternion.Euler(0, 0, s * tilt);
-                k.Box(new Vector3(s * 1.3f, 0, 0), new Vector3(1.4f, 0.3f, 0.5f), dk);
-                if (f.body == Body.Machine) k.Cyl(new Vector3(s * 2.2f, 0, 0), 2.2f, 0.18f, Quaternion.Euler(0, 0, 90), b, 6);
-                else k.Taper(new Vector3(s * 2.1f, 0, 0), new Vector2(0.2f, 2.8f), new Vector2(0.2f, 1.2f), 4.6f, q * Quaternion.Euler(0, 0, s * 90), b);
-            }
-            k.Cyl(new Vector3(0, 0, -1.15f), 0.5f, 0.15f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            if (f.body == Body.Machine) eng = new Color(1f, 0.75f, 0.25f);
+            if (f.body == Body.Slender) eng = new Color(0.5f, 1f, 0.85f);
+            k.Taper(new Vector3(0, 0, -0.6f), new Vector2(1.1f, 4.2f), new Vector2(0.7f, 3.4f), 0.8f, Quaternion.identity, a);
+            k.Nose(new Vector3(0, 0, 2.9f), new Vector3(1.0f, 0.75f, 3.2f), Quaternion.identity, a, f.body == Body.Reptile ? -0.5f : 0);
+            k.Box(new Vector3(0, 0.42f, 0.9f), new Vector3(0.55f, 0.22f, 1.2f), G(D(glow, 0.6f)));
+            float sweep = f.body == Body.Slender ? 3.2f : f.body == Body.Reptile ? 2.6f : 2.2f;
+            float dih = f.body == Body.Reptile ? -0.18f : f.body == Body.Machine ? 0 : 0.06f;
+            Wing(k, new Vector3(0.45f, -0.15f, -0.2f), 3.0f, 2.6f, sweep, 0.14f, dih, b, true);
+            Wing(k, new Vector3(-0.45f, -0.15f, -0.2f), 3.0f, 2.6f, sweep, 0.14f, dih, b, false);
+            k.Wedge(new Vector3(0.45f, 0.7f, -2.3f), new Vector3(0.12f, 1.2f, 1.4f), Quaternion.Euler(0, 0, -18), b);
+            k.Wedge(new Vector3(-0.45f, 0.7f, -2.3f), new Vector3(0.12f, 1.2f, 1.4f), Quaternion.Euler(0, 0, 18), b);
+            if (f.body == Body.Machine) { k.Box(new Vector3(0, -0.5f, 0.5f), new Vector3(0.2f, 0.4f, 3f), dk); }
+            if (f.body == Body.Reptile) { k.Cone(new Vector3(2.6f, -0.6f, -1.6f), 0.12f, 1.2f, Quaternion.Euler(80, 0, 0), f.accent, 5); k.Cone(new Vector3(-2.6f, -0.6f, -1.6f), 0.12f, 1.2f, Quaternion.Euler(80, 0, 0), f.accent, 5); }
+            k.Cyl(new Vector3(0, 0, -2.8f), 0.45f, 0.6f, Quaternion.Euler(90, 0, 0), dk, 8);
+            k.Cyl(new Vector3(0, 0, -3.12f), 0.36f, 0.06f, Quaternion.Euler(90, 0, 0), G(eng), 8);
             m.body = k.Build("interceptor_" + f.id);
-            m.muzzles = new[] { new Vector3(-0.6f, -0.5f, 1.2f), new Vector3(0.6f, -0.5f, 1.2f) };
-            m.engines = new[] { new Vector3(0, 0, -1.3f) };
+            m.muzzles = new[] { new Vector3(-1.4f, -0.2f, 0.6f), new Vector3(1.4f, -0.2f, 0.6f) };
+            m.engines = new[] { new Vector3(0, 0, -3.2f) };
             m.camDist = 12; m.camHeight = 3.5f;
         }
 

@@ -137,9 +137,9 @@ namespace BIS
         {
             Title("Options");
             float w = UI.W;
-            Rect r = new Rect(w / 2 - 420, 200, 840, 700);
+            Rect r = new Rect(w / 2 - 420, 180, 840, 760);
             UI.Box(r);
-            float x = r.x + 40, y = r.y + 30, rw = r.width - 80;
+            float x = r.x + 40, y = r.y + 24, rw = r.width - 80;
             Settings.MouseSens = UI.Slider(new Rect(x, y, rw, 44), "Mouse sensitivity", Settings.MouseSens, 0.3f, 6f, Settings.MouseSens.ToString("0.0")); y += 54;
             Settings.PadSens = UI.Slider(new Rect(x, y, rw, 44), "Gamepad sensitivity", Settings.PadSens, 0.5f, 8f, Settings.PadSens.ToString("0.0")); y += 54;
             Settings.Fov = UI.Slider(new Rect(x, y, rw, 44), "Field of view", Settings.Fov, 50, 95, Settings.Fov.ToString("0")); y += 54;
@@ -150,6 +150,7 @@ namespace BIS
             Settings.InvertY = UI.Toggle(new Rect(x, y, rw, 50), "Invert mouse Y", Settings.InvertY); y += 56;
             Settings.InvertPad = UI.Toggle(new Rect(x, y, rw, 50), "Invert gamepad Y", Settings.InvertPad); y += 56;
             Settings.ShowFps = UI.Toggle(new Rect(x, y, rw, 50), "Show frame rate", Settings.ShowFps); y += 56;
+            if (!Application.isMobilePlatform) { Settings.ForceTouch = UI.Toggle(new Rect(x, y, rw, 50), "Touch controls (for touch screens)", Settings.ForceTouch); y += 56; }
             bool full = UI.Toggle(new UnityEngine.Rect(x, y, rw, 50), "Fullscreen", UnityEngine.Screen.fullScreen);
             if (full != UnityEngine.Screen.fullScreen) UnityEngine.Screen.fullScreen = full;
             if (UI.Button(new Rect(r.center.x - 160, r.yMax + 20, 320, 64), "SAVE AND BACK", false, true, 26)) { Settings.Save(); screen = Screen.Main; }

@@ -29,9 +29,10 @@ namespace BIS
             Vector2 mv = new Vector2((Input.GetKey(KeyCode.D) ? 1 : 0) - (Input.GetKey(KeyCode.A) ? 1 : 0),
                                      (Input.GetKey(KeyCode.W) ? 1 : 0) - (Input.GetKey(KeyCode.S) ? 1 : 0));
             float sens = Settings.MouseSens;
-            Vector2 lk = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * sens;
-            bool fire = Input.GetMouseButton(0), aim = Input.GetMouseButton(1);
-            bool fireD = Input.GetMouseButtonDown(0), aimD = Input.GetMouseButtonDown(1);
+            Vector2 lk = Application.isMobilePlatform ? Vector2.zero : new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * sens;
+            bool mob = Application.isMobilePlatform;
+            bool fire = !mob && Input.GetMouseButton(0), aim = !mob && Input.GetMouseButton(1);
+            bool fireD = !mob && Input.GetMouseButtonDown(0), aimD = !mob && Input.GetMouseButtonDown(1);
             bool jump = Input.GetKey(KeyCode.Space), jumpD = Input.GetKeyDown(KeyCode.Space);
             bool sprint = Input.GetKey(KeyCode.LeftShift);
             bool crouch = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C);
@@ -91,6 +92,31 @@ namespace BIS
             float dy = Axis("PadDY");
             if (dy > 0.5f) Hero = true;
 
+            if (TouchInput.Active)
+            {
+                TouchInput.Update();
+                if (TouchInput.Move != Vector2.zero) { mv = TouchInput.Move; throttle = TouchInput.Move.y; roll = -TouchInput.Move.x * 0.8f; }
+                lk += TouchInput.Look;
+                if (TouchInput.Held("fire")) fire = true;
+                if (TouchInput.Down("fire")) fireD = true;
+                if (TouchInput.Held("aim")) { aim = true; alt = true; }
+                if (TouchInput.Down("aim")) { aimD = true; altD = true; }
+                if (TouchInput.Held("jump")) { jump = true; climb = 1; }
+                if (TouchInput.Down("jump")) jumpD = true;
+                if (TouchInput.Held("crouch")) { crouch = true; climb = -1; }
+                if (TouchInput.Down("crouch")) crouchD = true;
+                if (TouchInput.Held("sprint")) sprint = true;
+                if (TouchInput.Held("boost")) boost = true;
+                if (TouchInput.Down("reload")) Reload = true;
+                if (TouchInput.Down("swap")) Swap = true;
+                if (TouchInput.Down("equip")) Equip = true;
+                if (TouchInput.Down("ability")) Ability = true;
+                if (TouchInput.Down("use")) Use = true;
+                if (TouchInput.Down("hero")) Hero = true;
+                if (TouchInput.Down("pause")) Pause = true;
+                if (TouchInput.Held("score")) ScoreHeld = true;
+            }
+
             Move = Vector2.ClampMagnitude(mv, 1);
             Look = lk;
             if (Settings.InvertY && !PadActive) Look.y = -Look.y;
@@ -110,7 +136,7 @@ namespace BIS
     public static class Settings
     {
         public static float MouseSens = 2f, PadSens = 3f, Volume = 0.8f, MusicVolume = 0.5f, Fov = 65f;
-        public static bool InvertY, InvertPad, ShowFps;
+        public static bool InvertY, InvertPad, ShowFps, ForceTouch;
         public static int BotsPerTeam = 16, Difficulty = 1, Quality = 2;
 
         public static void Load()
@@ -123,6 +149,7 @@ namespace BIS
             InvertY = PlayerPrefs.GetInt("invy", 0) == 1;
             InvertPad = PlayerPrefs.GetInt("invpad", 0) == 1;
             ShowFps = PlayerPrefs.GetInt("fps", 0) == 1;
+            ForceTouch = PlayerPrefs.GetInt("touch", 0) == 1;
             BotsPerTeam = PlayerPrefs.GetInt("bots", 16);
             Difficulty = PlayerPrefs.GetInt("diff", 1);
             Quality = PlayerPrefs.GetInt("quality", Application.isMobilePlatform ? 0 : 2);
@@ -139,6 +166,7 @@ namespace BIS
             PlayerPrefs.SetInt("invy", InvertY ? 1 : 0);
             PlayerPrefs.SetInt("invpad", InvertPad ? 1 : 0);
             PlayerPrefs.SetInt("fps", ShowFps ? 1 : 0);
+            PlayerPrefs.SetInt("touch", ForceTouch ? 1 : 0);
             PlayerPrefs.SetInt("bots", BotsPerTeam);
             PlayerPrefs.SetInt("diff", Difficulty);
             PlayerPrefs.SetInt("quality", Quality);
