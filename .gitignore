@@ -23,3 +23,5 @@
 *.apk
 *.aab
 /Previews/*.png
+/Previews/**/*.png
+/.utmp/

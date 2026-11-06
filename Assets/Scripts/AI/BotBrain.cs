@@ -30,6 +30,16 @@ namespace BIS
         float detpackT;
         bool boarded;
         float skill;
+        readonly NavAgent navAgent = new NavAgent();
+
+        /// <summary>Flat direction toward a point, routed round ridges, rivers and buildings on land maps.</summary>
+        Vector3 Toward(Vector3 pos, Vector3 goal, bool vehicle = false)
+        {
+            var nav = b.land != null ? b.land.nav : null;
+            Vector3 d = goal - pos; d.y = 0;
+            if (nav == null) return d.sqrMagnitude > 0.0001f ? d.normalized : Vector3.zero;
+            return nav.Steer(navAgent, pos, goal, vehicle);
+        }
 
         public BotBrain(Unit unit)
         {
@@ -236,7 +246,7 @@ namespace BIS
                             Random.value < (v.Driver ? (attacking ? 0.55f : 0.2f) : (attacking ? 0.8f : 0.25f))) { wantVehicle = v; break; }
                 }
             }
-            if (target != null && !target.Alive) target = null;
+            if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
 
             Vector3 move = Vector3.zero;
             bool fire = false, aim = false, crouch = false, sprint = false;
@@ -249,7 +259,7 @@ namespace BIS
                 {
                     Vector3 to = wantVehicle.transform.position - pos; to.y = 0;
                     if (to.magnitude < wantVehicle.radius + 3.5f) { wantVehicle.Enter(u); wantVehicle = null; return; }
-                    move = to.normalized; sprint = true;
+                    move = Toward(pos, wantVehicle.transform.position); sprint = true;
                     aimPoint = wantVehicle.transform.position;
                 }
             }
@@ -263,7 +273,14 @@ namespace BIS
                 if (strafeT <= 0) { strafeT = Random.Range(0.8f, 2.2f); strafe = Random.value < 0.5f ? -1 : 1; }
                 Vector3 side = Vector3.Cross(Vector3.up, dir) * strafe;
                 float pref = PreferDist;
-                if (u.RoleOf == Role.Marksman && !u.IsHero) { crouch = d > 30; move = d < 20 ? -dir : Vector3.zero; aim = true; }
+                bool advancing = squad != null && squad.order != SquadOrder.Defend && !squad.gathering && objective && (objective.Pos - pos).magnitude > 55;
+                if (u.RoleOf == Role.Marksman && !u.IsHero && advancing)
+                {
+                    // snipers in an attacking squad keep up with it and only settle in near the objective
+                    move = Toward(pos, flanking ? squad.via : objective.Pos) * 0.85f + side * 0.25f;
+                    aim = false;
+                }
+                else if (u.RoleOf == Role.Marksman && !u.IsHero) { crouch = d > 30; move = d < 20 ? -dir : Vector3.zero; aim = true; }
                 else
                 {
                     float approach = d > pref * 1.3f ? 1 : d < pref * 0.6f ? -0.7f : 0;
@@ -271,8 +288,8 @@ namespace BIS
                     // keep drifting toward the objective when the fight is far from it; attacking squads fight while advancing
                     bool pushing = squad != null && squad.order != SquadOrder.Defend && !squad.gathering;
                     Vector3 toObj = objective ? objective.Pos - pos : Vector3.zero; toObj.y = 0;
-                    if (objective && pushing && toObj.magnitude > objective.radius * 0.8f) move += (flanking ? (squad.via - pos).normalized : toObj.normalized) * (d > 15 ? 0.9f : 0.5f);
-                    else if (objective && toObj.magnitude > 30 && d > 35) move += toObj.normalized * 0.6f;
+                    if (objective && pushing && toObj.magnitude > objective.radius * 0.8f) move += Toward(pos, flanking ? squad.via : objective.Pos) * (d > 15 ? 0.9f : 0.5f);
+                    else if (objective && toObj.magnitude > 30 && d > 35) move += Toward(pos, objective.Pos) * 0.6f;
                 }
                 float boltSpeed = u.Weapon.def.speed;
                 Vector3 lead = Lead(u.Eye, target, boltSpeed);
@@ -332,7 +349,7 @@ namespace BIS
                 Vector3 to = moveGoal - pos; to.y = 0;
                 float d = to.magnitude;
                 if (flanking && d < 10) { flanking = false; Vector2 r0 = Random.insideUnitCircle * objective.radius * 0.7f; moveGoal = objective.Pos + new Vector3(r0.x, 0, r0.y); }
-                if (d > 2) { move = to / d; sprint = d > 30; }
+                if (d > 2) { move = Toward(pos, moveGoal); sprint = d > 30; }
                 else
                 {
                     bool defending = squad != null && squad.order == SquadOrder.Defend;
@@ -426,7 +443,7 @@ namespace BIS
                 if (t != null) { target = t; seeT = 1.5f; }
                 else if (seeT <= 0) target = null;
             }
-            if (target != null && !target.Alive) target = null;
+            if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
             if (v.hp < v.maxHp * 0.12f && Random.value < 0.02f) { v.Leave(u, true); return; }
 
             var inp = new VehicleInput();
@@ -443,7 +460,7 @@ namespace BIS
             }
             Vector3 to = goal - pos; to.y = 0;
             float dist = to.magnitude;
-            Vector3 move = dist > 6 ? to / dist : Vector3.zero;
+            Vector3 move = dist > 6 ? Toward(pos, goal, true) : Vector3.zero;
             if (dist < 6 && objective) { Vector2 r = Random.insideUnitCircle * objective.radius; moveGoal = objective.Pos + new Vector3(r.x, 0, r.y) * 1.5f; }
             strafeT -= dt; if (strafeT <= 0) { strafeT = Random.Range(2, 5); strafe = -strafe; }
             // obstacle feelers
@@ -480,7 +497,7 @@ namespace BIS
                 var t = FindTarget(v.gunnerT.position, 130, v.def.kind == VKind.Transport, v.IsShip);
                 if (t != null) { target = t; seeT = 1.5f; } else if (seeT <= 0) target = null;
             }
-            if (target != null && !target.Alive) target = null;
+            if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
             var inp = new VehicleInput();
             if (target != null)
             {
@@ -538,7 +555,7 @@ namespace BIS
                 var t = FindTarget(pos, 260, true);
                 target = t;
             }
-            if (target != null && !target.Alive) target = null;
+            if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
             var inp = new VehicleInput();
             float gy = b.GroundY(pos);
             Vector3 point;
@@ -642,7 +659,7 @@ namespace BIS
                 if (job == SpaceJob.Bomb && (sysTarget == null || sysTarget.destroyed)) sysTarget = PickSystem(enemy);
                 if (job == SpaceJob.Bomb && sysTarget == null) job = SpaceJob.Dogfight;
             }
-            if (target != null && !target.Alive) target = null;
+            if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
 
             Vector3 point = pos + v.transform.forward * 200;
             float throttleWant = 0.85f;
@@ -799,7 +816,7 @@ namespace BIS
                     navGoal = posts[Random.Range(0, posts.Length)];
                 }
             }
-            if (target != null && !target.Alive) target = null;
+            if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
 
             Vector3 move = Vector3.zero, aimPoint = u.Eye + u.transform.forward * 20;
             bool fire = false;

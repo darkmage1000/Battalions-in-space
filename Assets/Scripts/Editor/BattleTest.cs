@@ -144,6 +144,109 @@ namespace BIS.EditorTools
             return $"{fails} of {total} walks stuck\n" + sb;
         }
 
+        /// <summary>Builds a land map and saves Previews/Maps/&lt;name&gt;.png: the minimap beside the bot walk grid (grey walk, dark blocked, tan walk-only, blue wade).</summary>
+        public static string MapShot(int map)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            Start(false, map, 0, 1, 2, 200);
+            long ms = sw.ElapsedMilliseconds;
+            var land = Battle.I.land;
+            var nav = land.nav.Picture();
+            int s = 512;
+            var outT = new Texture2D(s * 2 + 8, s, TextureFormat.RGB24, false);
+            for (int y = 0; y < s; y++)
+                for (int x = 0; x < s; x++)
+                {
+                    // the minimap covers the whole map; the nav grid only the playable square
+                    float wx = -land.half + (x + 0.5f) / s * land.size, wz = -land.half + (y + 0.5f) / s * land.size;
+                    outT.SetPixel(x, y, land.minimap.GetPixelBilinear((x + 0.5f) / s, (y + 0.5f) / s));
+                    float u = (wx + land.PlayHalf) / (land.PlayHalf * 2), v = (wz + land.PlayHalf) / (land.PlayHalf * 2);
+                    Color c = u < 0 || v < 0 || u > 1 || v > 1 ? Color.black : nav.GetPixel(Mathf.Clamp((int)(u * nav.width), 0, nav.width - 1), Mathf.Clamp((int)(v * nav.height), 0, nav.height - 1));
+                    outT.SetPixel(x + s + 8, y, c);
+                }
+            foreach (var cp in Battle.I.posts)
+            {
+                float u = (cp.Pos.x + land.half) / land.size, v = (cp.Pos.z + land.half) / land.size;
+                for (int dy = -6; dy <= 6; dy++) for (int dx = -6; dx <= 6; dx++)
+                    {
+                        Color c = cp.owner < 0 ? Color.white : cp.owner == 0 ? Color.cyan : Color.red;
+                        int px = (int)(u * s) + dx, py = (int)(v * s) + dy;
+                        if (px >= 0 && py >= 0 && px < s && py < s) outT.SetPixel(px, py, c);
+                        float nu = (cp.Pos.x + land.PlayHalf) / (land.PlayHalf * 2), nv = (cp.Pos.z + land.PlayHalf) / (land.PlayHalf * 2);
+                        int qx = (int)(nu * s) + dx + s + 8, qy = (int)(nv * s) + dy;
+                        if (qx >= s + 8 && qy >= 0 && qx < s * 2 + 8 && qy < s) outT.SetPixel(qx, qy, c);
+                    }
+            }
+            outT.Apply();
+            System.IO.Directory.CreateDirectory("Previews/Maps");
+            string path = $"Previews/Maps/{land.def.name.Replace(' ', '_')}.png";
+            System.IO.File.WriteAllBytes(path, outT.EncodeToPNG());
+            return $"{land.def.name}: built in {ms} ms, blocked foot {land.nav.blockedFoot} veh {land.nav.blockedVeh} -> {path}";
+        }
+
+        static float[] wAlone, wContest, wNone, wNear;
+        static int[] wOwnerAt;
+        static StringBuilder wLog;
+        static float wTime;
+
+        /// <summary>
+        /// Steps the battle and records, per post: seconds with only the enemy of its owner inside (taking it),
+        /// seconds contested, seconds with enemies within 60 m but not inside, and every change of hands.
+        /// Call repeatedly (each call ≤ ~50 s); WatchReport() prints the totals.
+        /// </summary>
+        public static void Watch(float seconds, bool reset = false)
+        {
+            var b = Battle.I;
+            if (reset || wAlone == null || wAlone.Length != b.posts.Count)
+            {
+                int n = b.posts.Count;
+                wAlone = new float[n]; wContest = new float[n]; wNone = new float[n]; wNear = new float[n]; wOwnerAt = new int[n];
+                for (int i = 0; i < n; i++) wOwnerAt[i] = b.posts[i].owner;
+                wLog = new StringBuilder(); wTime = 0;
+            }
+            EditorApplication.isPaused = true;
+            int steps = Mathf.CeilToInt(seconds / 0.02f);
+            for (int s = 0; s < steps; s++)
+            {
+                EditorApplication.Step();
+                wTime += 0.02f;
+                for (int i = 0; i < b.posts.Count; i++)
+                {
+                    var cp = b.posts[i];
+                    if (cp.owner != wOwnerAt[i]) { wLog.Append($"{b.time:0}s {cp.postName}: {wOwnerAt[i]} -> {cp.owner}\n"); wOwnerAt[i] = cp.owner; }
+                    int o = cp.owner;
+                    int foe = o >= 0 ? 1 - o : -1;
+                    if (o < 0) { if (cp.present[0] + cp.present[1] > 0 && !cp.contested) wAlone[i] += 0.02f; }
+                    else if (cp.present[foe] > 0 && cp.present[o] == 0) wAlone[i] += 0.02f;
+                    if (cp.contested) wContest[i] += 0.02f;
+                    if (foe >= 0 && cp.present[foe] == 0)
+                    {
+                        bool near = false;
+                        foreach (var u in b.units) if (u && u.Alive && u.team == foe && (u.transform.position - cp.Pos).sqrMagnitude < 60 * 60) { near = true; break; }
+                        if (near) wNear[i] += 0.02f; else wNone[i] += 0.02f;
+                    }
+                }
+            }
+        }
+
+        public static string WatchReport()
+        {
+            var b = Battle.I;
+            var sb = new StringBuilder($"watched {wTime:0} s, tickets {b.teams[0].tickets:0}/{b.teams[1].tickets:0}, squad spawns {b.mateSpawns}\n");
+            for (int i = 0; i < b.posts.Count; i++)
+                sb.Append($"{b.posts[i].postName} (owner {b.posts[i].owner}, r {b.posts[i].radius}): taking {wAlone[i]:0}s contested {wContest[i]:0}s foes-near-not-in {wNear[i]:0}s no-foes {wNone[i]:0}s\n");
+            sb.Append(wLog);
+            if (b.commander != null)
+                for (int t = 0; t < 2; t++)
+                    foreach (var s in b.commander.squads[t])
+                    {
+                        int alive = 0; float dsum = 0;
+                        foreach (var m in s.members) if (m.unit && m.unit.Alive) { alive++; if (s.target) dsum += Vector3.Distance(m.unit.transform.position, s.target.Pos); }
+                        sb.Append($"t{t} sq{s.id} {Commander.OrderName(s.order)} {(s.target ? s.target.postName : "-")} gather {s.gathering} alive {alive} avgDist {(alive > 0 ? dsum / alive : 0):0}\n");
+                    }
+            return sb.ToString();
+        }
+
         /// <summary>Put the player (on foot) at a position looking at a target.</summary>
         public static void Place(Vector3 p, Vector3 look)
         {

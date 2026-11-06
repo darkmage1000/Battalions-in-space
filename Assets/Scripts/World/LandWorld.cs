@@ -8,7 +8,7 @@ namespace BIS
     /// mesh colliders, themed props (instanced visuals per chunk + primitive colliders), outposts and
     /// command posts with vehicle pads, sky, fog and a minimap texture.
     /// </summary>
-    public class LandWorld : MonoBehaviour
+    public partial class LandWorld : MonoBehaviour
     {
         public LandMapDef def;
         public ThemeInfo th;
@@ -21,6 +21,7 @@ namespace BIS
         Transform colRoot;
         System.Random rng;
         public readonly List<Vector3> lavaSpots = new List<Vector3>();
+        public Nav nav;
 
         public float PlayHalf => half * 0.8f;
 
@@ -63,9 +64,9 @@ namespace BIS
             return y;
         }
 
-        float BuiltHeight(float x, float z)
+        float BuiltHeight(float x, float z, out byte tg, out float liq, out bool lava)
         {
-            float y = RawHeight(x, z);
+            float y = LayoutHeight(x, z, out tg, out liq, out lava);
             for (int i = 0; i < postXZ.Count; i++)
             {
                 float r = Vector2.Distance(new Vector2(x, z), postXZ[i]);
@@ -73,6 +74,7 @@ namespace BIS
                 {
                     float w = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(16, 34, r));
                     y = Mathf.Lerp(postH[i], y, w);
+                    if (r < 24) { liq = float.NaN; lava = false; tg &= unchecked((byte)~TagWet); }
                 }
             }
             return y;
@@ -113,19 +115,26 @@ namespace BIS
             res = Mathf.RoundToInt(size / cell);
 
             float postScale = half * 0.72f;
+            PrepareLayout();
             foreach (var p in d.posts)
             {
                 var xz = p.pos * postScale;
                 postXZ.Add(xz);
                 float avg = 0; int n = 0;
-                for (int a = 0; a < 8; a++) { float an = a * Mathf.PI / 4; avg += RawHeight(xz.x + Mathf.Cos(an) * 12, xz.y + Mathf.Sin(an) * 12); n++; }
-                postH.Add(Mathf.Max(avg / n, RawHeight(xz.x, xz.y) - 2));
+                for (int a = 0; a < 8; a++) { float an = a * Mathf.PI / 4; avg += LayoutHeight(xz.x + Mathf.Cos(an) * 12, xz.y + Mathf.Sin(an) * 12, out _, out _, out _); n++; }
+                postH.Add(Mathf.Max(avg / n, LayoutHeight(xz.x, xz.y, out _, out _, out _) - 2));
             }
+            BlendRoadsToPosts();
+            MakeBridges();
 
-            h = new float[(res + 1) * (res + 1)];
+            int nv = (res + 1) * (res + 1);
+            h = new float[nv]; vtag = new byte[nv]; liquidTop = new float[nv]; liquidLava = new bool[nv];
             for (int j = 0; j <= res; j++)
                 for (int i = 0; i <= res; i++)
-                    h[j * (res + 1) + i] = BuiltHeight(-half + i * cell, -half + j * cell);
+                {
+                    int k = j * (res + 1) + i;
+                    h[k] = BuiltHeight(-half + i * cell, -half + j * cell, out vtag[k], out liquidTop[k], out liquidLava[k]);
+                }
 
             colRoot = new GameObject("colliders").transform;
             colRoot.SetParent(transform, false);
@@ -136,6 +145,8 @@ namespace BIS
             BuildProps(props);
             BuildPosts(battle);
             SetupAtmosphere();
+            Physics.SyncTransforms();
+            nav = new Nav(this);
         }
 
         Color GroundColor(float x, float z, float y, float slope)
@@ -143,12 +154,16 @@ namespace BIS
             float n = Mathf.PerlinNoise(x * 0.045f + 33, z * 0.045f + 71);
             float n2 = Mathf.PerlinNoise(x * 0.17f + 3, z * 0.17f + 9);
             float hn = Mathf.InverseLerp(-15, 35, y);
+            byte tg = TagAt(x, z);
             Color c = Color.Lerp(th.low, th.mid, Mathf.SmoothStep(0, 1, n));
             c = Color.Lerp(c, th.high, Mathf.SmoothStep(0.45f, 0.95f, hn));
             if (n2 > 0.66f) c = Color.Lerp(c, th.patch, (n2 - 0.66f) * 2.5f);
             if (def.theme == Theme.Snow) c = Color.Lerp(c, th.steep, Mathf.SmoothStep(0.5f, 0.75f, slope));
             else c = Color.Lerp(c, th.steep, Mathf.SmoothStep(0.45f, 0.7f, slope));
-            if (def.theme == Theme.Volcanic && y < -5 && n2 < 0.32f) { c = new Color(1f, 0.35f, 0.08f, 0); }
+            if ((tg & TagLake) != 0) c = def.theme == Theme.Snow ? Color.Lerp(new Color(0.62f, 0.8f, 0.9f), new Color(0.85f, 0.93f, 0.98f), n2) : Color.Lerp(c, new Color(0.3f, 0.28f, 0.22f), 0.6f);
+            if ((tg & TagWet) != 0) c = def.theme == Theme.Desert ? Color.Lerp(th.patch, th.path, 0.6f) * 0.92f : def.theme == Theme.Volcanic ? new Color(0.1f, 0.08f, 0.08f) : def.theme == Theme.Snow ? new Color(0.5f, 0.56f, 0.62f) : new Color(0.3f, 0.27f, 0.2f);
+            if ((tg & TagRoad) != 0 && slope < 0.3f) c = Color.Lerp(c, th.path, 0.85f);
+            if (def.theme == Theme.Volcanic && y < -5 && n2 < (channels.Count > 0 ? 0.1f : 0.32f) && (tg & (TagRoad | TagClear)) == 0) { c = new Color(1f, 0.35f, 0.08f, 0); }
             c *= 0.94f + 0.12f * n2;
             c.a = c.a < 0.5f ? 0 : 1;
             return c;
@@ -256,7 +271,7 @@ namespace BIS
             for (int n = 0; n < count; n++)
             {
                 float x = R(-lim, lim), z = R(-lim, lim);
-                if (NearPost(x, z, 26)) continue;
+                if (NearPost(x, z, 26) || !Clear(x, z)) continue;
                 float y = Height(x, z);
                 var nrm = Normal(x, z);
                 float roll = R();
@@ -288,12 +303,13 @@ namespace BIS
                     case Theme.Volcanic:
                         if (roll < 0.45f) { float s = R(1.5f, 5.5f); k.Rock(p + Vector3.up * s * 0.2f, new Vector3(s * 1.3f, s, s * 1.1f), yawQ, Color.Lerp(new Color(0.1f, 0.09f, 0.1f), th.high, R() * 0.5f), rng.Next(), 0.35f); ColSphere(p + Vector3.up * s * 0.2f, s * 0.5f); }
                         else if (roll < 0.65f) { float hh = R(6, 20); k.Cone(p + Vector3.up * hh / 2, hh * 0.18f, hh, Quaternion.Euler(R(-8, 8), R(0, 360), R(-8, 8)), new Color(0.08f, 0.07f, 0.1f), 6); ColCap(p, hh * 0.14f, hh * 0.85f); }
-                        else if (roll < 0.78f && y < 2) { float s = R(4, 9); k.Cyl(p + Vector3.up * 0.06f, s, 0.12f, Quaternion.identity, MeshKit.Glow(new Color(1f, 0.38f, 0.06f)), 10); lavaSpots.Add(p); }
+                        else if (roll < 0.78f && y < (channels.Count > 0 ? -7 : 2)) { float s = R(4, 9); k.Cyl(p + Vector3.up * 0.06f, s, 0.12f, Quaternion.identity, MeshKit.Glow(new Color(1f, 0.38f, 0.06f)), 10); lavaSpots.Add(p); }
                         else if (roll < 0.85f) { k.Rock(p, new Vector3(4, 2, 4), yawQ, new Color(0.15f, 0.12f, 0.12f), rng.Next()); k.Cyl(p + Vector3.up * 0.9f, 0.6f, 0.3f, Quaternion.identity, MeshKit.Glow(new Color(1f, 0.5f, 0.1f)), 8); ColSphere(p + Vector3.up * 0.4f, 1.8f); lavaSpots.Add(p + Vector3.up * 1.2f); }
                         else Wreck(k, p, yawQ, nrm);
                         break;
                 }
             }
+            BuildLayoutProps((x, z) => KitAt(x, z));
             var root = new GameObject("props").transform;
             root.SetParent(transform, false);
             for (int i = 0; i < kits.Length; i++) if (kits[i].Count > 0) kits[i].Make("props" + i, root, true);

@@ -43,9 +43,10 @@ namespace BIS
             for (int t = 0; t < 2; t++)
             {
                 Squad cur = null; int id = 0;
+                // the player is the first member of the first squad of their side
                 foreach (var p in b.people)
                 {
-                    if (p.team != t || p.isPlayer) continue;
+                    if (p.team != t) continue;
                     if (cur == null || cur.members.Count >= SquadSize) { cur = new Squad { team = t, id = id++ }; squads[t].Add(cur); }
                     cur.members.Add(p); of[p] = cur;
                 }
@@ -192,7 +193,7 @@ namespace BIS
             s.order = o; s.target = target; s.version++;
             Vector3 back = front - target.Pos; back.y = 0;
             s.stage = target.Pos + (back.sqrMagnitude > 1 ? back.normalized : Vector3.forward) * 70;
-            if (b.land != null) s.stage.y = b.land.Height(s.stage.x, s.stage.z);
+            if (b.land != null) { s.stage.y = b.land.Height(s.stage.x, s.stage.z); if (b.land.nav != null) s.stage = b.land.nav.SnapPoint(s.stage); }
             // close-by posts and counter-attacks go straight in
             s.gathering = o != SquadOrder.Defend && o != SquadOrder.Counter && (target.Pos - front).magnitude > 110;
             s.phaseSince = Time.time;
@@ -201,10 +202,31 @@ namespace BIS
                 Vector3 d = target.Pos - front; d.y = 0;
                 Vector3 side = Vector3.Cross(Vector3.up, d.normalized) * ((s.id % 2 == 0) ? 1 : -1);
                 Vector3 via = target.Pos + side * 75 - d.normalized * 45;
-                if (b.land != null) { float lim = b.land.PlayHalf - 30; via.x = Mathf.Clamp(via.x, -lim, lim); via.z = Mathf.Clamp(via.z, -lim, lim); via.y = b.land.Height(via.x, via.z); }
+                if (b.land != null) { float lim = b.land.PlayHalf - 30; via.x = Mathf.Clamp(via.x, -lim, lim); via.z = Mathf.Clamp(via.z, -lim, lim); via.y = b.land.Height(via.x, via.z); if (b.land.nav != null) via = b.land.nav.SnapPoint(via); }
                 s.via = via;
                 s.stage = via;
             }
+        }
+
+        /// <summary>
+        /// A safe squadmate in the field that this bot should spawn on: attacking squads reinforce a mate who is
+        /// closer to the objective than any friendly post; defenders stay with the posts.
+        /// </summary>
+        public Unit MateToSpawnOn(Participant p)
+        {
+            var s = SquadOf(p);
+            if (s == null || s.target == null || s.order == SquadOrder.Defend) return null;
+            if (Random.value > 0.8f) return null;
+            float postBest = float.MaxValue;
+            foreach (var cp in b.posts) if (cp.SpawnableFor(p.team)) postBest = Mathf.Min(postBest, (cp.Pos - s.target.Pos).magnitude);
+            Unit best = null; float bd = postBest - 40;      // only worth it if it saves a real walk
+            foreach (var m in s.members)
+            {
+                if (m == p || !m.unit || !m.unit.Alive) continue;
+                float d = (m.unit.transform.position - s.target.Pos).magnitude;
+                if (d < bd && b.MateBlocked(m.unit) == null) { bd = d; best = m.unit; }
+            }
+            return best;
         }
 
         /// <summary>Where a bot of this squad should spawn: the friendly post nearest its objective (defenders at the post itself).</summary>
@@ -212,13 +234,13 @@ namespace BIS
         {
             var s = SquadOf(p);
             if (s == null || s.target == null) return null;
-            if (s.order == SquadOrder.Defend && s.target.owner == p.team && Random.value < 0.5f) return s.target;
+            if (s.order == SquadOrder.Defend && s.target.SpawnableFor(p.team) && Random.value < 0.5f) return s.target;
             CommandPost best = null; float bd = float.MaxValue;
             // assault squads like to start where a vehicle is waiting
             bool wantRide = (s.order == SquadOrder.Assault || s.order == SquadOrder.Flank) && Random.value < 0.45f;
             foreach (var cp in b.posts)
             {
-                if (cp.owner != p.team || cp.contested) continue;
+                if (!cp.SpawnableFor(p.team)) continue;
                 float d = (cp.Pos - s.target.Pos).sqrMagnitude;
                 if (wantRide)
                     foreach (var pad in cp.pads)

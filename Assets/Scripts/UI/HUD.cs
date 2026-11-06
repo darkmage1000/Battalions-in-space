@@ -359,10 +359,11 @@ namespace BIS
                 float d = (u.transform.position - mp).magnitude;
                 if (u.team == me.team)
                 {
-                    if (d > 45) continue;
+                    bool mate = b.commander != null && b.commander.SquadOf(u.part) == b.commander.SquadOf(b.player) && b.commander.SquadOf(u.part) != null;
+                    if (d > (mate ? 150 : 45)) continue;
                     Vector3 sp = cam.WorldToScreenPoint(u.transform.position + Vector3.up * (u.Height + 0.4f));
                     if (sp.z <= 0) continue;
-                    UI.Text(new Rect(sp.x / UI.S - 80, (Screen.height - sp.y) / UI.S - 20, 160, 20), u.IsHero ? u.hero.name : u.displayName, 14, b.TeamColor(u.team), TextAnchor.LowerCenter);
+                    UI.Text(new Rect(sp.x / UI.S - 80, (Screen.height - sp.y) / UI.S - 20, 160, 20), (mate ? "◆ " : "") + (u.IsHero ? u.hero.name : u.displayName), 14, mate ? SquadColor : b.TeamColor(u.team), TextAnchor.LowerCenter);
                 }
                 else if (u.IsHero && d < 160)
                 {
@@ -396,6 +397,8 @@ namespace BIS
             }
         }
 
+        public static readonly Color SquadColor = new Color(0.45f, 1f, 0.55f);
+
         void Radar(Unit me)
         {
             var b = battle;
@@ -421,13 +424,20 @@ namespace BIS
                 foreach (var p in b.posts) { var q = Map(p.Pos); Color pc = p.owner < 0 ? Color.white : b.TeamColor(p.owner); UI.Fill(new Rect(q.x - 6, q.y - 6, 12, 12), Color.black); UI.Fill(new Rect(q.x - 4, q.y - 4, 8, 8), pc); }
             else foreach (var s in b.space.ships) { var q = Map(s.transform.position); UI.Fill(new Rect(q.x - 10, q.y - 4, 20, 8), b.TeamColor(s.team)); }
             bool recon = b.Recon(me.team);
+            var mySquad = b.commander != null ? b.commander.SquadOf(b.player) : null;
+            if (mySquad != null && mySquad.target)
+            {
+                UI.Text(new Rect(r.x, r.yMax + 4, 360, 22), $"SQUAD {mySquad.id + 1}: {Commander.OrderName(mySquad.order)} {mySquad.target.postName}{(mySquad.gathering ? " (gathering)" : "")}", 16, SquadColor);
+                var q = Map(mySquad.target.Pos); UI.Frame(new Rect(q.x - 8, q.y - 8, 16, 16), SquadColor, 2);
+            }
             foreach (var u in b.units)
             {
                 if (!u || !u.Alive || u == me || u.InVehicle) continue;
                 bool friend = u.team == me.team;
                 if (!friend && !recon && !(Time.time - u.lastFire < 1.5f) && (u.transform.position - mp).sqrMagnitude > 25 * 25) continue;
                 if (!friend && u.Cloaked) continue;
-                UI.Dot(Map(u.transform.position), u.IsHero ? 4 : 2.5f, friend ? b.TeamColor(u.team) : UI.Bad);
+                bool mate = friend && mySquad != null && mySquad.members.Contains(u.part);
+                UI.Dot(Map(u.transform.position), u.IsHero || mate ? 4 : 2.5f, mate ? SquadColor : friend ? b.TeamColor(u.team) : UI.Bad);
             }
             foreach (var v in b.vehicles)
             {
@@ -539,23 +549,10 @@ namespace BIS
             // map + posts
             Rect map = new Rect(580, 100, Mathf.Min(860, w - 610), 760);
             UI.Box(map);
-            if (b.land) DrawLandMap(new Rect(map.x + 10, map.y + 10, map.height - 20, map.height - 20), pc, true);
+            float sq = Mathf.Min(map.height - 20, map.width - 260);
+            if (b.land) DrawLandMap(new Rect(map.x + 10, map.y + 10, sq, sq), pc, true);
             else DrawSpaceMap(new Rect(map.x + 10, map.y + 10, map.width - 20, map.height - 20));
-            if (b.land)
-            {
-                float lx = map.x + map.height + 2, lw = map.width - map.height - 12;
-                if (lw > 160)
-                {
-                    float yy = map.y + 14;
-                    UI.Text(new Rect(lx, yy, lw, 26), "SPAWN AT", 20, UI.Gold); yy += 32;
-                    foreach (var p in b.posts)
-                    {
-                        bool mine = p.owner == b.player.team;
-                        if (UI.Button(new Rect(lx, yy, lw, 38), p.postName, pc.selPost == p.index, mine, 18)) pc.selPost = p.index;
-                        yy += 42;
-                    }
-                }
-            }
+            if (b.land) SpawnList(pc, new Rect(map.x + sq + 22, map.y + 12, map.width - sq - 34, map.height - 24));
 
             string title = b.cfg.title ?? (b.land ? b.cfg.land.name : b.cfg.spaceMap.name);
             UI.Text(new Rect(580, 870, map.width, 34), title, 26, Color.white);
@@ -565,6 +562,36 @@ namespace BIS
                 pc.TrySpawn(pc.selHero >= 0 && b.player.heroReady);
             if (UI.Button(new Rect(30, 990, 220, 64), "CONTROLS", helpOpen, true, 22)) helpOpen = !helpOpen;
             if (helpOpen) Controls(new Rect(w / 2 - 420, 160, 840, 700));
+        }
+
+        /// <summary>Posts you own (greyed while an enemy stands in one) and your squadmates (greyed unless safe).</summary>
+        void SpawnList(PlayerControl pc, Rect r)
+        {
+            var b = battle;
+            float yy = r.y;
+            UI.Text(new Rect(r.x, yy, r.width, 26), "SPAWN AT", 20, UI.Gold); yy += 30;
+            foreach (var p in b.posts)
+            {
+                if (p.owner != b.player.team) continue;
+                bool ok = p.SpawnableFor(b.player.team);
+                if (UI.Button(new Rect(r.x, yy, r.width, 36), ok ? p.postName : p.postName + " (attacked)", pc.selMate == null && pc.selPost == p.index, ok, 17)) { pc.selPost = p.index; pc.selMate = null; }
+                yy += 40;
+            }
+            var sq = b.commander != null ? b.commander.SquadOf(b.player) : null;
+            if (sq == null) return;
+            yy += 8;
+            UI.Text(new Rect(r.x, yy, r.width, 26), $"SQUAD {sq.id + 1}", 20, UI.Gold); yy += 26;
+            UI.Text(new Rect(r.x, yy, r.width, 22), "Orders: " + Commander.OrderName(sq.order) + (sq.target ? " " + sq.target.postName : ""), 15, UI.Dim); yy += 26;
+            foreach (var m in sq.members)
+            {
+                if (m.isPlayer) continue;
+                string why = b.MateBlocked(m.unit);
+                bool ok = why == null;
+                string label = m.name + (ok ? "" : $" ({why})");
+                if (UI.Button(new Rect(r.x, yy, r.width, 36), label, pc.selMate == m, ok, 15)) pc.selMate = m;
+                yy += 40;
+            }
+            UI.Text(new Rect(r.x, yy, r.width, 60), $"Spawn beside a squadmate when no enemy is within {Battle.MateSafeRadius:0} m and they haven't been hit for {Battle.MateHurtSafe:0} s.", 14, UI.Dim, TextAnchor.UpperLeft, true);
         }
 
         public void DrawLandMap(Rect r, PlayerControl pc, bool pick)
@@ -582,10 +609,26 @@ namespace BIS
                 UI.Fill(new Rect(q.x - s - 2, q.y - s - 2, s * 2 + 4, s * 2 + 4), sel ? UI.Gold : Color.black);
                 UI.Fill(new Rect(q.x - s, q.y - s, s * 2, s * 2), c);
                 UI.Text(new Rect(q.x - 100, q.y + s + 2, 200, 22), p.postName, 16, Color.white, TextAnchor.UpperCenter);
-                if (pick && p.owner == b.player.team && Event.current.type == EventType.MouseDown && new Rect(q.x - 20, q.y - 20, 40, 40).Contains(Event.current.mousePosition)) { pc.selPost = p.index; Sfx.Play2D("ui"); }
+                if (p.UnderAttack && Mathf.Repeat(Time.unscaledTime, 1) < 0.5f) UI.Frame(new Rect(q.x - s - 5, q.y - s - 5, s * 2 + 10, s * 2 + 10), UI.Bad, 2);
+                if (pick && p.owner == b.player.team && Event.current.type == EventType.MouseDown && new Rect(q.x - 20, q.y - 20, 40, 40).Contains(Event.current.mousePosition)) { pc.selPost = p.index; pc.selMate = null; Sfx.Play2D("ui"); }
             }
+            var mySquad = b.commander != null ? b.commander.SquadOf(b.player) : null;
             foreach (var u in b.units)
-                if (u && u.Alive && u.team == b.player.team) UI.Dot(M(u.transform.position), u.part.isPlayer ? 5 : 2.5f, u.part.isPlayer ? Color.white : b.TeamColor(u.team));
+                if (u && u.Alive && u.team == b.player.team)
+                {
+                    bool mate = mySquad != null && !u.part.isPlayer && mySquad.members.Contains(u.part);
+                    var q = M(u.transform.position);
+                    if (mate)
+                    {
+                        bool sel = pc != null && pc.selMate == u.part;
+                        UI.Fill(new Rect(q.x - 6, q.y - 6, 12, 12), sel ? Color.white : Color.black);
+                        UI.Fill(new Rect(q.x - 4, q.y - 4, 8, 8), SquadColor);
+                        if (pick) UI.Text(new Rect(q.x - 80, q.y + 6, 160, 18), u.part.name, 13, SquadColor, TextAnchor.UpperCenter);
+                        if (pick && Event.current.type == EventType.MouseDown && new Rect(q.x - 14, q.y - 14, 28, 28).Contains(Event.current.mousePosition)) { pc.selMate = u.part; Sfx.Play2D("ui"); }
+                    }
+                    else UI.Dot(q, u.part.isPlayer ? 5 : 2.5f, u.part.isPlayer ? Color.white : b.TeamColor(u.team));
+                }
+            if (mySquad != null && mySquad.target) { var q = M(mySquad.target.Pos); UI.Frame(new Rect(q.x - 22, q.y - 22, 44, 44), SquadColor, 2); }
             foreach (var v in b.vehicles)
                 if (v && v.Alive && v.Team == b.player.team && !v.IsEmpty) UI.Fill(new Rect(M(v.transform.position).x - 4, M(v.transform.position).y - 4, 8, 8), b.TeamColor(v.Team));
         }

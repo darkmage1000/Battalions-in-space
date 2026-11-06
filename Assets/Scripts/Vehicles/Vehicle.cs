@@ -40,7 +40,8 @@ namespace BIS
         public float radius = 2;
         public CapitalShip parkedIn;
         public Transform forcedLock;
-        public float spawnTime;   // the player's target lock (missiles home on it)
+        public float spawnTime;
+        float lavaT;   // the player's target lock (missiles home on it)
         bool destroyed;
         int muzzleIdx, gunnerIdx;
         float yaw, smokeT, crashCd, fxT;
@@ -308,6 +309,23 @@ namespace BIS
                 }
             }
             crashCd -= dt;
+            // ground vehicles can't climb cliffs and ridges
+            if (battle.land != null && hv.sqrMagnitude > 0.01f)
+            {
+                Vector3 np = pos + hv * dt;
+                float step = new Vector2(hv.x, hv.z).magnitude * dt;
+                if ((battle.GroundY(np) - battle.GroundY(pos)) / Mathf.Max(0.001f, step) > 0.75f)
+                {
+                    Vector3 nn = battle.land.Normal(np.x, np.z); Vector3 nh = new Vector3(nn.x, 0, nn.z);
+                    if (nh.sqrMagnitude > 0.0001f) { nh.Normalize(); float up = Vector3.Dot(hv, -nh); if (up > 0) hv += nh * up * 1.1f; }
+                    else hv *= 0.2f;
+                }
+                if (battle.land.LiquidAt(pos.x, pos.z, out float liq, out bool lava) && battle.land.Height(pos.x, pos.z) < liq && battle.land.Top(pos.x, pos.z) < liq + 0.1f)
+                {
+                    if (lava) { lavaT += dt; if (lavaT > 0.25f) { lavaT = 0; TakeDamage(new DamageInfo { amount = 30, type = DmgType.Environment, team = -1, point = pos }); } }
+                    else hv *= 1 - 0.6f * Mathf.Min(1, dt * 4);
+                }
+            }
             vel.x = hv.x; vel.z = hv.z;
             pos += hv * dt;
             float gy = battle.GroundY(pos);

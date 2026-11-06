@@ -14,6 +14,7 @@ namespace BIS
         public bool paused, showScore, showMap, showHelp;
         public float camYaw, camPitch = 10;
         public int selClass, selPost = -1, selShip = 0, selHero = -1, selFoot = 0;
+        public Participant selMate;      // spawn on this squadmate instead of a post
         public bool spaceOnFoot;
         public Vector3 aimPoint;
         public float outOfBounds;
@@ -57,7 +58,19 @@ namespace BIS
                 hero = b.FreeHero(b.player.team, selHero);
             }
             else if (!b.space && ClassLocked(selClass)) { Say("That class is locked in this campaign - unlock it in the galaxy map"); Sfx.Play2D("deny"); return; }
-            var u = b.Spawn(b.player, b.space ? selFoot : selClass, hero, selPost, b.space && !spaceOnFoot && hero == null ? selShip : -1);
+            Unit u;
+            if (b.land && selMate != null)
+            {
+                string why = b.MateBlocked(selMate.unit);
+                if (why != null) { Say($"Can't spawn on {selMate.name}: {why}"); Sfx.Play2D("deny"); return; }
+                u = b.SpawnOnMate(b.player, selClass, hero, selMate.unit);
+            }
+            else
+            {
+                if (b.land && selPost >= 0 && selPost < b.posts.Count && b.posts[selPost].owner == b.player.team && !b.posts[selPost].SpawnableFor(b.player.team))
+                { Say($"{b.posts[selPost].postName} is under attack - pick another post or a squadmate"); Sfx.Play2D("deny"); return; }
+                u = b.Spawn(b.player, b.space ? selFoot : selClass, hero, selPost, b.space && !spaceOnFoot && hero == null ? selShip : -1);
+            }
             if (u == null) { Say("Can't spawn there"); Sfx.Play2D("deny"); return; }
             mode = Mode.Play;
             camYaw = u.InVehicle ? u.vehicle.transform.eulerAngles.y : u.transform.eulerAngles.y; camPitch = 8;
@@ -486,7 +499,8 @@ namespace BIS
             if (b.land)
             {
                 Vector3 focus = Vector3.zero;
-                if (selPost >= 0 && selPost < b.posts.Count) focus = b.posts[selPost].Pos;
+                if (selMate != null && selMate.unit && selMate.unit.Alive) focus = selMate.unit.transform.position;
+                else if (selPost >= 0 && selPost < b.posts.Count) focus = b.posts[selPost].Pos;
                 float r = 120;
                 pos = focus + new Vector3(Mathf.Cos(t) * r, 90, Mathf.Sin(t) * r);
                 rot = Quaternion.LookRotation(focus - pos);

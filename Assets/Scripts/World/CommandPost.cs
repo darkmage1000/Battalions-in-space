@@ -61,6 +61,10 @@ namespace BIS
             Recolor();
         }
 
+        /// <summary>A post can be spawned at by its owner unless an enemy is standing in it.</summary>
+        public bool SpawnableFor(int team) => owner == team && present[1 - team] == 0;
+        public bool UnderAttack => owner >= 0 && present[1 - owner] > 0;
+
         public void ForceOwner(int t) { owner = t; capTeam = t; progress = 1; Recolor(); }
 
         public void AddPad(VKind k, Vector3 pos, Quaternion rot) => pads.Add(new Pad { kind = k, pos = pos, rot = rot, timer = 2f });

@@ -182,7 +182,7 @@ namespace BIS
         public int PickBotClass(int t)
         {
             float r = Random.value;
-            int c = r < 0.36f ? 0 : r < 0.56f ? 1 : r < 0.7f ? 2 : r < 0.85f ? 3 : 4;
+            int c = r < 0.38f ? 0 : r < 0.6f ? 1 : r < 0.69f ? 2 : r < 0.84f ? 3 : 4;   // marksmen are 9%: they hang back and outlive everyone
             if (t == cfg.playerTeam && cfg.lockedClasses != null && cfg.lockedClasses[c]) c = 0;
             return c;
         }
@@ -191,7 +191,7 @@ namespace BIS
 
         public float GroundY(Vector3 p)
         {
-            if (land) return land.Height(p.x, p.z);
+            if (land) return land.Top(p.x, p.z);
             if (space) return space.FloorY(p);
             return 0;
         }
@@ -227,14 +227,64 @@ namespace BIS
             return false;
         }
 
+        // -- squad spawning ---------------------------------------------------
+        public int mateSpawns;                     // stats for tests
+        public const float MateSafeRadius = 30f;   // no enemy this close
+        public const float MateHurtSafe = 6f;      // and not hurt for this long
+
+        /// <summary>Why this squadmate can't be spawned on right now, or null if they can.</summary>
+        public string MateBlocked(Unit m)
+        {
+            if (!land) return "only on planets";
+            if (!m || !m.Alive) return "down";
+            if (m.InVehicle) return "in a vehicle";
+            if (!m.grounded) return "in the air";
+            if (Time.time - m.lastHurt < MateHurtSafe) return "under fire";
+            Vector3 mp = m.transform.position;
+            float r2 = MateSafeRadius * MateSafeRadius;
+            foreach (var u in units)
+                if (u && u.Alive && u.team != m.team && (u.transform.position - mp).sqrMagnitude < r2 && !u.Cloaked) return "enemies near";
+            foreach (var v in vehicles)
+                if (v && v.Alive && v.Team != m.team && !v.IsEmpty && (v.transform.position - mp).sqrMagnitude < r2 * 2.5f) return "enemy vehicle near";
+            foreach (var cp in posts)
+                if (cp.owner >= 0 && cp.owner != m.team && (cp.Pos - mp).sqrMagnitude < (cp.radius + 6) * (cp.radius + 6)) return "in an enemy post";
+            return null;
+        }
+
+        /// <summary>A free spot a couple of metres behind the squadmate.</summary>
+        public bool MateSpot(Unit m, out Vector3 spot)
+        {
+            Vector3 back = -m.transform.forward; back.y = 0; back = back.sqrMagnitude > 0.01f ? back.normalized : Vector3.back;
+            for (int i = 0; i < 10; i++)
+            {
+                float a = (i == 0 ? 0 : Random.Range(-100f, 100f));
+                Vector3 d = Quaternion.Euler(0, a, 0) * back;
+                Vector3 p = m.transform.position + d * Random.Range(1.8f, 3.2f);
+                p.y = GroundY(p) + 0.1f;
+                if (Mathf.Abs(p.y - m.transform.position.y) > 2.5f) continue;
+                if (!Physics.CheckCapsule(p + Vector3.up * 0.5f, p + Vector3.up * 1.6f, 0.45f, Layers.MoveMask | (1 << Layers.Unit), QueryTriggerInteraction.Ignore)) { spot = p; return true; }
+            }
+            spot = Vector3.zero; return false;
+        }
+
+        /// <summary>Spawn beside a squadmate in the field (land only, when the mate is safe).</summary>
+        public Unit SpawnOnMate(Participant p, int classIndex, HeroDef hero, Unit mate)
+        {
+            if (over || MateBlocked(mate) != null || !MateSpot(mate, out var spot)) return null;
+            var f = Faction(p.team);
+            if (hero != null) { p.heroReady = false; p.pointsAtHero = p.points; p.everHero = true; }
+            var cls = f.classes[Mathf.Clamp(classIndex, 0, 4)];
+            mateSpawns++;
+            return SpawnUnit(p, hero != null ? null : cls, hero, spot, mate.transform.eulerAngles.y);
+        }
+
         public CommandPost PickPost(int team, Vector3 near)
         {
             CommandPost best = null; float bd = float.MaxValue;
             foreach (var p in posts)
             {
-                if (p.owner != team) continue;
+                if (!p.SpawnableFor(team)) continue;
                 float d = (p.Pos - near).sqrMagnitude + Random.Range(0, 4000f);
-                if (p.contested) d += 40000;
                 if (d < bd) { bd = d; best = p; }
             }
             return best;
@@ -273,7 +323,7 @@ namespace BIS
                 Vector3 fp = ship.FootSpawn();
                 return SpawnUnit(p, c, hero, fp, ship.transform.eulerAngles.y + 180);
             }
-            CommandPost post = postIndex >= 0 && postIndex < posts.Count && posts[postIndex].owner == p.team ? posts[postIndex] : PickPost(p.team, p.unit ? p.unit.transform.position : Vector3.zero);
+            CommandPost post = postIndex >= 0 && postIndex < posts.Count && posts[postIndex].SpawnableFor(p.team) ? posts[postIndex] : PickPost(p.team, p.unit ? p.unit.transform.position : Vector3.zero);
             if (!post) return null;
             Vector3 sp = post.SpawnPoint();
             Vector3 toCentre = -post.Pos; toCentre.y = 0;
@@ -382,8 +432,14 @@ namespace BIS
             else
             {
                 p.classChoice = PickBotClass(p.team);
-                var post = commander != null && Random.value < 0.85f ? commander.SpawnPostFor(p) : null;
-                Spawn(p, p.classChoice, hero, post ? post.index : -1, -1);
+                var mate = commander != null && hero == null ? commander.MateToSpawnOn(p) : null;
+                Unit spawned = mate ? SpawnOnMate(p, p.classChoice, null, mate) : null;
+                if (!spawned)
+                {
+                    var post = commander != null && Random.value < 0.85f ? commander.SpawnPostFor(p) : null;
+                    spawned = Spawn(p, p.classChoice, hero, post ? post.index : -1, -1);
+                }
+                if (!spawned) { p.respawn = 2; return; }
             }
             p.respawn = 5;
         }

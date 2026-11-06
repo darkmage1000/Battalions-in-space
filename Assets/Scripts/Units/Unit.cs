@@ -212,6 +212,12 @@ namespace BIS
             bool aimingSlow = input.aim && (Weapon.def.zoomFov > 0);
             float spd = Speed * (input.sprint && !crouching && !input.fire ? 1.45f : 1f) * (crouching ? 0.5f : 1f) * (aimingSlow ? 0.5f : 1f);
             if (InSpaceZeroG()) spd *= 0.8f;
+            // wading slows you down; lava burns
+            if (battle.land != null && battle.land.LiquidAt(transform.position.x, transform.position.z, out float liq, out bool lava) && transform.position.y < liq - 0.15f)
+            {
+                if (lava) { lavaT += dt; if (lavaT > 0.25f) { lavaT = 0; TakeDamage(new DamageInfo { amount = 14, type = DmgType.Environment, team = -1, point = transform.position }); } }
+                else spd *= transform.position.y < liq - 1.25f ? 0.35f : 0.55f;   // deep water: barely moving
+            }
             Vector3 wish = input.move * spd;
 
             if (Time.time < dashUntil)
@@ -273,6 +279,7 @@ namespace BIS
         }
 
         bool InSpaceZeroG() => false;
+        float lavaT;
 
         public void Kill(string why)
         {
