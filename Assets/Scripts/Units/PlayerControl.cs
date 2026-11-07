@@ -26,7 +26,7 @@ namespace BIS
         public string notice; public float noticeT;
         public Unit Me => b.player.unit != null && b.player.unit.Alive ? b.player.unit : null;
         public static Vector3 testMove;     // self-tests only: added to the stick (world space)
-        public static bool testFire;
+        public static bool testFire, testAim;
         public static float testThrottle;
         public static bool testEvade;       // self-tests only: one evasive roll
         Camera Cam => Game.Cam;
@@ -197,19 +197,21 @@ namespace BIS
         {
             float zoomMul = me.input.aim && me.Weapon.def.zoomFov > 0 ? 0.25f : me.input.aim ? 0.6f : 1f;
             var wd = me.Weapon.def;
+            bool aimHeld = Ctl.Aim || testAim;
             float range = wd.EffectiveRange;
             // snipers get no shot-bending and no view pull: the crosshair is where the shot goes. Through the scope the view
             // only slows a little over a target (friction); from the hip there is no help at all.
             bool sniper = wd.kind == WKind.Sniper;
-            float lookMul = Assist(me.transform, range, wd.kind == WKind.Beam || wd.kind == WKind.Blade || wd.Hitscan ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade && !sniper);
-            if (sniper) lookMul = Ctl.Aim ? Mathf.Lerp(1, lookMul, 0.5f) : 1;
+            // (an unscoped sniper doesn't even look for a target, so the crosshair never lights up as if it had locked on)
+            float lookMul = Assist(me.transform, sniper && !aimHeld ? 0 : range, wd.kind == WKind.Beam || wd.kind == WKind.Blade || wd.Hitscan ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade && !sniper);
+            if (sniper) lookMul = aimHeld ? Mathf.Lerp(1, lookMul, 0.5f) : 1;
             camYaw += Ctl.Look.x * zoomMul * lookMul;
             camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * zoomMul * lookMul, -70, 75);
             Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;
             var inp = new UnitInput
             {
                 move = fwd * Ctl.Move.y + right * Ctl.Move.x,
-                fire = Ctl.Fire, fireDown = Ctl.FireDown, aim = Ctl.Aim,
+                fire = Ctl.Fire, fireDown = Ctl.FireDown, aim = aimHeld,
                 jump = Ctl.Jump, jumpDown = Ctl.JumpDown, sprint = Ctl.Sprint, crouch = Ctl.Crouch,
                 reload = Ctl.Reload, swap = Ctl.Swap, equip = Ctl.Equip, ability = Ctl.Ability,
             };

@@ -21,6 +21,8 @@ namespace BIS
         public static Vector2 StickOrigin, StickPos;
         public static int stickFinger = -1, lookFinger = -1;
         public static Vector2 Move, Look;
+        /// <summary>Scoped guns: ZOOM is a switch (tap in, tap out), so both thumbs stay free to look and fire.</summary>
+        public static bool zoomOn;
         static bool built;
 
         static Btn B(string id, string label, float x, float y, float s, bool big = false)
@@ -67,19 +69,27 @@ namespace BIS
             var pc = Battle.I != null ? Battle.I.control : null;
             var me = pc != null ? pc.Me : null;
             foreach (var b in Buttons) b.visible = false;
+            bool zoomGun = false;
             void Show(string id, string label = null) { var b = Get(id); b.visible = true; if (label != null) b.label = label; }
             Show("pause"); Show("score");
             if (Battle.I != null && Battle.I.land != null) Show("map");
-            if (me == null) return;
+            if (me == null) { zoomOn = false; return; }
             if (!me.InVehicle)
             {
                 Show("fire", "FIRE"); Show("fire2"); Show("jump"); Show("equip", "GEAR");
                 if (me.weapons[1] != null) Show("swap", "SWAP");
-                if (me.Weapon.def.zoomFov > 0) Show("aim", "ZOOM");
+                if (me.Weapon.def.zoomFov > 0)
+                {
+                    zoomGun = true;
+                    // the clip ran dry: the scope comes down by itself so the rifle reloads
+                    if (zoomOn && me.Weapon.clip == 0 && me.Weapon.ammo > 0) zoomOn = false;
+                    Show("aim", zoomOn ? "UNZOOM" : "ZOOM");
+                }
                 else if (me.IsHero && me.hero.kind == HeroKind.Blade) Show("aim", "BLOCK");
                 if (me.AbilityName != null) Show("ability", me.AbilityName.Length > 6 ? "SKILL" : me.AbilityName);
                 if (Battle.I.player.heroReady && !me.IsHero) Show("hero", "HERO");
                 if (pc.NearbyVehicle()) Show("use", "ENTER");
+                if (!zoomGun) zoomOn = false;
                 if (Battle.I.royale)
                 {
                     if (me.medkits + me.shields > 0) Show("hero", me.Using ? "..." : "HEAL");
@@ -88,6 +98,7 @@ namespace BIS
                 }
                 return;
             }
+            zoomOn = false;
             var v = me.vehicle;
             if (v.CanExitHere()) Show("use", "EXIT");
             if (v.riders.Length > 1) Show("swap", "SEAT");
@@ -108,7 +119,7 @@ namespace BIS
             foreach (var b in Buttons) b.down = false;
             Look = Vector2.zero;
             bool playing = Battle.I != null && Battle.I.control.mode == PlayerControl.Mode.Play && !Battle.I.control.paused;
-            if (!playing) { Move = Vector2.zero; stickFinger = lookFinger = -1; foreach (var b in Buttons) { b.held = false; b.finger = -1; } return; }
+            if (!playing) { Move = Vector2.zero; stickFinger = lookFinger = -1; zoomOn = false; foreach (var b in Buttons) { b.held = false; b.finger = -1; } return; }
             Layout();
             float s = UI.S;
             float look = 0.4f * Settings.TouchSens;
@@ -169,7 +180,7 @@ namespace BIS
                 if (!b.visible) continue;
                 var r = ScreenRect(b);
                 bool flash = b.hot && Mathf.Repeat(Time.unscaledTime * 4, 1) < 0.5f;
-                UI.Fill(r, b.held ? new Color(1f, 0.8f, 0.3f, 0.45f) : flash ? new Color(0.9f, 0.15f, 0.1f, 0.65f) : b.big ? new Color(0.5f, 0.12f, 0.1f, 0.45f) : new Color(0.1f, 0.12f, 0.16f, 0.45f));
+                UI.Fill(r, b.held || (b.id == "aim" && zoomOn) ? new Color(1f, 0.8f, 0.3f, 0.45f) : flash ? new Color(0.9f, 0.15f, 0.1f, 0.65f) : b.big ? new Color(0.5f, 0.12f, 0.1f, 0.45f) : new Color(0.1f, 0.12f, 0.16f, 0.45f));
                 UI.Frame(r, new Color(1, 1, 1, 0.35f), 2);
                 UI.Text(r, b.label, b.big ? 34 : 20, Color.white, TextAnchor.MiddleCenter);
             }

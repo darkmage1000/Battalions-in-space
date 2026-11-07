@@ -102,8 +102,19 @@ namespace BIS
                 bool tf = TouchInput.Held("fire") || TouchInput.Held("fire2");
                 if (tf) fire = true;
                 if (TouchInput.Down("fire") || TouchInput.Down("fire2")) fireD = true;
-                if (TouchInput.Held("aim")) { aim = true; }
-                if (TouchInput.Down("aim")) { aimD = true; }
+                var zb = TouchInput.Get("aim");
+                bool zoomBtn = zb != null && (zb.label == "ZOOM" || zb.label == "UNZOOM");
+                if (zoomBtn)
+                {
+                    // a scoped gun: ZOOM switches the scope on and off
+                    if (TouchInput.Down("aim")) { TouchInput.zoomOn = !TouchInput.zoomOn; if (TouchInput.zoomOn) aimD = true; }
+                    if (TouchInput.zoomOn) aim = true;
+                }
+                else
+                {
+                    if (TouchInput.Held("aim")) { aim = true; }
+                    if (TouchInput.Down("aim")) { aimD = true; }
+                }
                 if (TouchInput.Held("alt")) alt = true;
                 if (TouchInput.Down("alt")) altD = true;
                 if (TouchInput.Held("jump")) jump = true;
