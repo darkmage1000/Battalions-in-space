@@ -79,6 +79,9 @@ namespace BIS
         public float rallyUntil, frenzyUntil, cloakUntil, dashUntil, invulnUntil;
         public float spreadMul = 1;   // set by PlayerControl for the player
         public const float SniperHipSpread = 4f;   // degrees of wander on an unscoped sniper shot
+        public const float SniperSettle = 2.2f, SniperSettleTime = 0.55f;   // a fresh scope wanders this much, steady after this long
+        public const float SniperMoveSpread = 1.4f;                         // and moving while scoped wanders this much
+        float scopedSince = -1;
 
         // -- battle royale: armour, supplies, keys, the grav-chute --
         public const int MaxMedkits = 5, MaxShields = 5;
@@ -438,6 +441,7 @@ namespace BIS
             if (input.swap && weapons[1] != null) { cur = 1 - cur; rig.SetWeapon(Weapon.def); w = Weapon; Sfx.Play("ui", transform.position, 0.3f); }
             // a scoped rifle reloads only with the scope down (people, not bots): zooming in stops a reload
             bool scoped = part.Human && w.def.zoomFov > 0 && input.aim;
+            if (w.def.kind == WKind.Sniper && input.aim) { if (scopedSince < 0) scopedSince = Time.time; } else scopedSince = -1;
             if (scoped) { if (w.reload > 0) w.reload = 0; }
             else
             {
@@ -502,7 +506,17 @@ namespace BIS
             if (dir.sqrMagnitude < 1f) dir = (input.aimPoint - Eye);
             dir.Normalize();
             float sp = spread * spreadMul * (crouching ? 0.6f : 1f) * (new Vector3(velocity.x, 0, velocity.z).magnitude > 3 ? 1.3f : 1f) * (input.aim ? 0.7f : 1f);
-            if (w.kind == WKind.Sniper && !input.aim) sp += SniperHipSpread;     // a sniper is aimed through the scope, not fired from the hip
+            if (w.kind == WKind.Sniper)
+            {
+                if (!input.aim) sp += SniperHipSpread;     // a sniper is aimed through the scope, not fired from the hip
+                else
+                {
+                    // the scope has to settle, and a moving shooter can't hold it still
+                    float held = scopedSince < 0 ? 0 : Time.time - scopedSince;
+                    sp += SniperSettle * (1 - Mathf.Clamp01(held / SniperSettleTime));
+                    if (new Vector3(velocity.x, 0, velocity.z).magnitude > 1.2f) sp += SniperMoveSpread;
+                }
+            }
             if (sp > 0) dir = Quaternion.AngleAxis(Random.Range(0, 360f), dir) * Quaternion.AngleAxis(Random.Range(0, sp), Vector3.Cross(dir, Vector3.up).normalized) * dir;
             Transform homing = (w.lockOn && lockTime >= 0.9f) ? lockTarget : null;
             Shots.Fire(w, from, dir, team, this, transform, faction.bolt, mul, homing);

@@ -310,7 +310,8 @@ namespace BIS
         bool Cast(Shot s, Vector3 from, Vector3 dir, float dist, out RaycastHit best)
         {
             // the player's bolts are a little fatter (0.2 m) so a well-aimed shot is not lost to a thin capsule edge
-            int n = s.player ? Physics.SphereCastNonAlloc(from, 0.2f, dir, hits, dist, Layers.ShotMask, QueryTriggerInteraction.Ignore)
+            // (not snipers: a long gun has to be on the target itself)
+            int n = s.player && s.w.kind != WKind.Sniper ? Physics.SphereCastNonAlloc(from, 0.2f, dir, hits, dist, Layers.ShotMask, QueryTriggerInteraction.Ignore)
                              : Physics.RaycastNonAlloc(from, dir, hits, dist, Layers.ShotMask, QueryTriggerInteraction.Ignore);
             best = default;
             float bd = float.MaxValue; bool found = false;
