@@ -126,6 +126,14 @@ namespace BIS.Net
                 case Msg.Kill: { string k = r.Str(); int kt = r.S8(); string v = r.Str(); int vt = r.S8(); string w = r.Str(); HUD.Kill(string.IsNullOrEmpty(k) ? null : k, kt, v, vt, w); break; }
                 case Msg.Text: { string s = r.Str(); Color c = r.Col(); float t = r.F(); string snd = r.Str(); HUD.Message(s, c, t); if (!string.IsNullOrEmpty(snd)) Sfx.Play2D(snd, 0.8f); break; }
                 case Msg.Hit: { bool k = r.B(), v = r.B(); HUD.HitMarker(k, v); break; }
+                case Msg.Dmg:
+                    {
+                        Vector3 p = r.V(); float hd = r.F(), ad = r.F(); bool k = r.B(); int pid = r.I16(), vid = r.I32(); float armor = r.F();
+                        var tu = UnitOf(pid); var tv = vid >= 0 ? b.VehicleById(vid) : null;
+                        if (tu) tu.armor = armor;
+                        HUD.Damage(tu ? (IDamageable)tu : tv, p, hd, ad, k);
+                        break;
+                    }
                 case Msg.Hurt: HUD.Hurt(r.V()); break;
                 case Msg.Points: HUD.Points(r.I16()); break;
                 case Msg.Say: b.control.Say(r.Str()); Sfx.Play2D("deny"); break;
@@ -304,7 +312,7 @@ namespace BIS.Net
 
         static void Shot(R r)
         {
-            var w = new WeaponDef { kind = (WKind)r.U8(), speed = r.F(), range = r.F(), boltLen = r.F(), boltWidth = r.F(), splash = r.F(), gravity = r.F(), lockOn = r.B(), guided = r.B(), sound = r.Str(), pitch = r.F() };
+            var w = new WeaponDef { kind = (WKind)r.U8(), speed = r.F(), range = r.F(), boltLen = r.F(), boltWidth = r.F(), splash = r.F(), gravity = r.F(), lockOn = r.B(), guided = r.B(), sound = r.Str(), pitch = r.F(), proximity = r.F() };
             Vector3 from = r.V(), dir = r.Dir(); int team = r.S8(); Color col = r.Col(); Vector3 inherit = r.V();
             int ik = r.U8(), iid = r.U16(), hid = r.I32();
             Transform ignore = null;

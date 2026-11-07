@@ -18,7 +18,8 @@ namespace BIS.Net
         UnitSpawn = 40, UnitDie, VehSpawn, VehGone, Shot, Fx, Kill, Text, Hit, Hurt, Points, PlayerDied, Say, End, Burst,
         Warp = 60, Push, SelfDmg, Award, Evade,
         // battle royale
-        RLoot = 70, RLootAdd, RLootGone, RChests, RChest, RVault, RState, RJump, RHeal, RTake
+        RLoot = 70, RLootAdd, RLootGone, RChests, RChest, RVault, RState, RJump, RHeal, RTake,
+        Dmg = 90
     }
 
     /// <summary>

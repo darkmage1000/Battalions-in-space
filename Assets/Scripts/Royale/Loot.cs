@@ -123,6 +123,15 @@ namespace BIS
             if (w.heatPerShot > 0) w.heatPerShot *= Mathf.Pow(0.93f, tier);
             if (w.clip > 0) { w.ammo = Mathf.RoundToInt(w.ammo * (1 + tier * 0.15f)); w.reload *= Mathf.Pow(0.94f, tier); }
             w.spread *= Mathf.Pow(0.92f, tier);
+            if (w.kind == WKind.Rocket)
+            {
+                // a launcher you found should feel like one: faster rockets, a wider blast, more of them per reload as it gets rarer
+                w.speed *= 1.7f;
+                w.splash = Mathf.Max(w.splash, 6f) + tier * 0.35f;
+                w.clip = tier >= 4 ? 3 : tier >= 2 ? 2 : 1;
+                w.rate = Mathf.Max(w.rate, 1.1f);
+                w.proximity = 2.2f;      // bursts beside a soldier it would otherwise fly past
+            }
             return w;
         }
 

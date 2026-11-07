@@ -16,7 +16,7 @@ namespace BIS
         bool helpOpen;
         float fpsT, fps;
 
-        void Awake() { I = this; msgs.Clear(); kills.Clear(); }
+        void Awake() { I = this; msgs.Clear(); kills.Clear(); ClearDamage(); }
 
         public static void Message(string s, Color c, float t = 3)
         {
@@ -290,6 +290,7 @@ namespace BIS
                 UI.Fill(new Rect(0, 0, w, h), new Color(0.8f, 0, 0, hurtT * 0.12f));
             }
 
+            DrawDamage(cam);
             if (Settings.AimDebug) AimDebug(pc, me, c);
 
             // pilot target lock (follow mode)

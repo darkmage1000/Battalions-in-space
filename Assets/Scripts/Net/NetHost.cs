@@ -372,7 +372,7 @@ namespace BIS.Net
                 if (iu) { ik = 1; iid = Pid(iu); } else if (iv) { ik = 2; iid = iv.netId; } else if (ic) { ik = 3; iid = ic.team; }
             }
             int hid = homing ? VehicleIdOf(homing) : -1;
-            Session.link.Send(new W(Msg.Shot).U8((int)wd.kind).F(wd.speed).F(wd.range).F(wd.boltLen).F(wd.boltWidth).F(wd.splash).F(wd.gravity).B(wd.lockOn).B(wd.guided).Str(wd.sound).F(wd.pitch)
+            Session.link.Send(new W(Msg.Shot).U8((int)wd.kind).F(wd.speed).F(wd.range).F(wd.boltLen).F(wd.boltWidth).F(wd.splash).F(wd.gravity).B(wd.lockOn).B(wd.guided).Str(wd.sound).F(wd.pitch).F(wd.proximity)
                 .V(from).Dir(dir).S8(team).Col(col).V(inheritVel).U8(ik).U16(iid).I32(hid));
         }
 
@@ -397,6 +397,13 @@ namespace BIS.Net
         /// <summary>A message on the guest's screen (with an optional sound).</summary>
         public static void Text(string s, Color c, float t, string sound) { if (Live) Session.link.Send(new W(Msg.Text).Str(s).Col(c).F(t).Str(sound)); }
         public static void Hit(bool kill, bool vehicle) { if (Live) Session.link.Send(new W(Msg.Hit).B(kill).B(vehicle)); }
+        /// <summary>Damage the guest dealt: the number and the target's health / armour, for its screen.</summary>
+        public static void Damage(IDamageable t, Vector3 p, float hpDmg, float arDmg, bool kill)
+        {
+            if (!Live) return;
+            var u = t as Unit; var v = t as Vehicle;
+            Session.link.Send(new W(Msg.Dmg).V(p).F(hpDmg).F(arDmg).B(kill).I16(u ? Pid(u) : -1).I32(v ? v.netId : -1).F(u ? u.armor : 0));
+        }
         public static void Hurt(Vector3 from) { if (Live) Session.link.Send(new W(Msg.Hurt).V(from)); }
         public static void Points(int n) { if (Live) Session.link.Send(new W(Msg.Points).I16(n)); }
         public static void Award(string name) { if (Live) Session.link.Send(new W(Msg.Award).Str(name)); }

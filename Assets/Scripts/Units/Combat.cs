@@ -246,7 +246,20 @@ namespace BIS
                     if (s.grenade || s.w.gravity > 0) s.vel += Physics.gravity * (s.grenade ? 1f : s.w.gravity) * dt;
                     Vector3 step = s.vel * dt;
                     float dist = step.magnitude;
-                    if (dist > 0.0001f && Cast(s, s.pos, step / dist, dist, out var hit))
+                    // proximity fuse: bursts beside an enemy soldier instead of flying past at chest height
+                    if (s.w.proximity > 0 && Battle.I != null && (!s.owner || (s.pos - s.owner.transform.position).sqrMagnitude > 16))
+                    {
+                        float pr2 = s.w.proximity * s.w.proximity;
+                        foreach (var eu in Battle.I.units)
+                        {
+                            if (!eu || !eu.Alive || eu.team == s.team || eu.InVehicle) continue;
+                            Vector3 ab = step; float tt = Mathf.Clamp01(Vector3.Dot(eu.AimPoint - s.pos, ab) / Mathf.Max(0.0001f, ab.sqrMagnitude));
+                            Vector3 cp = s.pos + ab * tt;
+                            if ((cp - eu.AimPoint).sqrMagnitude < pr2) { Impact(s, cp, -ab.normalized, null); done = true; break; }
+                        }
+                    }
+                    if (done) { }
+                    else if (dist > 0.0001f && Cast(s, s.pos, step / dist, dist, out var hit))
                     {
                         if (s.grenade && hit.collider.GetComponentInParent<IDamageable>() == null && s.life > 3.4f)
                         {
@@ -375,11 +388,15 @@ namespace BIS
             if (attacker && attacker.DamageBoost > 1) mul *= attacker.DamageBoost;
             var b = Battle.I;
             if (b != null) mul *= b.DamageMul(team);
+            var tu = target as Unit; var tv = target as Vehicle;
+            float hp0 = tu ? tu.hp : tv ? tv.hp : 0, ar0 = tu ? tu.armor : 0;
             target.TakeDamage(new DamageInfo { amount = amount * mul, type = type, attacker = attacker, team = team, point = p, dir = dir, weapon = w });
             if (attacker && attacker.part != null && type != DmgType.Environment)
             {
-                if (attacker.part.isPlayer) HUD.HitMarker(!target.Alive, target.IsVehicle);
-                else if (attacker.part.remote) Net.NetHost.Hit(!target.Alive, target.IsVehicle);
+                float hpDmg = Mathf.Max(0, hp0 - Mathf.Max(0, tu ? tu.hp : tv ? tv.hp : 0)), arDmg = tu ? Mathf.Max(0, ar0 - tu.armor) : 0;
+                bool kill = !target.Alive;
+                if (attacker.part.isPlayer) { HUD.HitMarker(kill, target.IsVehicle); HUD.Damage(target, p, hpDmg, arDmg, kill); }
+                else if (attacker.part.remote) { Net.NetHost.Hit(kill, target.IsVehicle); Net.NetHost.Damage(target, p, hpDmg, arDmg, kill); }
             }
         }
 
