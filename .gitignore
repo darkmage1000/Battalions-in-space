@@ -25,3 +25,4 @@
 /Previews/*.png
 /Previews/**/*.png
 /.utmp/
+/Tools/.phone
