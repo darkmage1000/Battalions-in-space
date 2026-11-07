@@ -130,6 +130,27 @@ namespace BIS
             if (I) I.Launch(w, from, dir, team, null, ignore, col, 1, homing, inheritVel, true);
         }
 
+        /// <summary>Missiles and rockets homing on t right now: how many, and the nearest one's distance and position.</summary>
+        public static int Incoming(Transform t, out float nearest, out Vector3 at)
+        {
+            nearest = float.MaxValue; at = default;
+            if (!I || !t) return 0;
+            int n = 0; Vector3 p = t.position;
+            foreach (var s in I.live)
+                if (s.homing == t && !s.visual) { n++; float d = (s.pos - p).magnitude; if (d < nearest) { nearest = d; at = s.pos; } }
+            return n;
+        }
+
+        /// <summary>An evasive roll: missiles homing on t within range lose it and fly straight on. Returns how many.</summary>
+        public static int LoseTarget(Transform t, float range)
+        {
+            if (!I || !t) return 0;
+            int n = 0; Vector3 p = t.position;
+            foreach (var s in I.live)
+                if (s.homing == t && (s.pos - p).sqrMagnitude < range * range) { s.homing = null; n++; }
+            return n;
+        }
+
         void Launch(WeaponDef w, Vector3 from, Vector3 dir, int team, Unit owner, Transform ignore, Color col, float dmgMul, Transform homing, Vector3 inheritVel, bool fake)
         {
             if (w.Hitscan && homing == null) { FireHitscan(w, from, dir.normalized, team, owner, ignore, col, dmgMul, fake); return; }

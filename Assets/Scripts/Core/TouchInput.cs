@@ -15,6 +15,7 @@ namespace BIS
         public class Btn
         {
             public string id, label; public Rect r; public bool held, down, visible; public int finger = -1; public bool big;
+            public bool hot;   // flashes red (EVADE while something is locked on)
         }
         public static readonly List<Btn> Buttons = new List<Btn>();
         public static Vector2 StickOrigin, StickPos;
@@ -43,6 +44,7 @@ namespace BIS
             B("hero", "HERO", -440, -480, 110);
             B("fire2", "FIRE", 60, -560, 130);
             B("boost", "BOOST", -150, -470, 120);
+            B("evade", "EVADE", -630, -370, 130);
             B("alt", "MSL", -470, -230, 110);
             B("up", "UP", -620, -360, 100);
             B("down", "DOWN", -620, -230, 100);
@@ -87,6 +89,7 @@ namespace BIS
                 if (v.sec != null) Show("alt", v.sec.def.kind == WKind.Repair ? "HEAL" : v.sec.def.kind == WKind.Torpedo ? "TORP" : "MSL");
                 if (v.Flies) Show("ability", pc.flyLock != null ? "FREE" : "LOCK");
                 if (v.Flies && !v.IsShip) { Show("up"); Show("down"); }
+                if (v.CanEvadeKind) { float cd = v.EvadeReadyIn; Show("evade", cd > 0 ? $"{Mathf.CeilToInt(cd)}s" : "EVADE"); Get("evade").hot = cd <= 0 && HUD.ThreatLevel > 0; }
             }
             else if (me.seat == 1 && v.gunnerT) { Show("fire", "FIRE"); Show("fire2"); }
         }
@@ -157,7 +160,8 @@ namespace BIS
             {
                 if (!b.visible) continue;
                 var r = ScreenRect(b);
-                UI.Fill(r, b.held ? new Color(1f, 0.8f, 0.3f, 0.45f) : b.big ? new Color(0.5f, 0.12f, 0.1f, 0.45f) : new Color(0.1f, 0.12f, 0.16f, 0.45f));
+                bool flash = b.hot && Mathf.Repeat(Time.unscaledTime * 4, 1) < 0.5f;
+                UI.Fill(r, b.held ? new Color(1f, 0.8f, 0.3f, 0.45f) : flash ? new Color(0.9f, 0.15f, 0.1f, 0.65f) : b.big ? new Color(0.5f, 0.12f, 0.1f, 0.45f) : new Color(0.1f, 0.12f, 0.16f, 0.45f));
                 UI.Frame(r, new Color(1, 1, 1, 0.35f), 2);
                 UI.Text(r, b.label, b.big ? 34 : 20, Color.white, TextAnchor.MiddleCenter);
             }

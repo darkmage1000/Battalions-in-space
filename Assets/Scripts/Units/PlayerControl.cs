@@ -28,6 +28,7 @@ namespace BIS
         public static Vector3 testMove;     // self-tests only: added to the stick (world space)
         public static bool testFire;
         public static float testThrottle;
+        public static bool testEvade;       // self-tests only: one evasive roll
         Camera Cam => Game.Cam;
 
         public void Init(Battle battle)
@@ -359,6 +360,12 @@ namespace BIS
                 inp.climb = v.IsShip ? 0 : Ctl.Climb;
                 inp.boost = Ctl.Boost;
                 inp.fire = Ctl.Fire; inp.alt = Ctl.Alt;
+                if (v.CanEvadeKind && (Ctl.Evade || testEvade))
+                {
+                    testEvade = false;
+                    if (v.EvadeReadyIn > 0) Say($"Evasive roll ready in {Mathf.CeilToInt(v.EvadeReadyIn)} s", 1f);
+                    else { inp.evade = true; inp.evadeSide = Ctl.Roll > 0.2f ? -1 : Ctl.Roll < -0.2f ? 1 : 0; }
+                }
                 aimPoint = v.transform.position + v.transform.forward * 400;
                 // guns converge on a target near the nose (always a little; more with aim assist on),
                 // and with aim assist the stick is nudged toward it

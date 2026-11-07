@@ -16,6 +16,7 @@ namespace BIS
         readonly Unit u;
         readonly Battle b;
         float think, seeT, objT, strafeT, strafe = 1, stuckT, noiseT, burst, sideStepT, abilityT, grenadeT, enterT;
+        float evadeRoll = -1;   // starfighter pilots: a die rolled once per missile chase - do we roll out of this one?
         Vector3 lastPos, noise, moveGoal, sideStep;
         IDamageable target;
         Vector3 targetVel;
@@ -832,6 +833,13 @@ namespace BIS
             Steer(v, point, throttleWant, ref inp);
             inp.boost = boost && !avoiding;
             if (v.hp < v.maxHp * 0.3f && job != SpaceJob.Board && Random.value < 0.002f) job = SpaceJob.Escort;
+            // a missile homing on us: better pilots roll out of it more often (and wait until it is close)
+            if (Shots.Incoming(v.transform, out float md, out _) > 0)
+            {
+                if (evadeRoll < 0) evadeRoll = Random.value;
+                if (v.EvadeReadyIn <= 0 && evadeRoll < 0.2f + skill * 0.5f && md < 50 + skill * 90) { inp.evade = true; inp.evadeSide = 0; evadeRoll = 2; }
+            }
+            else evadeRoll = -1;
             v.seatIn[0] = inp;
         }
 

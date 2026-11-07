@@ -135,6 +135,7 @@ namespace BIS.Net
                         }
                         break;
                     }
+                case Msg.Evade: { int id = r.U16(); int side = r.S8(); var v = b.VehicleById(id); if (v && v.net == Unit.NetMode.Replica) v.Evade(side, true); break; }
                 case Msg.End: { int w = r.S8(); string why = r.Str(), mvp = r.Str(); b.NetEnd(w, why, mvp); break; }
                 case Msg.Bye:
                     if (!b.over) b.NetEnd(-1, "The host left the game", "");
@@ -259,8 +260,10 @@ namespace BIS.Net
                     var v = ok ? me.vehicle : null;
                     ReadWeapon(r, v ? v.prim : null); ReadWeapon(r, v ? v.sec : null); ReadWeapon(r, v ? v.gunW : null);
                     float vlt = r.F(); int vlid = r.I32(); float vhp = r.F();
+                    float threat = r.F(); Vector3 threatFrom = r.V();
                     if (v)
                     {
+                        v.netThreat = threat; v.netThreatFrom = threatFrom; v.netThreatAt = Time.time;
                         var tv = b.VehicleById(vlid);
                         v.lockTarget = tv ? tv.transform : null;
                         if (lastVehLock < 1f && vlt >= 1f && v.lockTarget) Sfx.Play2D("lock", 0.8f);
@@ -352,6 +355,8 @@ namespace BIS.Net
         public static void RequestExit() => Session.link?.Send(new W(Msg.ExitReq));
         public static void RequestSeat() => Session.link?.Send(new W(Msg.SeatReq));
         public static void RequestHero(int h) => Session.link?.Send(new W(Msg.HeroReq).S8(h));
+        /// <summary>We rolled our craft here; the host makes its missiles lose us.</summary>
+        public static void SendEvade(Vehicle v, int side) => Session.link?.Send(new W(Msg.Evade).U16(v.netId).S8(side));
 
         /// <summary>Our own crash, lava or fall (worked out here, applied by the host).</summary>
         public static void SelfDamage(Vehicle v, float amount, DmgType type)

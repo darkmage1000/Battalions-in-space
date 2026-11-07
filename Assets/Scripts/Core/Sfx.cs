@@ -191,6 +191,7 @@ namespace BIS
             var fn = Noise(0.25f);
             Make("fighter", 1f, t => fn(t) * 0.6f + Mathf.Sin(t * 180 * 6.28f) * 0.12f + Mathf.Sin(t * 360 * 6.28f) * 0.06f);
             Make("lock", 0.1f, t => Mathf.Sin(t * 1800 * 6.28f) * Env(t, 0.002f, 0.03f) * 0.3f);
+            Make("warn", 0.09f, t => (Mathf.Sin(t * 1320 * 6.28f) * 0.7f + Mathf.Sin(t * 2640 * 6.28f) * 0.2f) * Env(t, 0.003f, 0.05f) * 0.35f);
             Make("alarm", 0.6f, t => Mathf.Sin(t * (t % 0.3f < 0.15f ? 700 : 500) * 6.28f) * 0.25f * Env(t, 0.01f, 0.5f));
             var gn = Noise(0.4f);
             Make("thud", 0.25f, t => (gn(t) * 0.8f + Mathf.Sin(t * 70 * 6.28f)) * Env(t, 0.002f, 0.06f) * 0.6f);

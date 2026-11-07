@@ -35,7 +35,7 @@ namespace BIS
         public static WeaponDef ShipMissile(string n) => new WeaponDef { name = n, kind = WKind.Missile, damage = 260, rate = 0.7f, speed = 150, heatPerShot = 0.34f, splash = 6, splashDmg = 150, vsVehicle = 1, lockOn = true, range = 700, sound = "rocket", boltLen = 1.6f, boltWidth = 0.45f };
         public static WeaponDef Torpedo(string n) => new WeaponDef { name = n, kind = WKind.Torpedo, damage = 950, rate = 0.45f, speed = 120, heatPerShot = 0.5f, splash = 8, splashDmg = 400, vsVehicle = 1, range = 700, sound = "cannon", boltLen = 2.5f, boltWidth = 1.1f, pitch = 0.7f };
         public static WeaponDef Flechette(string n) => new WeaponDef { name = n, kind = WKind.Shotgun, damage = 22, pellets = 7, rate = 1.3f, spread = 2.5f, speed = 340, heatPerShot = 0.3f, vsVehicle = 1, range = 400, sound = "repeater", boltLen = 3, boltWidth = 0.2f };
-        public static WeaponDef RepairPulse(string n) => new WeaponDef { name = n, kind = WKind.Repair, damage = 220, rate = 0.33f, range = 70, heatPerShot = 0.9f, sound = "repair" };
+        public static WeaponDef RepairPulse(string n) => new WeaponDef { name = n, kind = WKind.Repair, damage = 150, rate = 0.33f, range = 70, heatPerShot = 0.9f, sound = "repair" };
         public static WeaponDef CapTurret(string n) => new WeaponDef { name = n, kind = WKind.Turret, damage = 22, rate = 1.3f, spread = 1.2f, speed = 240, heatPerShot = 0, vsVehicle = 1, range = 650, sound = "heavy", boltLen = 9, boltWidth = 0.6f };
     }
 
@@ -78,11 +78,12 @@ namespace BIS
             }
             if (v.IsShip)
             {
-                // calmer space fights: slower, tougher craft and softer guns
-                v.speed *= 0.75f; v.turn *= 0.85f; v.hp *= 1.45f;
-                if (v.primary != null) v.primary.damage *= 0.62f;
-                if (v.secondary != null && v.secondary.kind != WKind.Repair) { v.secondary.damage *= 0.75f; v.secondary.splashDmg *= 0.75f; }
-                if (v.gunner != null) v.gunner.damage *= 0.62f;
+                // calmer space fights: slower craft, a little tougher, softer guns (was hp x1.45 / guns x0.62 - too tanky;
+                // now a fighter dies in about 60% of the time it took)
+                v.speed *= 0.75f; v.turn *= 0.85f; v.hp *= 1.15f;
+                if (v.primary != null) v.primary.damage *= 0.8f;
+                if (v.secondary != null && v.secondary.kind != WKind.Repair) { v.secondary.damage *= 0.8f; v.secondary.splashDmg *= 0.8f; }
+                if (v.gunner != null) v.gunner.damage *= 0.8f;
             }
             return v;
         }

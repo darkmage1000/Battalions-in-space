@@ -13,6 +13,7 @@ namespace BIS
         public static bool Reload, Use, Swap, Equip, Ability, Pause, Score, ScoreHeld, Map, Hero, Cam;
         public static float Throttle, Roll, Climb;
         public static bool Boost, Alt, AltDown;
+        public static bool Evade;           // starfighters: evasive roll (Space / X, pad A, EVADE button)
         public static bool PadActive;
         public static bool Confirm, Back;
         static bool padOk = true, ltWas, rtWas;
@@ -55,6 +56,7 @@ namespace BIS
             float climb = (Input.GetKey(KeyCode.Space) ? 1 : 0) - (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C) ? 1 : 0);
             bool boost = sprint;
             bool alt = aim, altD = aimD;
+            bool evade = jumpD || Input.GetKeyDown(KeyCode.X) || Input.GetKeyDown(KeyCode.JoystickButton0);
 
             // gamepad (Xbox layout under Windows legacy input)
             Vector2 pl = new Vector2(Axis("PadLX"), -Axis("PadLY"));
@@ -110,6 +112,7 @@ namespace BIS
                 if (TouchInput.Held("down")) climb = -1;
                 if (TouchInput.Running && !aim) sprint = true;
                 if (TouchInput.Held("boost")) boost = true;
+                if (TouchInput.Down("evade")) evade = true;
                 if (TouchInput.Down("swap")) Swap = true;
                 if (TouchInput.Down("equip")) Equip = true;
                 if (TouchInput.Down("ability")) Ability = true;
@@ -124,7 +127,7 @@ namespace BIS
             if (Settings.InvertY && !PadActive) Look.y = -Look.y;
             Fire = fire; FireDown = fireD; Aim = aim; AimDown = aimD;
             Jump = jump; JumpDown = jumpD; Sprint = sprint; Crouch = crouch; CrouchDown = crouchD;
-            Throttle = throttle; Roll = roll; Climb = climb; Boost = boost; Alt = alt; AltDown = altD;
+            Throttle = throttle; Roll = roll; Climb = climb; Boost = boost; Alt = alt; AltDown = altD; Evade = evade;
         }
 
         public static void LockCursor(bool locked)

@@ -71,7 +71,7 @@ namespace BIS
                 {
                     next += 5;
                     int alive = 0; foreach (var u in b.units) if (u && u.Alive) alive++;
-                    string g = gu ? $"guest {(gu.Alive ? "alive" : "dead")} mode {gu.net} at {gu.transform.position:F1} hp {gu.hp:0} {(gu.InVehicle ? "in " + gu.vehicle.def.name + " seat " + gu.seat : "on foot")}" : "guest has no soldier";
+                    string g = gu ? $"guest {(gu.Alive ? "alive" : "dead")} mode {gu.net} at {gu.transform.position:F1} hp {gu.hp:0} {(gu.InVehicle ? "in " + gu.vehicle.def.name + " seat " + gu.seat + (gu.vehicle.evadeAt > 0 ? $" (rolled at {gu.vehicle.evadeAt:0.0})" : "") : "on foot")}" : "guest has no soldier";
                     Line($"t {Time.realtimeSinceStartup - t0:0} alive {alive} vehicles {b.vehicles.Count} | {g} | guest shots {guestShots} pts {(rp != null ? rp.points : 0)} kills {(rp != null ? rp.kills : 0)} | out {Session.link?.bytesOut / 1024} KB in {Session.link?.bytesIn / 1024} KB");
                 }
                 yield return null;
@@ -111,7 +111,7 @@ namespace BIS
             if (!me) { Line("never spawned: " + b.control.notice); yield break; }
             Line($"spawned as {me.ClassName} mode {me.net} at {me.transform.position:F1}{(me.InVehicle ? " in " + me.vehicle.def.name : "")}");
             // walk and shoot
-            float start = Time.realtimeSinceStartup; float next = 0; bool triedVehicle = false, droveOff = false; float driveT = 0; Vehicle drove = null; Vector3 driveFrom = Vector3.zero; float askAt = -1, askedAt = -1; bool respawnLogged = false; int deaths = 0;
+            float start = Time.realtimeSinceStartup; float next = 0; bool triedVehicle = false, droveOff = false; float driveT = 0; Vehicle drove = null; Vector3 driveFrom = Vector3.zero; float askAt = -1, askedAt = -1; bool respawnLogged = false; int deaths = 0; bool evadeLogged = false;
             while (Time.realtimeSinceStartup - start < 50 && b == Battle.I && !b.over)
             {
                 float t = Time.realtimeSinceStartup - start;
@@ -139,6 +139,8 @@ namespace BIS
                 if (me && me.Alive && me.InVehicle && me.seat == 0 && !droveOff)
                 {
                     if (drove == null) { drove = me.vehicle; driveFrom = drove.transform.position; driveT = t; Line($"in the {drove.def.name}: vehicle mode {drove.net}"); }
+                    if (drove.CanEvadeKind && t - driveT > 3 && drove.evadeAt < 0) { PlayerControl.testEvade = true; }
+                    if (drove.CanEvadeKind && drove.evadeAt > 0 && t - driveT > 3.5f && !evadeLogged) { evadeLogged = true; Line($"rolled our craft at {drove.evadeAt:0.0} (evading {drove.Evading})"); }
                     if (t - driveT > 6)
                     {
                         Line($"drove {(drove.transform.position - driveFrom).magnitude:0.0} m; host sees it {(drove.netPos - drove.transform.position).magnitude:0.0} m from us; asking to get out");

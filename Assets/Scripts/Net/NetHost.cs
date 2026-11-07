@@ -164,8 +164,23 @@ namespace BIS.Net
                         else if (!u.InVehicle) u.TakeDamage(new DamageInfo { amount = amt, team = -1, type = DmgType.Environment, point = u.transform.position });
                         break;
                     }
+                case Msg.Evade:
+                    {
+                        // the guest rolled their craft: missiles here lose it and lockers start over
+                        int id = r.U16(); int side = r.S8();
+                        var u = remote?.unit;
+                        if (u && u.Alive && u.InVehicle && u.seat == 0 && u.vehicle.netId == id) u.vehicle.Evade(side, true);
+                        break;
+                    }
                 case Msg.Bye: GuestLeft(); break;
             }
+        }
+
+        /// <summary>A craft on the host rolled: the guest draws the roll and its copies of missiles lose it too.</summary>
+        public static void OnEvade(Vehicle v, int side)
+        {
+            if (!Live || v.netId <= 0) return;
+            Session.link.Send(new W(Msg.Evade).U16(v.netId).S8(side));
         }
 
         /// <summary>The guest's spawn request, checked with the rules PlayerControl.TrySpawn uses for the local player.</summary>
@@ -269,6 +284,8 @@ namespace BIS.Net
                 {
                     WriteWeapon(w, v.prim); WriteWeapon(w, v.sec); WriteWeapon(w, v.gunW);
                     w.F(v.lockTime).I32(v.lockTarget ? VehicleIdOf(v.lockTarget) : -1).F(v.hp);
+                    float threat = v.LockOnMe(out Vector3 threatFrom);
+                    w.F(threat).V(threatFrom);
                 }
             }
             w.I16(remote.points).B(remote.heroReady).I16(remote.pointsAtHero).F(remote.heroCost);

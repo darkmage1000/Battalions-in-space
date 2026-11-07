@@ -13,6 +13,8 @@ namespace BIS
         public float roll, climb;
         public bool fromCamera;      // the player's input: shots that the barrel can't clear start on the camera line
         public Vector3 camPos;
+        public bool evade;           // starfighters: an evasive roll this frame
+        public int evadeSide;        // -1 left, +1 right, 0 = pick (away from the nearest missile)
     }
 
     /// <summary>
@@ -252,6 +254,78 @@ namespace BIS
 
         public float AltitudeAboveGround() => transform.position.y - battle.GroundY(transform.position);
 
+        // ── evasive roll (starfighters) ──────────────────────────────────
+        // A barrel roll with a sideways jink. Missiles homing on the craft within EvadeBreak lose it and fly on
+        // straight (one further out keeps coming, so roll when it is close), and for a moment nobody can lock on.
+        public const float EvadeCooldown = 7f, EvadeTime = 0.75f, EvadeSlip = 34f, EvadeBreak = 160f, EvadeJam = 1.6f;
+        public float evadeAt = -99;
+        public int evadeSide = 1;
+        // Wi-Fi guest: the strongest enemy lock on the vehicle we sit in, from the host's LocalState
+        public float netThreat, netThreatAt = -99;
+        public Vector3 netThreatFrom;
+        public bool CanEvadeKind => def.IsShip;
+        public bool Evading => Time.time - evadeAt < EvadeTime;
+        /// <summary>Just rolled: enemies can't start a lock on this craft yet.</summary>
+        public bool Jammed => Time.time - evadeAt < EvadeJam;
+        public float EvadeReadyIn => Mathf.Max(0, evadeAt + EvadeCooldown - Time.time);
+
+        /// <summary>Roll out of the way. remote = told by the other side of a Wi-Fi game (no cooldown check, not sent on).</summary>
+        public bool Evade(int side, bool remote = false)
+        {
+            if (!CanEvadeKind || !Alive || landed) return false;
+            if (!remote && EvadeReadyIn > 0) return false;
+            if (side == 0)
+            {
+                // away from the nearest missile, else the other way to last time
+                if (Shots.Incoming(transform, out _, out Vector3 at) > 0) side = Vector3.Dot(at - transform.position, transform.right) > 0 ? -1 : 1;
+                else side = -evadeSide;
+            }
+            evadeAt = Time.time; evadeSide = side > 0 ? 1 : -1;
+            int lost = Shots.LoseTarget(transform, EvadeBreak);
+            foreach (var v in battle.vehicles) if (v && v.lockTarget == transform) { v.lockTarget = null; v.lockTime = 0; }
+            foreach (var u in battle.units) if (u && u.lockTarget == transform) { u.lockTarget = null; u.lockTime = 0; }
+            // decoy sparks thrown off behind the roll
+            Vector3 back = transform.position - transform.forward * 2.5f;
+            for (int i = 0; i < 18; i++) Fx.Emit(back, -transform.forward * 10 + vel * 0.5f + Random.insideUnitSphere * 12, new Color(1f, 0.85f, 0.45f, 1), 0.55f, 0.7f);
+            Sfx.Play("jet", transform.position, 0.7f, 1.4f);
+            var drv = Driver;
+            if (drv && drv.part.isPlayer)
+            {
+                Sfx.Play2D("ui", 0.5f);
+                if (lost > 0) HUD.Message(lost > 1 ? $"EVADED {lost} MISSILES" : "MISSILE EVADED", UI.Good, 2);
+            }
+            if (!remote)
+            {
+                if (net == Unit.NetMode.GuestLocal) Net.NetClient.SendEvade(this, evadeSide);
+                else Net.NetHost.OnEvade(this, evadeSide);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// How hard an enemy is locking on to this vehicle: 0 none, below 1 locking on, 1 locked (missiles will home).
+        /// from = where the strongest lock comes from.
+        /// </summary>
+        public float LockOnMe(out Vector3 from)
+        {
+            from = transform.position;
+            if (Net.Session.IsClient) { from = netThreatFrom; return Time.time - netThreatAt < 0.6f ? netThreat : 0; }
+            float best = 0; int team = Team;
+            foreach (var v in battle.vehicles)
+            {
+                if (!v || v == this || !v.Alive || v.lockTarget != transform || v.IsEmpty || v.Team == team || v.sec == null || !v.sec.def.lockOn) continue;
+                float k = Mathf.Clamp01(v.lockTime);
+                if (k > best) { best = k; from = v.transform.position; }
+            }
+            foreach (var u in battle.units)
+            {
+                if (!u || !u.Alive || u.InVehicle || u.lockTarget != transform || u.team == team || !u.Weapon.def.lockOn) continue;
+                float k = Mathf.Clamp01(u.lockTime / 0.9f);
+                if (k > best) { best = k; from = u.AimPoint; }
+            }
+            return best;
+        }
+
         public const float StallFrac = 0.4f;       // gunships below this share of top speed start to sink
         /// <summary>A planetary gunship flying too slowly (after the first 4 s off the ground).</summary>
         public bool Stalling => def.Flies && !def.IsShip && !landed && Time.time - launchTime > 4f && speed < def.speed * StallFrac;
@@ -269,6 +343,7 @@ namespace BIS
 
             var drv = Driver;
             var din = drv ? seatIn[0] : default;
+            if (drv && din.evade && drv.net != Unit.NetMode.HostRemote) Evade(din.evadeSide);
             if (drv && drv.net == Unit.NetMode.HostRemote) NetPose(dt);
             else if (def.IsGround) MoveGround(din, drv != null, dt);
             else MoveFlyer(din, drv != null, dt);
@@ -292,6 +367,13 @@ namespace BIS
 
         void Effects(float dt)
         {
+            // the evasive barrel roll is drawn on the body only, so the craft's heading (and the camera) stay steady
+            if (CanEvadeKind && body)
+            {
+                float e = (Time.time - evadeAt) / EvadeTime;
+                if (e >= 0 && e < 1) body.localRotation = Quaternion.Euler(0, 0, -evadeSide * 360f * Mathf.SmoothStep(0, 1, e));
+                else if (e < 1.5f) body.localRotation = Quaternion.identity;
+            }
             float sp = def.IsGround ? vel.magnitude : speed;
             if (hum) { hum.volume = Mathf.MoveTowards(hum.volume, (IsEmpty && (landed || def.IsGround) ? 0.05f : 0.35f) * Sfx.Gain(def.IsShip ? "fighter" : "engine"), dt); hum.pitch = 0.8f + sp / Mathf.Max(1, def.speed) * 0.6f; }
             fxT -= dt;
@@ -598,6 +680,12 @@ namespace BIS
             speed = Mathf.MoveTowards(speed, target, (space ? 22 : 16) * dt);
             Vector3 fwdDir = rot * Vector3.forward;
             vel = fwdDir * speed;
+            if (space && Evading)
+            {
+                // the jink: about 16 m to the side over the roll
+                float e = (Time.time - evadeAt) / EvadeTime;
+                vel += rot * Vector3.right * (evadeSide * EvadeSlip * Mathf.Sin(e * Mathf.PI));
+            }
             if (!space)
             {
                 // a gunship needs forward speed to stay up: hanging still over a post it loses lift, sinks and sets down
@@ -780,6 +868,8 @@ namespace BIS
             Transform best = null; float bestA = 14f;
             if (forcedLock && Vector3.Angle(transform.forward, forcedLock.position - transform.position) < 35 && (forcedLock.position - transform.position).magnitude < w.range)
             {
+                var fv = forcedLock.GetComponent<Vehicle>();
+                if (fv && fv.Jammed) { lockTarget = null; lockTime = 0; return; }   // it just rolled out of the lock
                 best = forcedLock; bestA = -1;
                 if (best != lockTarget) { lockTarget = best; lockTime = 0.4f; }
                 float before0 = lockTime; lockTime += dt * 1.6f;
@@ -788,7 +878,7 @@ namespace BIS
             }
             foreach (var v in battle.vehicles)
             {
-                if (!v || v == this || !v.Alive || v.Team == Team || v.IsEmpty) continue;
+                if (!v || v == this || !v.Alive || v.Team == Team || v.IsEmpty || v.Jammed) continue;
                 if (def.IsShip && !v.def.IsShip) continue;
                 Vector3 to = v.transform.position - transform.position;
                 if (to.magnitude > w.range) continue;

@@ -49,6 +49,96 @@ namespace BIS
             float dt = Time.unscaledDeltaTime;
             hitT -= dt; hurtT -= dt; pointsT -= dt; killT -= dt;
             fpsT += dt; if (fpsT > 0.5f) { fps = 1f / Mathf.Max(0.0001f, Time.unscaledDeltaTime); fpsT = 0; }
+            UpdateThreat(dt);
+        }
+
+        // ── lock-on warning: something is locking on to (or firing missiles at) the vehicle you are in ──
+        /// <summary>0 nothing, 1 an enemy is locking on, 2 locked on, 3 a missile is homing on you.</summary>
+        public static int ThreatLevel;
+        static float threatLock, missileDist, warnBeepT;
+        static int missiles;
+        static Vector3 threatFrom, missileAt;
+
+        void UpdateThreat(float dt)
+        {
+            ThreatLevel = 0; missiles = 0;
+            var b = battle;
+            var me = b != null && b.control != null && b.control.mode == PlayerControl.Mode.Play ? b.control.Me : null;
+            if (me == null || !me.InVehicle || b.over) { warnBeepT = 0; return; }
+            var v = me.vehicle;
+            threatLock = v.LockOnMe(out threatFrom);
+            missiles = Shots.Incoming(v.transform, out missileDist, out missileAt);
+            ThreatLevel = missiles > 0 ? 3 : threatLock >= 1 ? 2 : threatLock > 0.12f ? 1 : 0;
+            if (ThreatLevel == 0 || Time.timeScale == 0) { warnBeepT = 0; return; }
+            // a tone that speeds up: slow while they lock on, fast when locked, rapid as a missile closes in
+            warnBeepT -= dt;
+            if (warnBeepT <= 0)
+            {
+                float gap = ThreatLevel == 1 ? 0.45f : ThreatLevel == 2 ? 0.2f : Mathf.Lerp(0.07f, 0.16f, Mathf.Clamp01(missileDist / 400f));
+                warnBeepT = gap;
+                Sfx.Play2D("warn", ThreatLevel == 1 ? 0.35f : 0.6f, ThreatLevel == 3 ? 1.25f : 1f);
+            }
+        }
+
+        void ThreatWarning(Unit me, Camera cam, float w, float h)
+        {
+            if (ThreatLevel == 0 || !me.InVehicle) return;
+            var v = me.vehicle;
+            bool blink = Mathf.Repeat(Time.unscaledTime * (ThreatLevel == 1 ? 2.5f : 5f), 1) < 0.55f;
+            Color red = new Color(1f, 0.22f, 0.18f), amber = new Color(1f, 0.7f, 0.25f);
+            Color col = ThreatLevel == 1 ? amber : red;
+            string title = ThreatLevel == 3 ? (missiles > 1 ? $"{missiles} MISSILES INCOMING" : "MISSILE INCOMING") + $"   {Mathf.RoundToInt(missileDist)} m"
+                         : ThreatLevel == 2 ? "LOCKED ON - A MISSILE CAN HIT YOU" : "ENEMY LOCKING ON";
+            string hint;
+            if (v.CanEvadeKind && me.seat == 0)
+            {
+                string key = TouchInput.Active ? "EVADE" : Ctl.PadActive ? "A" : "SPACE";
+                float cd = v.EvadeReadyIn;
+                if (cd > 0) hint = $"evasive roll ready in {Mathf.CeilToInt(cd)} s - turn hard";
+                else if (ThreatLevel == 3 && missileDist <= Vehicle.EvadeBreak) hint = $"EVADE NOW!  [{key}]";
+                else if (ThreatLevel == 3) hint = $"wait until it is close, then [{key}] to roll out of it";
+                else hint = $"[{key}] evasive roll breaks the lock";
+            }
+            else hint = v.IsShip ? "the pilot can roll out of it" : "get behind cover or out of their sight";
+            Rect r = new Rect(w / 2 - 330, 92, 660, 72);
+            UI.Fill(r, new Color(0.25f, 0.02f, 0.02f, blink ? 0.75f : 0.45f));
+            UI.Frame(r, blink ? col : new Color(col.r, col.g, col.b, 0.5f), 3);
+            UI.Text(new Rect(r.x, r.y + 4, r.width, 36), "⚠ " + title, 28, blink || ThreatLevel == 1 ? col : Color.white, TextAnchor.MiddleCenter);
+            bool now = hint.StartsWith("EVADE NOW");
+            UI.Text(new Rect(r.x, r.y + 40, r.width, 28), hint, now ? 22 : 18, now ? Color.white : new Color(1, 0.85f, 0.8f), TextAnchor.MiddleCenter);
+            if (ThreatLevel == 1) UI.Bar(new Rect(r.x + 10, r.yMax - 6, r.width - 20, 4), threatLock, amber);
+
+            // where it comes from: a marker on it if it is in view, else an arrow on the screen edge
+            Vector3 src = ThreatLevel == 3 ? missileAt : threatFrom;
+            if ((src - v.transform.position).sqrMagnitude < 1) return;
+            Vector3 sp = cam.WorldToScreenPoint(src);
+            if (sp.z > 0 && sp.x > 0 && sp.x < Screen.width && sp.y > 0 && sp.y < Screen.height)
+            {
+                Vector2 g = new Vector2(sp.x / UI.S, (Screen.height - sp.y) / UI.S);
+                float s = ThreatLevel == 3 ? 16 : 22;
+                UI.Line(g + new Vector2(0, -s), g + new Vector2(s, 0), col, 3); UI.Line(g + new Vector2(s, 0), g + new Vector2(0, s), col, 3);
+                UI.Line(g + new Vector2(0, s), g + new Vector2(-s, 0), col, 3); UI.Line(g + new Vector2(-s, 0), g + new Vector2(0, -s), col, 3);
+                UI.Text(new Rect(g.x - 100, g.y + s + 2, 200, 20), ThreatLevel == 3 ? "MISSILE" : "LOCKING YOU", 14, col, TextAnchor.UpperCenter);
+            }
+            else
+            {
+                Vector3 rel = cam.transform.InverseTransformPoint(src);
+                Vector2 dir = new Vector2(rel.x, -rel.y);
+                if (rel.z < 0 && dir.sqrMagnitude < 0.04f * rel.sqrMagnitude) dir = Vector2.up;    // right behind: point at the bottom
+                if (dir.sqrMagnitude < 0.0001f) dir = Vector2.up;
+                dir.Normalize();
+                Vector2 ctr = new Vector2(w / 2, h / 2);
+                Vector2 edge = ctr + dir * Mathf.Min(w, h) * 0.28f;
+                Vector2 side = new Vector2(-dir.y, dir.x);
+                float pulse = blink ? 1f : 0.7f;
+                for (int k = 0; k < 2; k++)
+                {
+                    Vector2 e = edge + dir * (k * 18);
+                    UI.Line(e + dir * 24, e - dir * 6 + side * 18, col * pulse, 5);
+                    UI.Line(e + dir * 24, e - dir * 6 - side * 18, col * pulse, 5);
+                }
+                UI.Text(new Rect(edge.x - 120, edge.y - dir.y * 40 - 10, 240, 22), rel.z < 0 ? (ThreatLevel == 3 ? "MISSILE BEHIND" : "LOCKING YOU - BEHIND") : ThreatLevel == 3 ? "MISSILE" : "LOCKING YOU", 15, col, TextAnchor.MiddleCenter);
+            }
         }
 
         void OnGUI()
@@ -261,6 +351,8 @@ namespace BIS
                     if (lockTime >= 1) UI.Text(new Rect(r.x - 40, r.yMax, r.width + 80, 24), "LOCKED", 16, UI.Bad, TextAnchor.UpperCenter);
                 }
             }
+
+            ThreatWarning(me, cam, w, h);
 
             // bottom left: health + class
             Rect hb = new Rect(20, h - 120, 420, 100);
@@ -793,7 +885,8 @@ namespace BIS
                 "<b>GUNSHIPS AND STARFIGHTERS</b>\n" +
                 "Mouse steer   W / S throttle   A / D roll   Shift boost   Left click guns   Right click missiles / torpedoes / repair\n" +
                 "F or middle mouse: lock on - your craft follows the target; steer hard or press F again to break off\n" +
-                "Gunships: Space / Ctrl climb and descend.  Starfighters: fly into a hangar, slow down, E to land and get out.\n\n" +
+                "Gunships: Space / Ctrl climb and descend.  Starfighters: fly into a hangar, slow down, E to land and get out.\n" +
+                "Starfighters: Space or X evasive roll (every 7 s) - missiles close to you lose you; a red warning shows when you are locked on.\n\n" +
                 "<b>GAMEPAD</b>\n" +
                 "Left stick move / throttle + roll   Right stick look / steer   RT fire   LT aim / secondary\n" +
                 "A jump   B crouch   X reload   Y enter / exit   LB equipment   RB switch weapon   L3 sprint   R3 ability\n" +
