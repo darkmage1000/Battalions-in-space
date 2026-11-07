@@ -407,19 +407,35 @@ namespace BIS
         {
             var land = b.land;
             nextR = Phases[zonePhase].r;
-            float room = Mathf.Max(0, zoneR - nextR) * 0.92f;
-            for (int i = 0; i < 40; i++)
+            // the zone may end anywhere: a corner, an edge or the middle. The first circle heads for one of the nine
+            // regions picked at random (corners as likely as the city); later ones go anywhere inside the current
+            // circle, leaning toward its rim so they drift rather than tighten on the same spot. Up to 35% of a circle
+            // may hang off the playable square (the mountains), so corner zones are possible.
+            float lim = land.PlayHalf - nextR * 0.65f - 10;
+            float room = Mathf.Max(0, zoneR - nextR) * 0.95f;
+            for (int i = 0; i < 60; i++)
             {
-                Vector2 c = zoneC + Random.insideUnitCircle * room;
-                float lim = land.PlayHalf - nextR * 0.55f - 10;
-                if (Mathf.Abs(c.x) > lim || Mathf.Abs(c.y) > lim) continue;
+                Vector2 c;
+                if (zonePhase == 0 && land.def.regions != null && land.def.regions.Length > 0)
+                {
+                    Vector3 rc = land.RegionCentre(Random.Range(0, land.def.regions.Length));
+                    c = new Vector2(rc.x, rc.z) + Random.insideUnitCircle * 90;
+                }
+                else
+                {
+                    float a = Random.value * Mathf.PI * 2, rr = room * Mathf.Pow(Random.value, 0.4f);
+                    c = zoneC + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * rr;
+                }
+                c.x = Mathf.Clamp(c.x, -lim, lim); c.y = Mathf.Clamp(c.y, -lim, lim);
+                if (zonePhase > 0 && (c - zoneC).magnitude > room + 1) continue;   // inside the old circle (the first one covers the whole map)
                 Vector3 w3 = new Vector3(c.x, 0, c.y);
                 if (!land.nav.Walkable(w3)) continue;
                 if (land.LiquidAt(c.x, c.y, out _, out bool lava) && lava) continue;
                 nextC = c;
                 return;
             }
-            nextC = Vector2.MoveTowards(zoneC, Vector2.zero, room * 0.5f);
+            // nothing suitable: shrink in place
+            nextC = zoneC;
         }
 
         void ZoneTick(float dt)
