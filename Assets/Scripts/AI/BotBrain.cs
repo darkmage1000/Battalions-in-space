@@ -420,6 +420,12 @@ namespace BIS
             if (OutOfAmmo(u.Weapon) && u.weapons[1 - u.cur] != null && !OutOfAmmo(u.weapons[1 - u.cur])) u.input.swap = true;
             move = Avoid(pos, move, dt);
             if (u.cls != null && u.cls.special == Special.Jetpack && !u.grounded && move.sqrMagnitude > 0.1f && stuckT > 0.6f) u.input.jump = true;
+            // floating isles: never step off an edge (strafing, dodging or a stale route)
+            if (b.land != null && b.land.Floating && move.sqrMagnitude > 0.01f)
+            {
+                Vector3 md = new Vector3(move.x, 0, move.z).normalized;
+                if (b.land.Ledge(pos, pos + md * 1.4f) || b.land.Ledge(pos, pos + md * 2.6f)) move = Vector3.zero;
+            }
 
             u.input.move = Vector3.ClampMagnitude(new Vector3(move.x, 0, move.z), 1);
             u.input.aimPoint = aimPoint;

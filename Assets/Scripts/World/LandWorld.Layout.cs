@@ -146,8 +146,11 @@ namespace BIS
                         }
                     case FeatureKind.Crater: craters.Add((f.pts[0] * NS, f.width * NS, f.height)); break;
                     case FeatureKind.Ford: fords.Add((f.pts[0] * NS, f.width * NS)); break;
+                    case FeatureKind.City: PrepareCity(f); break;
+                    case FeatureKind.Isle: PrepareIsle(f); break;
                 }
             }
+            PrepareSpans();
         }
 
         /// <summary>Bridges where roads cross water, lava or a gulch (after road heights meet the posts).</summary>
@@ -207,6 +210,7 @@ namespace BIS
         {
             tg = 0; liq = float.NaN; lava = false;
             float y = RawHeight(x, z);
+            if (isles.Count > 0) y = IsleHeight(x, z, y, ref tg);
             Vector2 q = new Vector2(x, z);
             // ridges and crater rims: steep walls with a jagged top
             float add = 0;
@@ -298,9 +302,10 @@ namespace BIS
         public float Top(float x, float z)
         {
             float y = Height(x, z);
-            if (bridges.Count == 0) return y;
+            if (bridges.Count == 0 && spans.Count == 0) return y;
             var q = new Vector2(x, z);
             foreach (var br in bridges) if (br.Inside(q, out float by) && by > y) y = by;
+            foreach (var sp in spans) if (sp.Inside(q, out float sy) && sy > y) y = sy;
             return y;
         }
 
@@ -319,13 +324,15 @@ namespace BIS
         }
 
         // ── props ────────────────────────────────────────────────────────
-        Color WallColor => def.theme == Theme.Snow ? new Color(0.72f, 0.75f, 0.8f) : def.theme == Theme.Volcanic ? new Color(0.3f, 0.28f, 0.28f) : def.theme == Theme.Forest ? new Color(0.5f, 0.42f, 0.32f) : new Color(0.8f, 0.68f, 0.5f);
+        Color WallColor => def.theme == Theme.Snow ? new Color(0.72f, 0.75f, 0.8f) : def.theme == Theme.Volcanic ? new Color(0.3f, 0.28f, 0.28f) : def.theme == Theme.Forest ? new Color(0.5f, 0.42f, 0.32f)
+                         : def.theme == Theme.Urban ? new Color(0.6f, 0.58f, 0.55f) : def.theme == Theme.Sky ? new Color(0.88f, 0.86f, 0.8f) : new Color(0.8f, 0.68f, 0.5f);
 
         void BuildLayoutProps(System.Func<float, float, MeshKit> kitAt)
         {
             var buildings = new List<(Vector2 c, float r)>();
             foreach (var br in bridges) BuildBridge(br);
             foreach (var l in channels) if (l.kind != FeatureKind.Wadi) BuildLiquid(l);
+            BuildPlaces(kitAt, buildings);
             if (def.features == null) return;
             foreach (var f in def.features)
             {
@@ -335,9 +342,10 @@ namespace BIS
                 {
                     case FeatureKind.Forest: Forest(c, r, f.density, kitAt); break;
                     case FeatureKind.Boulders: BoulderField(c, r, Mathf.RoundToInt(f.density), kitAt); break;
-                    case FeatureKind.Town: Town(c, r, Mathf.RoundToInt(f.density), kitAt, buildings); break;
+                    case FeatureKind.Town: Town(c, r, Mathf.RoundToInt(f.density), kitAt, buildings, f.height > 0 ? f.height : 0.55f); break;
                 }
             }
+            BuildWalls(kitAt, buildings);
         }
 
         bool PropSpot(float x, float z, float postClear)
@@ -372,6 +380,10 @@ namespace BIS
                             break;
                         case Theme.Snow: Pine(k, p, true); break;
                         case Theme.Volcanic: DeadTree(k, p); break;
+                        case Theme.Urban:
+                        case Theme.Sky:
+                            if (roll < 0.6f) BigTree(k, p); else Pine(k, p, false);
+                            break;
                         default: { float s = R(2, 5); k.Rock(p + Vector3.up * s * 0.25f, new Vector3(s * 1.3f, s, s * 1.1f), Quaternion.Euler(0, R(0, 360), 0), Color.Lerp(th.steep, th.high, R()), rng.Next(), 0.3f); ColSphere(p + Vector3.up * s * 0.2f, s * 0.5f); break; }
                     }
                 }
@@ -405,6 +417,8 @@ namespace BIS
                 Color col = def.theme == Theme.Snow ? Color.Lerp(th.steep, new Color(0.62f, 0.66f, 0.72f), R() * 0.6f)
                           : def.theme == Theme.Volcanic ? Color.Lerp(new Color(0.08f, 0.07f, 0.09f), th.high, R() * 0.4f)
                           : def.theme == Theme.Forest ? Color.Lerp(new Color(0.42f, 0.42f, 0.38f), new Color(0.3f, 0.4f, 0.24f), R() * 0.5f)
+                          : def.theme == Theme.Urban ? Color.Lerp(new Color(0.5f, 0.49f, 0.47f), new Color(0.36f, 0.34f, 0.33f), R())
+                          : def.theme == Theme.Sky ? Color.Lerp(th.steep, new Color(0.78f, 0.76f, 0.7f), R() * 0.6f)
                           : Color.Lerp(th.steep, th.high, R());
                 var q = Quaternion.Euler(R(-10, 10), R(0, 360), R(-10, 10));
                 var k = kitAt(x, z);
@@ -415,7 +429,7 @@ namespace BIS
         }
 
         // ── towns ────────────────────────────────────────────────────────
-        void Town(Vector2 c, float r, int count, System.Func<float, float, MeshKit> kitAt, List<(Vector2 c, float r)> placed)
+        void Town(Vector2 c, float r, int count, System.Func<float, float, MeshKit> kitAt, List<(Vector2 c, float r)> placed, float shellShare = 0.55f)
         {
             for (int n = 0, tries = 0; n < count && tries < count * 25; tries++)
             {
@@ -442,7 +456,7 @@ namespace BIS
                 placed.Add((q, rad));
                 n++;
                 var kit = kitAt(q.x, q.y);
-                bool shell = hi - lo < 1.6f && R() < 0.55f;
+                bool shell = hi - lo < 1.6f && R() < shellShare;
                 // the doorway faces the nearest road, if any
                 int door = 0;
                 if (rd != Vector2.zero)
@@ -457,7 +471,7 @@ namespace BIS
             }
         }
 
-        float BuildingHeight => def.theme == Theme.Volcanic ? R(6, 11) : def.theme == Theme.Snow ? R(4, 6) : R(4.5f, 8);
+        float BuildingHeight => def.theme == Theme.Volcanic ? R(6, 11) : def.theme == Theme.Snow ? R(4, 6) : def.theme == Theme.Urban ? R(9, 18) : R(4.5f, 8);
 
         /// <summary>A solid block building: walls, a themed roof and some details. `floor` = highest ground under it.</summary>
         void HouseSolid(MeshKit k, Vector3 p, Quaternion rot, float w, float dp, float lowGround)
@@ -484,6 +498,14 @@ namespace BIS
                 case Theme.Snow:
                     k.Sphere(top, new Vector3(w * 0.9f, 2.6f, dp * 0.9f), rot, new Color(0.85f, 0.88f, 0.92f), 10, 4);
                     k.Cyl(top + rot * new Vector3(w * 0.3f, 2.6f, 0), 0.08f, 4, rot, new Color(0.3f, 0.3f, 0.32f), 4);
+                    break;
+                case Theme.Urban:
+                    k.Box(top + Vector3.up * 0.45f, new Vector3(w + 0.2f, 0.9f, dp + 0.2f), rot, dark);
+                    k.Box(top + Vector3.up * 0.55f, new Vector3(w - 1f, 1f, dp - 1f), rot, wall);
+                    k.Box(top + rot * new Vector3(w * 0.2f, 1.4f, 0), new Vector3(2.2f, 1.6f, 1.8f), rot, new Color(0.45f, 0.46f, 0.48f));
+                    break;
+                case Theme.Sky:
+                    k.Sphere(top + Vector3.up * 0.2f, new Vector3(Mathf.Min(w, dp) * 0.8f, 3f, Mathf.Min(w, dp) * 0.8f), rot, new Color(0.35f, 0.55f, 0.75f), 10, 5);
                     break;
                 default:
                     k.Cyl(top + rot * new Vector3(w * 0.25f, 2.5f, dp * 0.2f), 0.9f, 5, rot, new Color(0.14f, 0.12f, 0.12f), 8);

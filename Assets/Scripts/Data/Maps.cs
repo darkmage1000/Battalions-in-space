@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace BIS
 {
-    public enum Theme { Desert, Forest, Snow, Volcanic }
+    public enum Theme { Desert, Forest, Snow, Volcanic, Urban, Sky }
     public enum SpaceBg { Planet, Nebula, Asteroids }
 
     public class PostDef
@@ -11,10 +11,13 @@ namespace BIS
         public Vector2 pos;          // -1..1 of the playable half size
         public int owner;            // 0 = team A, 1 = team B, -1 = neutral
         public VKind[] vehicles;
+        public bool home;            // a team's main base even with fewer than 3 vehicle pads
         public PostDef(string n, float x, float z, int o, params VKind[] v) { name = n; pos = new Vector2(x, z); owner = o; vehicles = v; }
+        public PostDef Home() { home = true; return this; }
+        public bool IsHome => home || vehicles.Length >= 3;
     }
 
-    public enum FeatureKind { Ridge, River, Lava, Wadi, Road, Forest, Town, Boulders, Lake, Crater, Ford }
+    public enum FeatureKind { Ridge, River, Lava, Wadi, Road, Forest, Town, Boulders, Lake, Crater, Ford, City, Isle, Span, Wall, Tower }
 
     /// <summary>
     /// One piece of a land map's layout, in the same -1..1 space as posts (x 0.72 of the half size).
@@ -43,6 +46,19 @@ namespace BIS
         public static MapFeature Ford(float x, float z, float radius) => new MapFeature { kind = FeatureKind.Ford, width = radius, pts = P(new[] { x, z }) };
         /// <summary>A ring-shaped rim `height` high round a point; roads cut gaps in it.</summary>
         public static MapFeature Crater(float x, float z, float radius, float height) => new MapFeature { kind = FeatureKind.Crater, width = radius, height = height, pts = P(new[] { x, z }) };
+        /// <summary>A dense village: like a town, but most buildings can be walked into.</summary>
+        public static MapFeature Village(float x, float z, float radius, int buildings) => new MapFeature { kind = FeatureKind.Town, width = radius, height = 0.85f, density = buildings, pts = P(new[] { x, z }) };
+        /// <summary>A city: a grid of streets (roads) round blocks of towers, buildings you can enter, parks and rubble lots.
+        /// halfX / halfZ in map units; block = metres between street centres.</summary>
+        public static MapFeature City(float x, float z, float halfX, float halfZ, float block) => new MapFeature { kind = FeatureKind.City, width = halfX, height = halfZ, density = block, pts = P(new[] { x, z }) };
+        /// <summary>Floating maps: an island whose flat top stands `level` metres up (radius in map units).</summary>
+        public static MapFeature Isle(float x, float z, float radius, float level) => new MapFeature { kind = FeatureKind.Isle, width = radius, height = level, pts = P(new[] { x, z }) };
+        /// <summary>Floating maps: a walkway from one island to another (points inside each); a flight of stairs takes it up or down.</summary>
+        public static MapFeature Span(float width, float x0, float z0, float x1, float z1) => new MapFeature { kind = FeatureKind.Span, width = width, pts = P(new[] { x0, z0, x1, z1 }) };
+        /// <summary>A low wall, hedge or barrier line with gaps to walk through (cover).</summary>
+        public static MapFeature Wall(float height, params float[] xy) => new MapFeature { kind = FeatureKind.Wall, height = height, width = 1, pts = P(xy) };
+        /// <summary>A landmark tower (clock tower, radio mast, spire).</summary>
+        public static MapFeature Tower(float x, float z, float height) => new MapFeature { kind = FeatureKind.Tower, height = height, width = 0.03f, pts = P(new[] { x, z }) };
     }
 
     public class LandMapDef
@@ -53,6 +69,8 @@ namespace BIS
         public int seed;
         public float size = 640, hills = 1, roughness = 1, props = 1;
         public PostDef[] posts;
+        /// <summary>Islands over a void: falling off kills, the ground below is never drawn.</summary>
+        public bool Floating => theme == Theme.Sky;
         public LandMapDef Variant(string planetName, int newSeed)
         {
             var m = (LandMapDef)MemberwiseClone();
@@ -98,6 +116,22 @@ namespace BIS
                     patch = new Color(0.78f, 0.84f, 0.92f), path = new Color(0.72f, 0.74f, 0.78f),
                     skyTop = new Color(0.45f, 0.58f, 0.75f), skyHorizon = new Color(0.86f, 0.9f, 0.95f), skyBottom = new Color(0.8f, 0.84f, 0.9f), sun = new Color(0.95f, 0.97f, 1f),
                     ambientSky = new Color(0.68f, 0.74f, 0.85f), ambientGround = new Color(0.6f, 0.62f, 0.68f), fog = new Color(0.82f, 0.86f, 0.92f), fogDensity = 0.0045f, sunPitch = 28, sunYaw = 210
+                };
+                case Theme.Urban: return new ThemeInfo
+                {
+                    // concrete and asphalt under a dusk sky
+                    low = new Color(0.52f, 0.51f, 0.5f), mid = new Color(0.46f, 0.46f, 0.47f), high = new Color(0.56f, 0.54f, 0.52f), steep = new Color(0.4f, 0.37f, 0.35f),
+                    patch = new Color(0.44f, 0.47f, 0.38f), path = new Color(0.2f, 0.2f, 0.22f),
+                    skyTop = new Color(0.22f, 0.28f, 0.48f), skyHorizon = new Color(0.98f, 0.66f, 0.44f), skyBottom = new Color(0.42f, 0.36f, 0.36f), sun = new Color(1f, 0.82f, 0.62f),
+                    ambientSky = new Color(0.55f, 0.55f, 0.66f), ambientGround = new Color(0.4f, 0.36f, 0.34f), fog = new Color(0.66f, 0.56f, 0.54f), fogDensity = 0.0024f, sunPitch = 24, sunYaw = 250
+                };
+                case Theme.Sky: return new ThemeInfo
+                {
+                    // grassy island tops and pale rock, high above a sea of cloud
+                    low = new Color(0.42f, 0.63f, 0.3f), mid = new Color(0.36f, 0.57f, 0.27f), high = new Color(0.5f, 0.68f, 0.38f), steep = new Color(0.62f, 0.56f, 0.5f),
+                    patch = new Color(0.62f, 0.72f, 0.36f), path = new Color(0.74f, 0.71f, 0.64f),
+                    skyTop = new Color(0.22f, 0.46f, 0.88f), skyHorizon = new Color(0.86f, 0.91f, 0.99f), skyBottom = new Color(0.93f, 0.95f, 0.99f), sun = new Color(1f, 0.96f, 0.86f),
+                    ambientSky = new Color(0.62f, 0.7f, 0.85f), ambientGround = new Color(0.6f, 0.62f, 0.66f), fog = new Color(0.82f, 0.88f, 0.96f), fogDensity = 0.0016f, sunPitch = 42, sunYaw = 60
                 };
                 default: return new ThemeInfo
                 {
@@ -276,7 +310,131 @@ namespace BIS
                     new PostDef("Magma Dock", 0.7f, 0.72f, 1, VKind.Tank, VKind.Transport, VKind.Air),
                 }
             },
+            new LandMapDef
+            {
+                name = "Novo Meridian", planet = "Meridian", theme = Theme.Urban, seed = 5107, hills = 0.25f, props = 0.3f,
+                blurb = "A city at dusk: a grid of streets between towers, gutted blocks and parks. Buildings you can enter, a central square, and tanks in the avenues.",
+                features = new[]
+                {
+                    // 8 x 8 blocks, streets every 54 m; blocks round a post become open plazas
+                    MapFeature.City(0, 0, 0.94f, 0.94f, 54),
+                    MapFeature.Boulders(-0.95f, 0.2f, 0.08f, 5),
+                    MapFeature.Boulders(0.95f, -0.2f, 0.08f, 5),
+                },
+                posts = new[]
+                {
+                    new PostDef("Harbor Gate", -0.822f, -0.822f, 0, VKind.Tank, VKind.Transport, VKind.Air),
+                    new PostDef("Metro Station", -0.352f, -0.117f, 0, VKind.Transport),
+                    new PostDef("Riverside Market", -0.587f, 0.587f, -1),
+                    new PostDef("Central Plaza", 0f, 0f, -1, VKind.Tank),
+                    new PostDef("Stadium", 0.587f, -0.587f, -1),
+                    new PostDef("Old Cathedral", 0.352f, 0.117f, 1, VKind.Transport),
+                    new PostDef("Sky Rail Depot", 0.822f, 0.822f, 1, VKind.Tank, VKind.Transport, VKind.Air),
+                }
+            },
+            new LandMapDef
+            {
+                name = "Briar Hollow", planet = "Briar", theme = Theme.Forest, seed = 6131, hills = 0.3f, props = 0.45f,
+                blurb = "A small farming town: narrow lanes, houses you can clear room by room, stone walls and hedges across the fields, and a clock tower over the square.",
+                features = new[]
+                {
+                    // a ring of lanes round the town, the high street through it and a cross street over the square
+                    MapFeature.Road(9, -0.78f, 0.62f, -0.42f, 0.22f, 0f, 0f, 0.42f, -0.22f, 0.78f, -0.62f),
+                    MapFeature.Road(7, -0.42f, 0.22f, -0.52f, -0.12f, -0.35f, -0.5f),
+                    MapFeature.Road(7, -0.35f, -0.5f, 0.05f, -0.42f, 0.42f, -0.22f),
+                    MapFeature.Road(7, 0.42f, -0.22f, 0.52f, 0.12f, 0.35f, 0.5f),
+                    MapFeature.Road(7, 0.35f, 0.5f, -0.05f, 0.42f, -0.42f, 0.22f),
+                    MapFeature.Road(8, -0.35f, -0.5f, -0.12f, -0.2f, 0f, 0f, 0.12f, 0.2f, 0.35f, 0.5f),
+                    MapFeature.Tower(0.16f, 0.1f, 22),
+                    MapFeature.Tower(-0.25f, -0.62f, 15),
+                    MapFeature.Tower(0.25f, 0.62f, 15),
+                    MapFeature.Village(0f, 0f, 0.4f, 50),
+                    MapFeature.Village(-0.62f, 0.42f, 0.12f, 7),
+                    MapFeature.Village(0.62f, -0.42f, 0.12f, 7),
+                    MapFeature.Village(-0.5f, -0.62f, 0.1f, 5),
+                    MapFeature.Village(0.5f, 0.62f, 0.1f, 5),
+                    MapFeature.Forest(-0.88f, -0.15f, 0.2f, 1.4f),
+                    MapFeature.Forest(0.88f, 0.15f, 0.2f, 1.4f),
+                    MapFeature.Forest(-0.2f, 0.88f, 0.16f, 1.2f),
+                    MapFeature.Forest(0.2f, -0.88f, 0.16f, 1.2f),
+                    MapFeature.Forest(0.78f, 0.88f, 0.14f, 1f),
+                    MapFeature.Forest(-0.78f, -0.88f, 0.14f, 1f),
+                    // field walls and hedges (gaps every few metres)
+                    MapFeature.Wall(1.3f, -0.98f, 0.95f, -0.5f, 0.98f),
+                    MapFeature.Wall(1.3f, 0.98f, -0.95f, 0.5f, -0.98f),
+                    MapFeature.Wall(1.3f, -0.98f, 0.32f, -0.66f, 0.18f, -0.62f, -0.15f),
+                    MapFeature.Wall(1.3f, 0.98f, -0.32f, 0.66f, -0.18f, 0.62f, 0.15f),
+                    MapFeature.Wall(1.2f, -0.7f, -0.3f, -0.4f, -0.28f, -0.15f, -0.65f),
+                    MapFeature.Wall(1.2f, 0.7f, 0.3f, 0.4f, 0.28f, 0.15f, 0.65f),
+                    MapFeature.Wall(1.2f, -0.3f, 0.75f, 0.05f, 0.7f),
+                    MapFeature.Wall(1.2f, 0.3f, -0.75f, -0.05f, -0.7f),
+                    MapFeature.Boulders(-0.2f, 0.62f, 0.07f, 4),
+                    MapFeature.Boulders(0.2f, -0.62f, 0.07f, 4),
+                },
+                posts = new[]
+                {
+                    new PostDef("Northgate Farm", -0.78f, 0.62f, 0, VKind.Tank, VKind.Transport, VKind.Air),
+                    new PostDef("Old Mill", -0.42f, 0.22f, 0, VKind.Transport),
+                    new PostDef("Chapel", -0.35f, -0.5f, -1),
+                    new PostDef("Town Square", 0f, 0f, -1, VKind.Tank),
+                    new PostDef("Orchard", 0.35f, 0.5f, -1),
+                    new PostDef("Brewery", 0.42f, -0.22f, 1, VKind.Transport),
+                    new PostDef("Southgate Farm", 0.78f, -0.62f, 1, VKind.Tank, VKind.Transport, VKind.Air),
+                }
+            },
+            Skyreach(),
         };
+
+        /// <summary>
+        /// The floating map: islands at many heights joined by walkways with flights of stairs. One side is written
+        /// out here and mirrored through the middle for the other team (the Sky Shrine on top is shared).
+        /// </summary>
+        static LandMapDef Skyreach()
+        {
+            // id, x, z, radius (map units), level (m)
+            var isles = new (string id, float x, float z, float r, float lv)[]
+            {
+                ("base", -0.8f, -0.62f, 0.19f, 24), ("fwd", -0.45f, -0.15f, 0.12f, 36), ("low", 0.15f, -0.66f, 0.14f, 14),
+                ("a1", -0.62f, -0.36f, 0.07f, 30), ("a2", -0.4f, -0.78f, 0.08f, 18), ("a3", -0.25f, -0.06f, 0.055f, 44),
+                ("a4", -0.08f, -0.4f, 0.07f, 32), ("a5", -0.5f, 0.3f, 0.08f, 24), ("a6", -0.12f, -0.75f, 0.06f, 16), ("a7", -0.33f, 0.5f, 0.05f, 20),
+            };
+            var links = new (string a, string b)[]
+            {
+                ("base", "a1"), ("a1", "fwd"), ("base", "a2"), ("a2", "a6"), ("a6", "low"), ("fwd", "a3"), ("a3", "shrine"),
+                ("low", "a4"), ("a4", "shrine"), ("fwd", "a5"), ("a5", "a7"), ("a7", "low'"),
+            };
+            var all = new System.Collections.Generic.Dictionary<string, (float x, float z, float r, float lv)> { ["shrine"] = (0, 0, 0.15f, 52) };
+            foreach (var i in isles) { all[i.id] = (i.x, i.z, i.r, i.lv); all[i.id + "'"] = (-i.x, -i.z, i.r, i.lv); }
+            var f = new System.Collections.Generic.List<MapFeature>();
+            foreach (var kv in all) f.Add(MapFeature.Isle(kv.Value.x, kv.Value.z, kv.Value.r, kv.Value.lv));
+            void Link(string a, string b)
+            {
+                var A = all[a]; var B = all[b];
+                Vector2 pa = new Vector2(A.x, A.z), pb = new Vector2(B.x, B.z), d = (pb - pa).normalized;
+                Vector2 p0 = pa + d * A.r * 0.78f, p1 = pb - d * B.r * 0.78f;
+                f.Add(MapFeature.Span(8, p0.x, p0.y, p1.x, p1.y));
+            }
+            string Mirror(string id) => id == "shrine" ? id : id.EndsWith("'") ? id.TrimEnd('\'') : id + "'";
+            foreach (var l in links) { Link(l.a, l.b); Link(Mirror(l.a), Mirror(l.b)); }
+            f.Add(MapFeature.Tower(-0.25f, -0.06f, 14));
+            f.Add(MapFeature.Tower(0.25f, 0.06f, 14));
+            return new LandMapDef
+            {
+                name = "Skyreach Isles", planet = "Skyreach", theme = Theme.Sky, seed = 7211, hills = 0, props = 1.1f,
+                blurb = "Islands float over a sea of cloud, joined by walkways and long flights of stairs. Fight up to the Sky Shrine on top - and don't fall.",
+                features = f.ToArray(),
+                posts = new[]
+                {
+                    new PostDef("Dawn Dock", -0.8f, -0.62f, 0, VKind.Air, VKind.Air).Home(),
+                    new PostDef("Wind Terrace", -0.45f, -0.15f, 0),
+                    new PostDef("Cloud Garden", 0.15f, -0.66f, -1),
+                    new PostDef("Sky Shrine", 0f, 0f, -1),
+                    new PostDef("Mist Hollow", -0.15f, 0.66f, -1),
+                    new PostDef("Storm Terrace", 0.45f, 0.15f, 1),
+                    new PostDef("Dusk Dock", 0.8f, 0.62f, 1, VKind.Air, VKind.Air).Home(),
+                }
+            };
+        }
 
         public static readonly SpaceMapDef[] Space =
         {

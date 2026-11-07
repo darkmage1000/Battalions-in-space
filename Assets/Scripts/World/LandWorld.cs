@@ -36,11 +36,15 @@ namespace BIS
 
         float RawHeight(float x, float z)
         {
+            if (def.Floating) return VoidY;      // nothing but sky; the islands are added in LayoutHeight
             float nx = x / size, nz = z / size;
             float b = (Fbm(nx * 3.2f, nz * 3.2f) - 0.47f) * 2f;
             float y = b * 16f * def.hills;
             switch (def.theme)
             {
+                case Theme.Urban:
+                    y = b * 4f * def.hills;      // a city is built on level ground
+                    break;
                 case Theme.Desert:
                     float warp = Fbm(nx * 2 + 9, nz * 2 + 9, 2) * 6;
                     y += (Mathf.Sin((x * 0.8f + z * 0.35f) / 17f + warp) * 0.5f + 0.5f) * 5f * def.hills;
@@ -67,6 +71,17 @@ namespace BIS
         float BuiltHeight(float x, float z, out byte tg, out float liq, out bool lava)
         {
             float y = LayoutHeight(x, z, out tg, out liq, out lava);
+            if (def.Floating)
+            {
+                // islands are flat already: just level the post itself, and never raise the void into a skirt
+                if (y < VoidY + 1) return y;
+                for (int i = 0; i < postXZ.Count; i++)
+                {
+                    float r = Vector2.Distance(new Vector2(x, z), postXZ[i]);
+                    if (r < 15) y = Mathf.Lerp(postH[i], y, Mathf.SmoothStep(0, 1, Mathf.InverseLerp(10, 15, r)));
+                }
+                return y;
+            }
             for (int i = 0; i < postXZ.Count; i++)
             {
                 float r = Vector2.Distance(new Vector2(x, z), postXZ[i]);
@@ -162,7 +177,8 @@ namespace BIS
             else c = Color.Lerp(c, th.steep, Mathf.SmoothStep(0.45f, 0.7f, slope));
             if ((tg & TagLake) != 0) c = def.theme == Theme.Snow ? Color.Lerp(new Color(0.62f, 0.8f, 0.9f), new Color(0.85f, 0.93f, 0.98f), n2) : Color.Lerp(c, new Color(0.3f, 0.28f, 0.22f), 0.6f);
             if ((tg & TagWet) != 0) c = def.theme == Theme.Desert ? Color.Lerp(th.patch, th.path, 0.6f) * 0.92f : def.theme == Theme.Volcanic ? new Color(0.1f, 0.08f, 0.08f) : def.theme == Theme.Snow ? new Color(0.5f, 0.56f, 0.62f) : new Color(0.3f, 0.27f, 0.2f);
-            if ((tg & TagRoad) != 0 && slope < 0.3f) c = Color.Lerp(c, th.path, 0.85f);
+            if ((tg & TagRoad) != 0 && slope < 0.3f && def.theme != Theme.Urban) c = Color.Lerp(c, th.path, 0.85f);   // city streets are laid as asphalt meshes
+            if (def.Floating) c = Color.Lerp(c, Color.Lerp(th.steep, new Color(0.48f, 0.4f, 0.31f), n2), Mathf.SmoothStep(0.3f, 0.55f, slope));   // island cliffs are rock
             if (def.theme == Theme.Volcanic && y < -5 && n2 < (channels.Count > 0 ? 0.1f : 0.32f) && (tg & (TagRoad | TagClear)) == 0) { c = new Color(1f, 0.35f, 0.08f, 0); }
             c *= 0.94f + 0.12f * n2;
             c.a = c.a < 0.5f ? 0 : 1;
@@ -189,9 +205,13 @@ namespace BIS
                             Vector3 n1 = Vector3.Cross(p01 - p00, p11 - p00).normalized;
                             Vector3 n2 = Vector3.Cross(p11 - p00, p10 - p00).normalized;
                             Vector3 c1 = (p00 + p01 + p11) / 3, c2 = (p00 + p11 + p10) / 3;
-                            k.Tri(p00, p01, p11, GroundColor(c1.x, c1.z, c1.y, 1 - n1.y));
-                            k.Tri(p00, p11, p10, GroundColor(c2.x, c2.z, c2.y, 1 - n2.y));
+                            // floating maps: no ground where any corner is in the void (holes the size of the sky)
+                            float v = VoidY + 1;
+                            bool void00 = p00.y < v, void11 = p11.y < v;
+                            if (!(void00 || void11 || p01.y < v)) k.Tri(p00, p01, p11, GroundColor(c1.x, c1.z, c1.y, 1 - n1.y));
+                            if (!(void00 || void11 || p10.y < v)) k.Tri(p00, p11, p10, GroundColor(c2.x, c2.z, c2.y, 1 - n2.y));
                         }
+                    if (k.Count == 0) continue;
                     var go = k.Make($"chunk_{cx}_{cz}", root, false);
                     go.layer = Layers.Ground;
                     go.GetComponent<MeshRenderer>().receiveShadows = true;
@@ -213,10 +233,26 @@ namespace BIS
                     Color c = GroundColor(wx, wz, hy, 1 - nn.y);
                     float shade = Mathf.Clamp01(0.6f + Vector3.Dot(nn, new Vector3(-0.5f, 0.8f, 0.3f).normalized) * 0.5f);
                     c = c * shade; c.a = 1;
+                    if (def.Floating)
+                    {
+                        // islands: brighter the higher they stand; the void is cloud
+                        if (hy < VoidY + 1) c = new Color(0.62f, 0.7f, 0.82f);
+                        else c *= Mathf.Lerp(0.75f, 1.2f, Mathf.InverseLerp(0, 60, hy));
+                        c.a = 1;
+                    }
                     float edge = Mathf.Max(Mathf.Abs(wx), Mathf.Abs(wz));
                     if (edge > PlayHalf) c *= 0.45f;
                     minimap.SetPixel(x, y, c);
                 }
+            // walkways show on the map too
+            foreach (var sp in spans)
+                for (float s = 0; s <= sp.len; s += size / n * 0.5f)
+                    for (float t = -sp.w / 2; t <= sp.w / 2; t += size / n * 0.5f)
+                    {
+                        Vector2 q = sp.a + sp.u * s + new Vector2(-sp.u.y, sp.u.x) * t;
+                        int px = Mathf.FloorToInt((q.x + half) / size * n), py = Mathf.FloorToInt((q.y + half) / size * n);
+                        if (px >= 0 && py >= 0 && px < n && py < n) minimap.SetPixel(px, py, new Color(0.85f, 0.82f, 0.74f));
+                    }
             minimap.Apply();
         }
 
@@ -273,6 +309,7 @@ namespace BIS
                 float x = R(-lim, lim), z = R(-lim, lim);
                 if (NearPost(x, z, 26) || !Clear(x, z)) continue;
                 float y = Height(x, z);
+                if (def.Floating && (y < VoidY + 1 || (TagAt(x, z) & TagRidge) != 0)) continue;   // only on island tops
                 var nrm = Normal(x, z);
                 float roll = R();
                 var k = KitAt(x, z);
@@ -299,6 +336,28 @@ namespace BIS
                         else if (roll < 0.7f) { float s = R(1.5f, 5f); k.Rock(p + Vector3.up * s * 0.2f, new Vector3(s * 1.3f, s * 0.9f, s), yawQ, Color.Lerp(th.steep, new Color(0.6f, 0.66f, 0.74f), R() * 0.5f), rng.Next()); k.Rock(p + Vector3.up * s * 0.42f, new Vector3(s * 1.1f, s * 0.35f, s * 0.85f), yawQ, th.high, rng.Next(), 0.15f); ColSphere(p + Vector3.up * s * 0.2f, s * 0.48f); }
                         else if (roll < 0.85f) { float hh = R(3, 9); k.Cone(p + Vector3.up * hh / 2, hh * 0.22f, hh, Quaternion.Euler(R(-12, 12), R(0, 360), R(-12, 12)), MeshKit.Glow(new Color(0.55f, 0.8f, 0.95f) * 0.55f), 5); ColCap(p, hh * 0.15f, hh * 0.8f); }
                         else Wreck(k, p, yawQ, nrm);
+                        break;
+                    case Theme.Urban:
+                        // rubble, scrap and weeds in the open ground outside the streets
+                        if (roll < 0.5f) { float s = R(0.8f, 2.4f); k.Rock(p + Vector3.up * s * 0.2f, new Vector3(s * 1.5f, s * 0.6f, s * 1.2f), yawQ, Color.Lerp(new Color(0.5f, 0.49f, 0.47f), new Color(0.35f, 0.33f, 0.31f), R()), rng.Next(), 0.35f); ColSphere(p + Vector3.up * s * 0.15f, s * 0.45f); }
+                        else if (roll < 0.6f) Wreck(k, p, yawQ, nrm);
+                        else { float s = R(0.5f, 1f); k.Sphere(p + Vector3.up * s * 0.3f, new Vector3(s * 1.4f, s * 0.7f, s * 1.4f), yawQ, new Color(0.35f, 0.42f, 0.25f), 6, 3); }
+                        break;
+                    case Theme.Sky:
+                        if (nrm.y < 0.85f) break;
+                        if (roll < 0.3f) { float s = R(0.8f, 1.8f); k.Sphere(p + Vector3.up * s * 0.4f, new Vector3(s * 1.5f, s, s * 1.5f), yawQ, Color.Lerp(new Color(0.25f, 0.48f, 0.22f), new Color(0.45f, 0.6f, 0.3f), R()), 6, 4); }
+                        else if (roll < 0.48f) { float hh = R(5, 9); k.Cyl(p + Vector3.up * hh * 0.3f, 0.3f, hh * 0.6f, Quaternion.identity, new Color(0.4f, 0.3f, 0.22f), 6); k.Sphere(p + Vector3.up * hh * 0.78f, new Vector3(hh * 0.6f, hh * 0.45f, hh * 0.6f), yawQ, Color.Lerp(new Color(0.85f, 0.55f, 0.65f), new Color(0.35f, 0.6f, 0.3f), R() < 0.4f ? 0 : 1), 7, 4); ColCap(p, 0.35f, hh * 0.6f); }
+                        else if (roll < 0.62f) { float s = R(1f, 2.6f); k.Rock(p + Vector3.up * s * 0.25f, new Vector3(s * 1.3f, s * 0.8f, s), yawQ, Color.Lerp(th.steep, new Color(0.8f, 0.78f, 0.72f), R() * 0.5f), rng.Next(), 0.25f); ColSphere(p + Vector3.up * s * 0.2f, s * 0.45f); }
+                        else if (roll < 0.7f) { float hh = R(2, 4); k.Cone(p + Vector3.up * hh / 2, hh * 0.25f, hh, Quaternion.Euler(R(-12, 12), R(0, 360), R(-12, 12)), MeshKit.Glow(new Color(0.5f, 0.85f, 1f) * 0.6f), 5); ColCap(p, hh * 0.15f, hh * 0.7f); }
+                        else if (roll < 0.76f)
+                        {
+                            // a broken white column from whoever lived up here
+                            float hh = R(2.5f, 6.5f);
+                            k.Cyl(p + Vector3.up * hh / 2, 0.6f, hh, Quaternion.identity, new Color(0.88f, 0.86f, 0.8f), 8);
+                            k.Box(p + Vector3.up * 0.2f, new Vector3(1.7f, 0.4f, 1.7f), yawQ, new Color(0.78f, 0.76f, 0.7f));
+                            ColCap(p, 0.65f, hh);
+                        }
+                        else { float s = R(0.3f, 0.6f); k.Cone(p + Vector3.up * s * 0.4f, s * 0.5f, s * 0.9f, yawQ, Color.Lerp(new Color(0.95f, 0.85f, 0.4f), new Color(0.9f, 0.5f, 0.7f), R()), 5); }
                         break;
                     case Theme.Volcanic:
                         if (roll < 0.45f) { float s = R(1.5f, 5.5f); k.Rock(p + Vector3.up * s * 0.2f, new Vector3(s * 1.3f, s, s * 1.1f), yawQ, Color.Lerp(new Color(0.1f, 0.09f, 0.1f), th.high, R() * 0.5f), rng.Next(), 0.35f); ColSphere(p + Vector3.up * s * 0.2f, s * 0.5f); }
@@ -389,7 +448,7 @@ namespace BIS
                 go.transform.position = p;
                 var cp = go.AddComponent<CommandPost>();
                 cp.Init(battle, i, pd.name, pd.owner, p);
-                bool baseCamp = pd.vehicles.Length >= 3;
+                bool baseCamp = pd.IsHome;
                 Outpost(go.transform, p, baseCamp, i);
                 // vehicle pads round the post
                 for (int v = 0; v < pd.vehicles.Length; v++)
@@ -416,7 +475,8 @@ namespace BIS
             var k = new MeshKit();
             var r = new System.Random(def.seed + idx * 31);
             float Rn(float a, float b) => a + (b - a) * (float)r.NextDouble();
-            Color wall = def.theme == Theme.Snow ? new Color(0.72f, 0.75f, 0.8f) : def.theme == Theme.Volcanic ? new Color(0.3f, 0.28f, 0.28f) : def.theme == Theme.Forest ? new Color(0.5f, 0.46f, 0.38f) : new Color(0.78f, 0.68f, 0.52f);
+            Color wall = def.theme == Theme.Snow ? new Color(0.72f, 0.75f, 0.8f) : def.theme == Theme.Volcanic ? new Color(0.3f, 0.28f, 0.28f) : def.theme == Theme.Forest ? new Color(0.5f, 0.46f, 0.38f)
+                       : def.theme == Theme.Urban || def.theme == Theme.Sky ? WallColor : new Color(0.78f, 0.68f, 0.52f);
             Color dark = wall * 0.6f; dark.a = 1;
             // central platform
             k.Cyl(p + Vector3.up * 0.15f, 4.2f, 0.5f, Quaternion.identity, dark, 6);
@@ -431,6 +491,7 @@ namespace BIS
                 Vector3 wp = p + q * new Vector3(0, 0, rad);
                 wp.y = Height(wp.x, wp.z);
                 float len = Rn(3.5f, 5.5f), hh = Rn(1.1f, 1.5f);
+                if (OnRoad(wp.x, wp.z)) continue;      // where a road arrives the ring stays open, so vehicles can drive in
                 k.Box(wp + Vector3.up * (hh / 2 - 0.2f), new Vector3(len, hh, 0.7f), q, wall);
                 k.Box(wp + Vector3.up * (hh - 0.15f), new Vector3(len + 0.2f, 0.15f, 0.85f), q, dark);
                 Col(wp + Vector3.up * (hh / 2 - 0.2f), new Vector3(len, hh, 0.7f), q);
@@ -518,8 +579,17 @@ namespace BIS
             if (big) { used.Add(Pick()); used.Add(Pick()); }   // the bunker and tower took two directions (roughly)
             void Put(string model, float dist, float scale, float colR)
             {
-                float th = Pick() * Mathf.Deg2Rad;
-                Vector3 q = p + new Vector3(Mathf.Cos(th), 0, Mathf.Sin(th)) * dist;
+                // never in a road (city posts stand at crossings: a dish in the street would wall the post off for tanks)
+                float th = 0; Vector3 q = p;
+                for (int t = 0; t < 8; t++)
+                {
+                    th = Pick() * Mathf.Deg2Rad;
+                    q = p + new Vector3(Mathf.Cos(th), 0, Mathf.Sin(th)) * dist;
+                    bool road = OnRoad(q.x, q.z);
+                    for (int a = 0; a < 4 && !road; a++) road = OnRoad(q.x + (a == 0 ? 4 : a == 1 ? -4 : 0), q.z + (a == 2 ? 4 : a == 3 ? -4 : 0));
+                    if (!road && (!def.Floating || Height(q.x, q.z) > VoidY + 1)) break;
+                    if (t == 7) return;
+                }
                 q.y = Height(q.x, q.z) - 0.1f;
                 var m = ImportedModels.Load("Models/Kit/" + model, true, Quaternion.identity, 0, scale, true);
                 if (!m) return;
@@ -561,6 +631,7 @@ namespace BIS
             Game.I.sun.shadows = LightShadows.Soft;
             Game.Cam.clearFlags = CameraClearFlags.Skybox;
             Game.Cam.farClipPlane = 1400;
+            if (def.Floating) BuildClouds();
         }
 
         void Update()

@@ -226,7 +226,7 @@ namespace BIS
         {
             CommandPost best = null;
             foreach (var p in posts)
-                if (cfg.land.posts[p.index].owner == t && cfg.land.posts[p.index].vehicles.Length >= 3) best = p;
+                if (cfg.land.posts[p.index].owner == t && cfg.land.posts[p.index].IsHome) best = p;
             return best;
         }
 

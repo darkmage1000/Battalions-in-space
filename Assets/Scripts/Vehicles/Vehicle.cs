@@ -347,6 +347,12 @@ namespace BIS
             if (drv && drv.net == Unit.NetMode.HostRemote) NetPose(dt);
             else if (def.IsGround) MoveGround(din, drv != null, dt);
             else MoveFlyer(din, drv != null, dt);
+            // floating isles: a craft that sinks into the clouds is lost
+            if (battle.land != null && battle.land.Floating && transform.position.y < battle.land.KillY && hp > 0)
+            {
+                TakeDamage(new DamageInfo { amount = maxHp * 10, team = -1, type = DmgType.Crush, point = transform.position });
+                if (!Alive) return;
+            }
 
             if (net == Unit.NetMode.GuestLocal)
             {

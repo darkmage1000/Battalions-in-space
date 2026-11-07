@@ -60,6 +60,28 @@ namespace BIS.EditorTools
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Can the bots get from every post to every other on foot and in a vehicle? (A* on the walk grid.)
+        /// Build the map in a call of its own first: colliders of a map finished in the same call are still there.
+        /// </summary>
+        public static string Routes()
+        {
+            var b = Battle.I;
+            if (!b || !b.land) return "no land battle";
+            var nav = b.land.nav;
+            var m = typeof(Nav).GetMethod("AStar", BindingFlags.NonPublic | BindingFlags.Instance);
+            var path = new System.Collections.Generic.List<Vector3>();
+            int foot = 0, veh = 0, n = 0; var sb = new StringBuilder();
+            for (int i = 0; i < b.posts.Count; i++)
+                for (int j = i + 1; j < b.posts.Count; j++)
+                {
+                    n++;
+                    if ((bool)m.Invoke(nav, new object[] { b.posts[i].Pos, b.posts[j].Pos, false, path })) foot++; else sb.Append($"no foot route {b.posts[i].postName} - {b.posts[j].postName}; ");
+                    if ((bool)m.Invoke(nav, new object[] { b.posts[i].Pos, b.posts[j].Pos, true, path })) veh++; else sb.Append($"no vehicle route {b.posts[i].postName} - {b.posts[j].postName}; ");
+                }
+            return $"{b.cfg.land.name}: foot {foot}/{n}, vehicle {veh}/{n}, enterable buildings {b.land.houses.Count}. {sb}";
+        }
+
         public static void SpawnPlayer(int cls = 0, int ship = -1)
         {
             var b = Battle.I;
@@ -301,6 +323,26 @@ namespace BIS.EditorTools
         }
 
         /// <summary>Put the player (on foot) at a position looking at a target.</summary>
+        /// <summary>Render the game camera from any point (no HUD) to Previews/Maps/&lt;file&gt;.png.</summary>
+        public static string CamShot(Vector3 pos, Vector3 look, string file, int w = 1600, int h = 900)
+        {
+            var cam = Game.Cam;
+            var keepP = cam.transform.position; var keepR = cam.transform.rotation;
+            cam.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos));
+            var rt = new RenderTexture(w, h, 24);
+            cam.targetTexture = rt; cam.Render(); cam.targetTexture = null;
+            RenderTexture.active = rt;
+            var t = new Texture2D(w, h, TextureFormat.RGB24, false);
+            t.ReadPixels(new Rect(0, 0, w, h), 0, 0); t.Apply();
+            RenderTexture.active = null; Object.DestroyImmediate(rt);
+            cam.transform.SetPositionAndRotation(keepP, keepR);
+            System.IO.Directory.CreateDirectory("Previews/Maps");
+            string path = $"Previews/Maps/{file}.png";
+            System.IO.File.WriteAllBytes(path, t.EncodeToPNG());
+            Object.DestroyImmediate(t);
+            return path;
+        }
+
         public static void Place(Vector3 p, Vector3 look)
         {
             var b = Battle.I; var me = b.player.unit;

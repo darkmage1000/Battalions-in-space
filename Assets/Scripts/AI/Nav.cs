@@ -32,6 +32,9 @@ namespace BIS
         static int plansFrame = -1, plansThisFrame;
         const int PlansPerFrame = 3;
 
+        // on a floating map a goal over the void snaps to the nearest island, which can be a long way off
+        int SnapRange => land.Floating ? 30 : 6;
+
         public Nav(LandWorld l)
         {
             land = l;
@@ -52,6 +55,7 @@ namespace BIS
                         if (lava || lt - y > 1.25f) { f = 0; v = lava || lt - y > 1.6f ? (byte)0 : (byte)30; }
                         else { f = 40; v = 30; }
                     }
+                    if (l.Floating && y < LandWorld.VoidY + 5) { f = 0; v = 0; }   // the void between islands
                     Vector3 p = new Vector3(x, y, z);
                     if (f > 0 && Physics.CheckCapsule(p + Vector3.up * 0.7f, p + Vector3.up * 1.7f, 0.8f, obstacles, QueryTriggerInteraction.Ignore)) f = 0;
                     if (v > 0 && Physics.CheckCapsule(p + Vector3.up * 1.2f, p + Vector3.up * 2.4f, 2.3f, obstacles, QueryTriggerInteraction.Ignore)) v = 0;
@@ -175,7 +179,7 @@ namespace BIS
 
         public Vector3 SnapPoint(Vector3 p, bool vehicle = false)
         {
-            int k = Snap(vehicle ? veh : foot, p, 10);
+            int k = Snap(vehicle ? veh : foot, p, Mathf.Max(10, SnapRange));
             return k >= 0 ? Center(k) : p;
         }
 
@@ -225,7 +229,7 @@ namespace BIS
         bool AStar(Vector3 a, Vector3 b, bool vehicle, List<Vector3> outPath)
         {
             var g = vehicle ? veh : foot;
-            int s = Snap(g, a), t = Snap(g, b);
+            int s = Snap(g, a, SnapRange), t = Snap(g, b, SnapRange);
             if (s < 0 || t < 0) return false;
             if (gScore == null) { gScore = new float[n * n]; from = new int[n * n]; stamp = new int[n * n]; }
             curStamp++;
@@ -322,7 +326,12 @@ namespace BIS
                     a.goal = goal; a.has = true; a.idx = 0; a.vehicle = vehicle;
                     a.replanAt = now + Random.Range(4f, 6f);
                     a.straight = LineClear(pos, goal, vehicle);
-                    if (!a.straight && !AStar(pos, goal, vehicle, a.path)) a.straight = true;
+                    if (!a.straight && !AStar(pos, goal, vehicle, a.path))
+                    {
+                        // no route: walk straight at it - except over the void, where the bot stays put
+                        a.straight = !land.Floating;
+                        if (land.Floating) { a.path.Clear(); a.path.Add(pos); a.idx = 0; }
+                    }
                     if (!a.straight && a.path.Count > 1) a.idx = 1;
                 }
             }
@@ -337,7 +346,7 @@ namespace BIS
             }
             if (a.idx >= a.path.Count) return direct.normalized;
             Vector3 to = Flat(a.path[a.idx] - pos);
-            return to.sqrMagnitude > 0.01f ? to.normalized : direct.normalized;
+            return to.sqrMagnitude > 0.01f ? to.normalized : land.Floating ? Vector3.zero : direct.normalized;
         }
 
         static Vector3 Flat(Vector3 v) { v.y = 0; return v; }

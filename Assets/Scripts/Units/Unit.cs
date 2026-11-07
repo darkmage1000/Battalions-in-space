@@ -248,7 +248,7 @@ namespace BIS
             hv = Vector3.MoveTowards(hv, new Vector3(wish.x, 0, wish.z), acc * dt);
             velocity.x = hv.x; velocity.z = hv.z;
 
-            if (grounded) { airTime = 0; if (velocity.y < 0) velocity.y = -3f; }
+            if (grounded) { airTime = 0; lastFooting = transform.position; if (velocity.y < 0) velocity.y = -3f; }
             else airTime += dt;
             if (input.jumpDown && grounded) { velocity.y = hero != null && hero.kind == HeroKind.Blade ? 9.5f : 7.2f; grounded = false; }
             // vault: running into something waist-high (crate, cover wall, rock) hops over it
@@ -289,12 +289,17 @@ namespace BIS
             {
                 if (airTime > 3.5f && !jetting) { Kill("lost in space"); return; }
             }
+            else if (battle.land != null && battle.land.Floating && transform.position.y < battle.land.KillY) { if (bot != null) { BotFalls++; BotFallFrom.Add(lastFooting); } Kill("fell from the isles"); return; }
             else if (battle.land != null && transform.position.y < battle.land.Height(transform.position.x, transform.position.z) - 8)
             {
                 transform.position = battle.land.Ground(transform.position) + Vector3.up;
             }
         }
 
+        /// <summary>Bots lost off the edge of a floating map (for checking the maps).</summary>
+        public static int BotFalls;
+        public static readonly List<Vector3> BotFallFrom = new List<Vector3>();
+        Vector3 lastFooting;
         bool InSpaceZeroG() => false;
         float lavaT, netAirT;
 

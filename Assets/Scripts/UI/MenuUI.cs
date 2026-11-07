@@ -77,7 +77,11 @@ namespace BIS
             y += 70;
             UI.Text(new Rect(x, y, 400, 30), "MAP", 22, UI.Gold); y += 36;
             if (qpMode == 0)
-                for (int i = 0; i < Maps.Land.Length; i++) { if (UI.Button(new Rect(x, y, 490, 50), Maps.Land[i].name, qpLand == i)) qpLand = i; y += 56; }
+            {
+                // two columns: there are more land maps than fit in one
+                for (int i = 0; i < Maps.Land.Length; i++) { if (UI.Button(new Rect(x + (i % 2) * 250, y + (i / 2) * 56, 240, 50), Maps.Land[i].name, qpLand == i, true, 19)) qpLand = i; }
+                y += (Maps.Land.Length + 1) / 2 * 56;
+            }
             else
                 for (int i = 0; i < Maps.Space.Length; i++) { if (UI.Button(new Rect(x, y, 490, 50), Maps.Space[i].name, qpSpace == i)) qpSpace = i; y += 56; }
             y += 10;
