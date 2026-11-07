@@ -9,7 +9,7 @@ namespace BIS
         public readonly List<Vector3> path = new List<Vector3>();
         public int idx;
         public Vector3 goal;
-        public float replanAt, skipCheckAt;
+        public float replanAt, skipCheckAt, waitFrom;
         public bool straight, has, vehicle;
     }
 
@@ -316,13 +316,18 @@ namespace BIS
             if (direct.sqrMagnitude < 1) return Vector3.zero;
             float now = Time.time;
             bool replan = !a.has || a.vehicle != vehicle || (goal - a.goal).sqrMagnitude > 36 || now >= a.replanAt;
-            if (!a.straight && a.has && a.idx < a.path.Count && (Flat(a.path[a.idx] - pos)).sqrMagnitude > 30 * 30) replan = true;
+            // strayed well off the route (pushed, knocked back, chased something): plan again. Measured from the leg we are
+            // on, not from its end - legs of a pulled-tight route can be 90 m long, and measuring to the end re-planned
+            // those bots every frame, which used up the per-frame budget and left other bots on stale routes for minutes.
+            if (!a.straight && a.has && a.idx > 0 && a.idx < a.path.Count && OffLeg(pos, a.path[a.idx - 1], a.path[a.idx]) > 14) replan = true;
             if (replan)
             {
                 if (Time.frameCount != plansFrame) { plansFrame = Time.frameCount; plansThisFrame = 0; }
-                if (plansThisFrame < PlansPerFrame || !a.has)
+                // over the budget this frame: wait, but never for long (a bot kept waiting gets its plan anyway)
+                bool overdue = a.waitFrom > 0 && now - a.waitFrom > 0.35f;
+                if (plansThisFrame < PlansPerFrame || !a.has || overdue)
                 {
-                    plansThisFrame++;
+                    plansThisFrame++; a.waitFrom = 0;
                     a.goal = goal; a.has = true; a.idx = 0; a.vehicle = vehicle;
                     a.replanAt = now + Random.Range(4f, 6f);
                     a.straight = LineClear(pos, goal, vehicle);
@@ -334,6 +339,7 @@ namespace BIS
                     }
                     if (!a.straight && a.path.Count > 1) a.idx = 1;
                 }
+                else if (a.waitFrom <= 0) a.waitFrom = now;
             }
             if (a.straight) return direct.normalized;
             float reach = vehicle ? 7 : 3;
@@ -350,6 +356,13 @@ namespace BIS
         }
 
         static Vector3 Flat(Vector3 v) { v.y = 0; return v; }
+
+        static float OffLeg(Vector3 p, Vector3 a, Vector3 b)
+        {
+            Vector2 p2 = new Vector2(p.x, p.z), a2 = new Vector2(a.x, a.z), ab = new Vector2(b.x, b.z) - a2;
+            float t = ab.sqrMagnitude > 0.0001f ? Mathf.Clamp01(Vector2.Dot(p2 - a2, ab) / ab.sqrMagnitude) : 0;
+            return (a2 + ab * t - p2).magnitude;
+        }
 
         /// <summary>Picture of the grid for checking a map: grey = walk, dark = blocked, blue = wading.</summary>
         public Texture2D Picture()

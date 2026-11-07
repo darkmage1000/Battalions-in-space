@@ -78,6 +78,7 @@ namespace BIS
         AudioSource jetLoop;
         public float rallyUntil, frenzyUntil, cloakUntil, dashUntil, invulnUntil;
         public float spreadMul = 1;   // set by PlayerControl for the player
+        public const float SniperHipSpread = 4f;   // degrees of wander on an unscoped sniper shot
 
         // -- battle royale: armour, supplies, keys, the grav-chute --
         public const int MaxMedkits = 5, MaxShields = 5;
@@ -501,6 +502,7 @@ namespace BIS
             if (dir.sqrMagnitude < 1f) dir = (input.aimPoint - Eye);
             dir.Normalize();
             float sp = spread * spreadMul * (crouching ? 0.6f : 1f) * (new Vector3(velocity.x, 0, velocity.z).magnitude > 3 ? 1.3f : 1f) * (input.aim ? 0.7f : 1f);
+            if (w.kind == WKind.Sniper && !input.aim) sp += SniperHipSpread;     // a sniper is aimed through the scope, not fired from the hip
             if (sp > 0) dir = Quaternion.AngleAxis(Random.Range(0, 360f), dir) * Quaternion.AngleAxis(Random.Range(0, sp), Vector3.Cross(dir, Vector3.up).normalized) * dir;
             Transform homing = (w.lockOn && lockTime >= 0.9f) ? lockTarget : null;
             Shots.Fire(w, from, dir, team, this, transform, faction.bolt, mul, homing);

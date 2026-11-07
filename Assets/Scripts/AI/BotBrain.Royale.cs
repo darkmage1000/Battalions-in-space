@@ -10,7 +10,7 @@ namespace BIS
     /// </summary>
     public partial class BotBrain
     {
-        enum RGoal { None, Loot, Chest, Vault, Zone, Roam, Boss }
+        enum RGoal { None, Loot, Chest, Vault, Zone, Roam, Boss, High }
         RGoal rGoal;
         LootItem rItem;
         LootChest rChest;
@@ -85,6 +85,7 @@ namespace BIS
                 if (aggression <= 0) aggression = Random.Range(0.35f, 1f);    // some bots pick fights, others keep their heads down
                 range *= aggression;
                 if (!Armed || Time.time - u.spawnTime < 35) range = Mathf.Min(range, 26);
+                else if (FloorHere is LandWorld.UpperFloor hf && hf.climb.tower) range *= 1.4f;   // the view from up there
                 var t = FindTarget(u.Eye, range, false);
                 // leave the boss alone unless well armed (or it is already after us)
                 if (t is Unit tu && tu.part.boss && !Strong && Time.time - u.lastHurt > 2) t = null;
@@ -130,15 +131,17 @@ namespace BIS
                 }
                 else if (rGoal == RGoal.Chest && rChest != null && d < 2.3f) { r.OpenChest(u, rChest); rChest = null; rGoalT = 0.5f; rScanT = 0; }
                 else if (rGoal == RGoal.Vault && rVault != null && d < 3f) { r.TryOpenVault(u, rVault); rVault = null; rGoalT = 0; }
-                else if (d > 1.2f) { move = Toward(pos, goal); sprint = d > 18 || rGoal == RGoal.Zone; }
+                else if (d > 1.2f || (rGoal != RGoal.High && Mathf.Abs(yd) > 2.2f)) { move = ClimbToward(pos, goal); sprint = d > 18 || rGoal == RGoal.Zone; }
                 // stuck on the way to an item (a wall, a roof): give it up
                 if (rGoal == RGoal.Loot || rGoal == RGoal.Chest) { if (stuckT > 0.8f) rStuckT += dt; if (rStuckT > 4) { if (rItem != null) rSkip.Add(rItem.id); rItem = null; rChest = null; rGoalT = 0; rStuckT = 0; } }
                 // any goal: no real progress toward it for 6 s (a wall, a fence, a roof) = give it up and pick another
-                if (d < rProgD - 2) { rProgD = d; rProgT = 0; }
-                else if (d > 2.5f) { rProgT += dt; if (rProgT > 6) { if (rItem != null) rSkip.Add(rItem.id); if (rChest != null) rSkipChests.Add(rChest); rItem = null; rChest = null; rGoalT = 0; rProgT = 0; rProgD = 1e9f; } }
+                float left = LeftToGo(pos, goal, d);
+                if (left < rProgD - 2) { rProgD = left; rProgT = 0; }
+                else if (left > 2.5f) { rProgT += dt; if (rProgT > 6) { if (rItem != null) rSkip.Add(rItem.id); if (rChest != null) rSkipChests.Add(rChest); rItem = null; rChest = null; rGoalT = 0; rProgT = 0; rProgD = 1e9f; } }
                 aimPoint = u.Eye + (move.sqrMagnitude > 0.01f ? move : u.transform.forward) * 30 + Vector3.up * 0.4f;
+                TickHigh(pos, d, ref aimPoint, ref crouch);
                 // a long way to go: take a vehicle if one is close
-                if (enterT <= 0 && d > 200 && !u.IsHero)
+                if (enterT <= 0 && d > 200 && !u.IsHero && cClimb == null)
                 {
                     enterT = 6;
                     foreach (var v in b.vehicles)
@@ -151,7 +154,8 @@ namespace BIS
             float lim = b.land.PlayHalf - 15;
             if (Mathf.Abs(pos.x) > lim || Mathf.Abs(pos.z) > lim) move = (-pos).normalized;
             if (OutOfAmmo(u.Weapon) && u.weapons[1 - u.cur] != null && !OutOfAmmo(u.weapons[1 - u.cur])) u.input.swap = true;
-            move = Avoid(pos, move, dt);
+            // on a climb route or an upper floor the way is known: no feelers (they swerve at parapets and jump bots off ledges)
+            if (cClimb == null && FloorHere == null) move = Avoid(pos, move, dt); else lastPos = pos;
             if (u.cls != null && u.cls.special == Special.Jetpack && !u.grounded && move.sqrMagnitude > 0.1f && stuckT > 0.6f) u.input.jump = true;
 
             u.input.move = Vector3.ClampMagnitude(new Vector3(move.x, 0, move.z), 1);
@@ -204,6 +208,18 @@ namespace BIS
                 aimPoint = tp + Vector3.up * d * 0.12f;
             }
             if (abilityT <= 0 && u.abilityCd <= 0 && u.cls != null && (u.cls.special == Special.Frenzy || u.cls.special == Special.Rally) && d < 30) { u.input.ability = true; abilityT = Random.Range(4, 9); }
+            var fl = FloorHere;
+            if (fl != null)
+            {
+                bool zoneCall = r.OutsideZone(pos) || (r.shrinking && r.OutsideNext(pos));
+                if (zoneCall) move = ClimbToward(pos, new Vector3(r.nextC.x, pos.y, r.nextC.y));
+                else
+                {
+                    move = KeepOnFloor(pos, move * (fl.climb.tower ? 0.6f : 1f), fl);
+                    // behind a parapet: duck between bursts (snipers already lie low)
+                    if (fl.climb.tower && w.def.kind != WKind.Sniper && burst < 0 && d > 12) crouch = true;
+                }
+            }
             // badly hurt and far enough away: back off and heal behind cover
             if (u.hp < u.maxHp * 0.3f && u.medkits > 0 && d > 35 && Time.time - u.lastHurt > 1.5f && !u.Using) { u.UseBest(); fire = false; }
             if (u.Using) { move = Vector3.zero; fire = false; }
@@ -219,6 +235,7 @@ namespace BIS
                 case RGoal.Zone: return !b.royale.OutsideNext(pos) && (new Vector2(pos.x, pos.z) - b.royale.nextC).magnitude < b.royale.nextR * 0.75f;
                 case RGoal.Boss: return b.royale.boss == null || !b.royale.boss.Alive || !Strong;
                 case RGoal.Roam: { Vector3 d = rRoam - pos; d.y = 0; return d.magnitude < 4; }
+                case RGoal.High: return HighDone(pos);
                 default: return true;
             }
         }
@@ -243,6 +260,8 @@ namespace BIS
             rStuckT = 0;
             if (rItem != null && rItem.claimedBy == u) rItem.claimedBy = null;
             rItem = null; rChest = null; rVault = null;
+            if (rHigh != null && rHigh.holder == u) rHigh.holder = null;
+            rHigh = null;
             // 1. the zone
             bool late = LateForZone(pos);
             if (r.OutsideZone(pos) || (late && r.OutsideNext(pos)))
@@ -268,7 +287,13 @@ namespace BIS
                 {
                     if (rSkip.Contains(it.id) || (it.claimedBy && it.claimedBy != u && it.claimedBy.Alive && Time.time < it.claimUntil)) continue;
                     if (r.CantTake(u, it) != null) continue;
-                    if (it.pos.y - b.land.Top(it.pos.x, it.pos.z) > 2.5f && Mathf.Abs(it.pos.y - pos.y) > 2f) continue;   // up a floor: bots can't route there
+                    float climbCost = 0;
+                    if (it.pos.y - b.land.Top(it.pos.x, it.pos.z) > 2.5f && Mathf.Abs(it.pos.y - pos.y) > 2f)
+                    {
+                        var itf = b.land.FloorAt(it.pos);
+                        if (itf == null) continue;                  // on a roof or a ledge with no way up
+                        climbCost = 8 + (itf.c.y - b.land.Top(itf.c.x, itf.c.z)) * 2.5f;   // up the stairs / ramps
+                    }
                     float want;
                     switch (it.kind)
                     {
@@ -280,7 +305,7 @@ namespace BIS
                         default: want = Supplied ? 0 : 0.6f; break;
                     }
                     if (want <= 0) continue;
-                    float dd = (it.pos - pos).magnitude;
+                    float dd = (it.pos - pos).magnitude + climbCost;
                     float s = want / (8 + dd);
                     if (s > best) { best = s; pick = it; }
                 }
@@ -292,6 +317,8 @@ namespace BIS
                 }
                 if (pick != null) { rGoal = RGoal.Loot; rItem = pick; pick.claimedBy = u; pick.claimUntil = Time.time + 15; return; }
             }
+            // high ground: a long gun and a tower in the zone - go and hold its roof for a while
+            if (!late && PickHighGround(pos)) return;
             // 4. the boss, if we are ready for it
             if (Strong && r.boss != null && r.boss.Alive && (r.boss.unit.transform.position - pos).magnitude < 320 && Random.value < 0.75f) { rGoal = RGoal.Boss; return; }
             // late in the match a well-supplied bot goes looking for someone (where it last heard shooting, roughly)

@@ -15,6 +15,80 @@ namespace BIS
         public readonly List<House> upperFloors = new List<House>();
         public int towersBuilt, twoStoreysBuilt;
 
+        /// <summary>A walking route up a building for bots: node 0 is on the ground outside, then one point after another
+        /// (stair foot, stair top, across the floor...) - every upper floor is one of the nodes.</summary>
+        public class Climb
+        {
+            public Vector3[] nodes;
+            public bool tower;
+            public Vector3 c;
+            public float reach;                         // how far from c the building goes (for finding it)
+            public readonly List<UpperFloor> levels = new List<UpperFloor>();
+            public Unit holder; public float holdUntil; // a bot keeping the top of a tower
+            public UpperFloor Top => levels[levels.Count - 1];
+        }
+
+        /// <summary>One floor above the ground: its slab (for "is this point on it") and its node on the climb.</summary>
+        public class UpperFloor
+        {
+            public Climb climb;
+            public int node;
+            public int lo, hi;                           // the route nodes that are on (or start from) this floor
+            public Vector3 c;                            // middle, at the floor's top
+            public Quaternion rot;
+            public float hx, hz;                         // half size of the slab
+            public float holeX = 999, holeHalf, holeZ0, holeZ1;   // a stairwell hole (towers)
+            public float divX = 999, gapZ;                         // an inner wall across x = divX with a doorway at z = gapZ (houses)
+            public float LocalX(Vector3 p) => (Quaternion.Inverse(rot) * (p - c)).x;
+            public bool Contains(Vector3 p, float inset = 0, float below = 0.8f, float above = 2.4f)
+            {
+                if (p.y < c.y - below || p.y > c.y + above) return false;
+                Vector3 l = Quaternion.Inverse(rot) * (p - c);
+                if (Mathf.Abs(l.x) > hx - inset || Mathf.Abs(l.z) > hz - inset) return false;
+                if (Mathf.Abs(l.x - holeX) < holeHalf + inset && l.z > holeZ0 - inset && l.z < holeZ1 + inset) return false;
+                return true;
+            }
+            public Vector3 World(float x, float z) => c + rot * new Vector3(x, 0, z);
+        }
+
+        public readonly List<Climb> climbs = new List<Climb>();
+        public readonly List<UpperFloor> floorsUp = new List<UpperFloor>();
+
+        /// <summary>The upper floor a point stands on (null on the ground or anywhere else).</summary>
+        public UpperFloor FloorAt(Vector3 p)
+        {
+            foreach (var cl in climbs)
+            {
+                float dx = p.x - cl.c.x, dz = p.z - cl.c.z;
+                if (dx * dx + dz * dz > cl.reach * cl.reach) continue;
+                foreach (var f in cl.levels) if (f.Contains(p)) return f;
+            }
+            return null;
+        }
+
+        /// <summary>The climb whose route passes closest to p (within `max` metres of a leg, heights counted double) and
+        /// that leg: from node `seg` to node `seg + 1`.</summary>
+        public Climb ClimbNear(Vector3 p, float max, out int seg)
+        {
+            seg = -1; Climb best = null; float bd = max * max;
+            Vector3 ps = new Vector3(p.x, p.y * 2, p.z);
+            foreach (var cl in climbs)
+            {
+                float dx = p.x - cl.c.x, dz = p.z - cl.c.z;
+                if (dx * dx + dz * dz > (cl.reach + max) * (cl.reach + max)) continue;
+                for (int i = 0; i < cl.nodes.Length - 1; i++)
+                {
+                    Vector3 a = cl.nodes[i], b = cl.nodes[i + 1];
+                    a.y *= 2; b.y *= 2;
+                    Vector3 ab = b - a;
+                    float t = ab.sqrMagnitude > 0.0001f ? Mathf.Clamp01(Vector3.Dot(ps - a, ab) / ab.sqrMagnitude) : 0;
+                    float d2 = (a + ab * t - ps).sqrMagnitude;
+                    if (d2 < bd) { bd = d2; best = cl; seg = i; }
+                }
+            }
+            return best;
+        }
+
         /// <summary>A wall across the inside of a floor with a doorway, making two rooms.</summary>
         void InnerWall(MeshKit k, Vector3 floor, Quaternion rot, float w, float dp, float hh, Color col)
         {
@@ -48,6 +122,13 @@ namespace BIS
             {
                 houses.Remove(upper);       // the walk grid only knows the ground floor
                 upperFloors.Add(upper);
+                var cl = new Climb { c = upper.center, reach = Mathf.Max(w, dp) * 0.75f + 10 };
+                var uf = new UpperFloor { climb = cl, c = upper.center, rot = rot, hx = w / 2 - 0.3f, hz = dp / 2 - 0.3f, divX = w * 0.18f, gapZ = -dp * 0.12f };
+                // a door on the +x side opens into the small room: through the inner doorway to the middle
+                if ((door + 2) % 4 == 1) cl.nodes = new[] { upper.doorOut, upper.door, upper.doorIn, uf.World(uf.divX + 0.9f, uf.gapZ), uf.World(uf.divX - 0.9f, uf.gapZ), upper.center };
+                else cl.nodes = new[] { upper.doorOut, upper.door, upper.doorIn, upper.center };
+                uf.node = cl.nodes.Length - 1; uf.lo = 1; uf.hi = uf.node;
+                cl.levels.Add(uf); climbs.Add(cl); floorsUp.Add(uf);
             }
             InnerWall(k, up + Vector3.up * 0.2f, rot, w, dp, 3.6f, Shade(col, 0.92f));
             twoStoreysBuilt++;
@@ -134,6 +215,32 @@ namespace BIS
                 var hs = new House { center = P(0, y + 0.2f, 0), rot = rot, w = W - 2 * sw - 1, d = W - 3 };
                 hs.door = hs.doorIn = hs.doorOut = hs.center;
                 upperFloors.Add(hs);
+            }
+            // the bots' route up: in from outside to the first ramp's foot, then each ramp and across each floor to the next
+            {
+                var nodes = new List<Vector3>();
+                float sIn = -(half - sw / 2) + 0.4f;           // the first ramp's strip (-x), a little in from its edge
+                Vector3 eZ = P(sIn, 0, -half - 1.6f), eX = P(-half - 1.6f, 0, -half + 1.5f);
+                eZ.y = Height(eZ.x, eZ.z); eX.y = Height(eX.x, eX.z);
+                nodes.Add(Mathf.Abs(eZ.y - (hi + 0.2f)) <= Mathf.Abs(eX.y - (hi + 0.2f)) ? eZ : eX);
+                var cl = new Climb { tower = true, c = b, reach = half * 1.45f + 4 };
+                for (int f = 1; f <= floors; f++)
+                {
+                    int side = (f - 1) % 2 == 0 ? -1 : 1;
+                    float s = side * (half - sw / 2), s2 = s - side * 0.4f;
+                    float y0 = (f - 1) * FH + 0.2f, y1 = f * FH + 0.2f;
+                    nodes.Add(P(s2, y0, -half + 1.5f));              // foot of the ramp
+                    nodes.Add(P(s2, y1, half - 1.2f));               // top of the ramp
+                    nodes.Add(P(0.3f * s, y1, half - 2.0f));         // off the landing, clear of the stairwell
+                    var uf = new UpperFloor { climb = cl, node = nodes.Count, c = P(0, y1, 0), rot = rot, hx = half - 0.35f, hz = half - 0.35f };
+                    if (f > 0) { uf.holeX = s; uf.holeHalf = sw / 2; uf.holeZ0 = -half - 1; uf.holeZ1 = half - land; }
+                    nodes.Add(uf.c);                                 // the middle of the floor
+                    uf.lo = uf.node - 2; uf.hi = f < floors ? uf.node + 3 : uf.node;
+                    cl.levels.Add(uf); floorsUp.Add(uf);
+                    if (f < floors) nodes.Add(P(-0.3f * s, y1, -half + 2.0f));   // toward the next ramp's foot
+                }
+                cl.nodes = nodes.ToArray();
+                climbs.Add(cl);
             }
             // a sign of what it is: a parking-deck style band and a light on top
             k.Box(P(0, H + 1.5f, half - 0.3f), new Vector3(4, 1.2f, 0.2f), rot, MeshKit.Glow(new Color(0.4f, 0.8f, 1f) * 0.6f));

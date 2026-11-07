@@ -198,7 +198,11 @@ namespace BIS
             float zoomMul = me.input.aim && me.Weapon.def.zoomFov > 0 ? 0.25f : me.input.aim ? 0.6f : 1f;
             var wd = me.Weapon.def;
             float range = wd.EffectiveRange;
-            float lookMul = Assist(me.transform, range, wd.kind == WKind.Beam || wd.kind == WKind.Blade || wd.Hitscan ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade);
+            // snipers get no shot-bending and no view pull: the crosshair is where the shot goes. Through the scope the view
+            // only slows a little over a target (friction); from the hip there is no help at all.
+            bool sniper = wd.kind == WKind.Sniper;
+            float lookMul = Assist(me.transform, range, wd.kind == WKind.Beam || wd.kind == WKind.Blade || wd.Hitscan ? 0 : wd.speed, true, true, false, dt, wd.kind != WKind.Blade && !sniper);
+            if (sniper) lookMul = Ctl.Aim ? Mathf.Lerp(1, lookMul, 0.5f) : 1;
             camYaw += Ctl.Look.x * zoomMul * lookMul;
             camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * zoomMul * lookMul, -70, 75);
             Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;
@@ -209,7 +213,8 @@ namespace BIS
                 jump = Ctl.Jump, jumpDown = Ctl.JumpDown, sprint = Ctl.Sprint, crouch = Ctl.Crouch,
                 reload = Ctl.Reload, swap = Ctl.Swap, equip = Ctl.Equip, ability = Ctl.Ability,
             };
-            aimPoint = Magnet(CameraAim(me.transform));
+            aimPoint = sniper ? CameraAim(me.transform) : Magnet(CameraAim(me.transform));
+            if (sniper) assistOnTarget = false;
             inp.aimPoint = aimPoint;
             if (testMove.sqrMagnitude > 0) inp.move = Vector3.ClampMagnitude(inp.move + testMove, 1);
             if (testFire) { inp.fire = true; inp.fireDown = Time.frameCount % 10 == 0; }
