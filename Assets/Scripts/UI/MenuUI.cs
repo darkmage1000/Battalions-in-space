@@ -5,7 +5,7 @@ namespace BIS
     /// <summary>Main menu, Quickplay setup, options, how-to-play and credits. Conquest screens live in ConquestUI.</summary>
     public partial class MenuUI : MonoBehaviour
     {
-        public enum Screen { None, Main, Quick, Options, Help, Credits, ConquestSetup, Conquest, Multi, Profiles }
+        public enum Screen { None, Main, Quick, Options, Help, Credits, ConquestSetup, Conquest, Multi, Profiles, Royale }
         public Screen screen = Screen.Main;
         // quickplay choices
         int qpMode;         // 0 land, 1 space
@@ -33,6 +33,7 @@ namespace BIS
                 case Screen.Conquest: ConquestMapScreen(); break;
                 case Screen.Multi: Multi(); break;
                 case Screen.Profiles: ProfilesScreen(); break;
+                case Screen.Royale: RoyaleSetup(); break;
             }
         }
 
@@ -48,8 +49,9 @@ namespace BIS
             if (Profiles.Current == null) { screen = Screen.Profiles; return; }
             Title("Command posts, starfighters, capital ships and a galaxy to conquer");
             float w = UI.W;
-            float x = w / 2 - 230, y = 240;
+            float x = w / 2 - 230, y = 200;
             if (UI.Button(new Rect(x, y, 460, 70), "QUICKPLAY", false, true, 30)) { qpHost = false; screen = Screen.Quick; } y += 86;
+            if (UI.Button(new Rect(x, y, 460, 70), "BATTLE ROYALE", false, true, 30, new Color(0.55f, 0.35f, 0.15f))) { brHost = false; screen = Screen.Royale; } y += 86;
             if (UI.Button(new Rect(x, y, 460, 70), "PLAY ON WI-FI", false, true, 30)) { Net.Session.status = ""; screen = Screen.Multi; } y += 86;
             if (UI.Button(new Rect(x, y, 460, 70), "GALACTIC CONQUEST", false, true, 30)) screen = Screen.ConquestSetup; y += 86;
             if (UI.Button(new Rect(x, y, 460, 70), "OPTIONS", false, true, 30)) screen = Screen.Options; y += 86;

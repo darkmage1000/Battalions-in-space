@@ -45,6 +45,16 @@ namespace BIS
         public int[] rosterTeams;
         public bool[] rosterHuman;
         public int localIndex;                 // guest: which of them is us
+        // battle royale
+        public bool royale;
+        public int royalePlayers = 100;
+        public bool royaleClasses;             // on: everyone picks a class (its ability and equipment); weapons come from loot either way
+        public int royaleClass;                // the player's class when classes are on
+        public int royaleFaction;              // the player's race
+        public bool royaleDuo;                 // Wi-Fi: the guest drops on the host's team
+        public int[] rosterFactions;           // guest: everyone's race (royale)
+        public int[] rosterClasses;            // guest: everyone's class (royale)
+        public bool[] rosterBoss;              // guest: which of them is the boss (royale)
     }
 
     public class BattleResult
@@ -71,11 +81,11 @@ namespace BIS
     }
 
     /// <summary>Runs one battle (land or space): world, teams, people, spawning, scoring and the win rules.</summary>
-    public class Battle : MonoBehaviour
+    public partial class Battle : MonoBehaviour
     {
         public static Battle I;
         public BattleConfig cfg;
-        public readonly TeamState[] teams = new TeamState[2];
+        public TeamState[] teams = new TeamState[2];       // two sides; in a battle royale one per player (or per duo) plus the boss
         public readonly List<Participant> people = new List<Participant>();
         public Participant player;
         public readonly List<Unit> units = new List<Unit>();
@@ -85,6 +95,7 @@ namespace BIS
         public SpaceWorld space;
         public PlayerControl control;
         public Commander commander;
+        public Royale royale;                 // the battle royale rules (null in ordinary battles)
         public bool over;
         public float overTime;
         public BattleResult result;
@@ -119,6 +130,7 @@ namespace BIS
             root = transform;
             gameObject.AddComponent<Shots>();
             Shots.ResetStats();
+            if (cfg.royale) { BuildRoyale(); return; }
             for (int t = 0; t < 2; t++)
             {
                 var f = Factions.Get(cfg.factions[t]);
@@ -256,7 +268,7 @@ namespace BIS
             var u = go.AddComponent<Unit>();
             u.Init(this, p, Faction(p.team), c, h);
             if (!p.isPlayer && !p.remote && !cfg.netClient) { u.bot = new BotBrain(u); }
-            if (p.remote && cfg.netHost) u.net = Unit.NetMode.HostRemote;
+            if (p.remote && cfg.netHost) { u.net = Unit.NetMode.HostRemote; u.netPos = pos; }
             p.unit = u;
             p.lifeKills = 0;
             units.Add(u);
@@ -264,9 +276,11 @@ namespace BIS
             return u;
         }
 
-        public Vehicle SpawnVehicle(VehicleDef d, int team, Vector3 pos, Quaternion rot)
+        public Vehicle SpawnVehicle(VehicleDef d, int team, Vector3 pos, Quaternion rot) => SpawnVehicle(d, Faction(team), team, pos, rot);
+
+        public Vehicle SpawnVehicle(VehicleDef d, FactionDef f, int team, Vector3 pos, Quaternion rot)
         {
-            var v = Vehicle.Spawn(this, d, Faction(team), team, pos, rot);
+            var v = Vehicle.Spawn(this, d, f, team, pos, rot);
             v.transform.SetParent(root, true);
             if (BonusOf(1 - team) == Bonus.Saboteurs) v.hp *= 0.75f;
             vehicles.Add(v);
@@ -451,7 +465,7 @@ namespace BIS
             if (cfg.netClient) { ClientFrame(dt); return; }
             if (cfg.netHost) Net.NetHost.PreUnits(dt);
 
-            if (!over)
+            if (!over && !royale)
             {
                 // bot respawns
                 foreach (var p in people)
@@ -485,7 +499,7 @@ namespace BIS
                 commander?.Tick(dt);
                 FillPlayerVehicle(dt);
                 if (space) foreach (var s in space.ships) s.Tick(dt);
-                Rules(dt);
+                if (royale) royale.Rules(dt); else Rules(dt);
             }
             else
             {
@@ -709,7 +723,7 @@ namespace BIS
             var vp = victim.part;
             vp.deaths++;
             vp.unit = victim;
-            teams[victim.team].tickets -= 1;
+            if (victim.team >= 0 && victim.team < teams.Length) teams[victim.team].tickets -= 1;
             vp.diedAt = Time.time;
             vp.respawn = RespawnPost;
             string kname = killer ? killer.displayName : null;
@@ -719,7 +733,7 @@ namespace BIS
                 kp.kills++;
                 AddPoints(kp, victim.IsHero ? 4 : 2);
                 if (killer.IsHero) killer.Heal(killer.maxHp * 0.08f);
-                if (killer.cls != null && !killer.InVehicle)
+                if (killer.cls != null && !killer.InVehicle && !royale)
                 {
                     int role = (int)killer.cls.role;
                     kp.classKills[role]++;
@@ -749,6 +763,7 @@ namespace BIS
             }
             HUD.Kill(kname, killer ? killer.team : -1, victim.displayName, victim.team, w != null ? w.name : killer == null ? "accident" : "");
             Net.NetHost.OnKill(kname, killer ? killer.team : -1, victim.displayName, victim.team, w != null ? w.name : killer == null ? "accident" : "");
+            if (royale) royale.OnUnitKilled(victim, killer);
             if (vp.isPlayer) control.OnPlayerDied(killer);
         }
 
@@ -845,8 +860,8 @@ namespace BIS
             result.ticketsLeft[0] = Mathf.Max(0, Mathf.RoundToInt(teams[0].tickets));
             result.ticketsLeft[1] = Mathf.Max(0, Mathf.RoundToInt(teams[1].tickets));
             Participant mvp = null;
-            foreach (var p in people) if (mvp == null || p.points > mvp.points) mvp = p;
-            result.mvp = mvp != null ? $"{mvp.name} ({Faction(mvp.team).shortName}) - {mvp.points} pts" : "";
+            foreach (var p in people) if (!p.boss && (mvp == null || (royale ? p.kills > mvp.kills : p.points > mvp.points))) mvp = p;
+            result.mvp = mvp != null ? (royale ? $"{mvp.name} - {mvp.kills} kills" : $"{mvp.name} ({Faction(mvp.team).shortName}) - {mvp.points} pts") : "";
             bool won = winner == player.team;
             Sfx.Play2D(won ? "award" : "lost", 1f);
             Sfx.PlayMusic(false);

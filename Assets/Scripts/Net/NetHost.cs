@@ -8,7 +8,7 @@ namespace BIS.Net
     /// of the soldier / vehicle they move on their own device, answers their requests (spawn, enter, leave, seat,
     /// hero) with the same rules the local player gets, and sends snapshots and events.
     /// </summary>
-    public static class NetHost
+    public static partial class NetHost
     {
         static Battle b;
         static Participant remote;
@@ -33,6 +33,12 @@ namespace BIS.Net
             w.U16(battle.people.Count);
             foreach (var p in battle.people) w.Str(p.name).U8(p.team).B(p.Human);
             w.U16(remote != null ? battle.people.IndexOf(remote) : 0);
+            w.B(c.royale);
+            if (c.royale)
+            {
+                w.B(c.royaleClasses).U8(c.royalePlayers);
+                foreach (var p in battle.people) w.U8(Mathf.Max(0, p.faction)).U8(p.royaleClass).B(p.boss);
+            }
             Session.link?.Send(w);
         }
 
@@ -173,6 +179,7 @@ namespace BIS.Net
                         break;
                     }
                 case Msg.Bye: GuestLeft(); break;
+                default: HandleRoyale(r); break;
             }
         }
 
@@ -227,7 +234,8 @@ namespace BIS.Net
             w.U8(b.posts.Count);
             foreach (var cp in b.posts) w.S8(cp.owner).S8(cp.capTeam).U8(Mathf.RoundToInt(cp.progress * 255)).U8(cp.present[0]).U8(cp.present[1]);
             var us = new List<Unit>();
-            foreach (var u in b.units) if (u && u.Alive) us.Add(u);
+            snapCount++;
+            foreach (var u in b.units) if (u && u.Alive && !SkipFar(u)) us.Add(u);
             w.U16(us.Count);
             foreach (var u in us)
             {
@@ -289,6 +297,7 @@ namespace BIS.Net
                 }
             }
             w.I16(remote.points).B(remote.heroReady).I16(remote.pointsAtHero).F(remote.heroCost);
+            if (b.royale != null) WriteRoyaleLocal(w, u);
             Session.link.Send(w);
         }
 
@@ -310,6 +319,7 @@ namespace BIS.Net
         {
             foreach (var v in b.vehicles) if (v && v.Alive) OnVehicleSpawned(v);
             foreach (var u in b.units) if (u && u.Alive) OnUnitSpawned(u);
+            if (b.royale != null) SendRoyaleFull();
             SendSnapshot(); SendLocal(); SendStats();
         }
 

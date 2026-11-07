@@ -139,6 +139,13 @@ namespace BIS
             if (blocks.Count > 0) { StreetFurniture(kitAt); CityStreets(); }
             if (def.features == null) return;
             foreach (var f in def.features) if (f.kind == FeatureKind.Tower) Tower(f.pts[0] * NS, f.height, kitAt, placed);
+            foreach (var f in def.features)
+                switch (f.kind)
+                {
+                    case FeatureKind.Vault: BuildVault(f.pts[0] * NS, f.height, kitAt, placed); break;
+                    case FeatureKind.Wreck: WarshipWreck(f.pts[0] * NS, f.height, kitAt, placed); break;
+                    case FeatureKind.Compound: Compound(f.pts[0] * NS, f.width * NS, Mathf.RoundToInt(f.density), Mathf.RoundToInt(f.height), kitAt, placed); break;
+                }
         }
 
         /// <summary>After the towns: walls keep clear of every building.</summary>
@@ -323,7 +330,7 @@ namespace BIS
                 {
                     Vector2 c = b.c + new Vector2(i % 2 == 0 ? -q : q, i < 2 ? -q : q);
                     float w = b.size / 2 - R(3, 6), d = b.size / 2 - R(3, 6);
-                    if (R() < 0.45f) PlaceHouse(c, w * 0.75f, d * 0.75f, true, kitAt, placed);
+                    if (R() < (def.royale ? 0.72f : 0.45f)) PlaceHouse(c, w * 0.75f, d * 0.75f, true, kitAt, placed);
                     else CityTower(c, w, d, R(9, 20), kitAt, placed);
                 }
             }
@@ -584,7 +591,8 @@ namespace BIS
         {
             var l = MakeLine(f);
             float h = f.height;
-            bool hedge = def.theme == Theme.Forest;
+            At(l.p[0].x, l.p[0].y);
+            bool hedge = here == Theme.Forest;
             for (float s = 0; s < l.len;)
             {
                 float len = R(4, 8), gap = R(1.8f, 3.2f);
@@ -602,7 +610,7 @@ namespace BIS
                 var k = kitAt(c.x, c.y);
                 bool green = hedge && R() < 0.5f;
                 Color col = green ? Color.Lerp(new Color(0.18f, 0.34f, 0.15f), new Color(0.28f, 0.42f, 0.2f), R())
-                          : def.theme == Theme.Urban ? new Color(0.68f, 0.66f, 0.62f) : def.theme == Theme.Sky ? Shade(WallColor, 1.05f) : Color.Lerp(new Color(0.52f, 0.5f, 0.46f), new Color(0.6f, 0.56f, 0.5f), R());
+                          : here == Theme.Urban ? new Color(0.68f, 0.66f, 0.62f) : here == Theme.Sky ? Shade(WallColor, 1.05f) : Color.Lerp(new Color(0.52f, 0.5f, 0.46f), new Color(0.6f, 0.56f, 0.5f), R());
                 float hh = green ? h + 0.3f : h;
                 if (green) k.Rock(p + Vector3.up * hh / 2, new Vector3(1.3f, hh + 0.4f, len), q, col, rng.Next(), 0.12f);
                 else { k.Box(p + Vector3.up * (hh / 2 - 0.3f), new Vector3(0.7f, hh + 0.6f, len), q, col); k.Box(p + Vector3.up * (hh + 0.05f), new Vector3(0.85f, 0.15f, len + 0.1f), q, Shade(col, 0.8f)); }
@@ -612,7 +620,8 @@ namespace BIS
 
         void Tower(Vector2 c, float hgt, System.Func<float, float, MeshKit> kitAt, List<(Vector2 c, float r)> placed)
         {
-            float w = def.theme == Theme.Sky ? 4 : 7;
+            At(c.x, c.y);
+            float w = here == Theme.Sky ? 4 : 7;
             float lo = float.MaxValue, hi = float.MinValue;
             for (int i = 0; i < 4; i++) { float hh = Height(c.x + (i % 2 == 0 ? -w : w) / 2, c.y + (i < 2 ? -w : w) / 2); lo = Mathf.Min(lo, hh); hi = Mathf.Max(hi, hh); }
             placed.Add((c, w));
@@ -621,7 +630,7 @@ namespace BIS
             float H = hgt + (hi - lo) + 1;
             Color wall = WallColor, dark = Shade(WallColor, 0.65f);
             var q = Quaternion.Euler(0, R(0, 90), 0);
-            switch (def.theme)
+            switch (here)
             {
                 case Theme.Sky:
                     // a white spire with a crystal floating above it
@@ -647,7 +656,7 @@ namespace BIS
                         k.Cyl(b + Vector3.up * (H - 3) + fq * new Vector3(0, 0, w / 2 + 0.35f), 1.3f, 0.12f, fq * Quaternion.Euler(90, 0, 0), new Color(0.95f, 0.92f, 0.8f), 12);
                         k.Box(b + Vector3.up * (H - 2.6f) + fq * new Vector3(0, 0, w / 2 + 0.43f), new Vector3(0.12f, 0.9f, 0.05f), fq, new Color(0.1f, 0.1f, 0.1f));
                     }
-                    k.Taper(b + Vector3.up * (H + 3.5f), new Vector2(w + 1, w + 1), new Vector2(0.3f, 0.3f), 7, q, def.theme == Theme.Snow ? new Color(0.9f, 0.92f, 0.96f) : new Color(0.35f, 0.2f, 0.15f));
+                    k.Taper(b + Vector3.up * (H + 3.5f), new Vector2(w + 1, w + 1), new Vector2(0.3f, 0.3f), 7, q, here == Theme.Snow ? new Color(0.9f, 0.92f, 0.96f) : new Color(0.35f, 0.2f, 0.15f));
                     k.Box(b + Vector3.up * 1.4f + q * new Vector3(0, 0, w / 2 + 0.05f), new Vector3(1.6f, 2.8f, 0.12f), q, dark);
                     Col(b + Vector3.up * H / 2, new Vector3(w, H, w), q);
                     break;

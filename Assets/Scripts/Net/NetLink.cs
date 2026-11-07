@@ -16,7 +16,9 @@ namespace BIS.Net
         Input = 10, SpawnReq, EnterReq, ExitReq, SeatReq, HeroReq,
         Snapshot = 30, LocalState, Stats,
         UnitSpawn = 40, UnitDie, VehSpawn, VehGone, Shot, Fx, Kill, Text, Hit, Hurt, Points, PlayerDied, Say, End, Burst,
-        Warp = 60, Push, SelfDmg, Award, Evade
+        Warp = 60, Push, SelfDmg, Award, Evade,
+        // battle royale
+        RLoot = 70, RLootAdd, RLootGone, RChests, RChest, RVault, RState, RJump, RHeal, RTake
     }
 
     /// <summary>

@@ -20,7 +20,7 @@ namespace BIS
 
         void Update()
         {
-            if (screen == Screen.Multi || (screen == Screen.Quick && qpHost))
+            if (screen == Screen.Multi || (screen == Screen.Quick && qpHost) || (screen == Screen.Royale && brHost))
             {
                 if (Session.IsHost) Session.HostLobbyUpdate();
                 else if (Session.IsClient) Session.ClientLobbyUpdate();
@@ -57,7 +57,14 @@ namespace BIS
                     screen = Screen.Quick;
                 }
                 if (UI.Button(new Rect(x + 540, y, 500, 80), "JOIN A GAME", false, true, 30)) { Session.StartBrowsing(); joinTyping = false; }
-                y += 110;
+                y += 96;
+                if (UI.Button(new Rect(x, y, 500, 70), "HOST A BATTLE ROYALE", false, true, 26, new Color(0.55f, 0.35f, 0.15f)))
+                {
+                    brHost = true;
+                    Session.HostLobby(() => $"Battle royale, {brPlayers} players");
+                    screen = Screen.Royale;
+                }
+                y += 90;
                 if (!string.IsNullOrEmpty(Session.status)) UI.Text(new Rect(x, y, rw, 60), Session.status, 20, UI.Bad, TextAnchor.UpperLeft, true);
                 if (UI.Button(new Rect(r.center.x - 160, r.yMax + 20, 320, 64), "BACK", false, true, 26)) { Session.Shutdown(); screen = Screen.Main; }
                 return;

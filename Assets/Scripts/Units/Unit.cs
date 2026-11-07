@@ -79,6 +79,17 @@ namespace BIS
         public float rallyUntil, frenzyUntil, cloakUntil, dashUntil, invulnUntil;
         public float spreadMul = 1;   // set by PlayerControl for the player
 
+        // -- battle royale: armour, supplies, keys, the grav-chute --
+        public const int MaxMedkits = 5, MaxShields = 5;
+        public const float MaxArmor = 150, MedkitTime = 3.2f, ShieldTime = 2.2f;
+        public int medkits, shields, keys;
+        public float armor;
+        public float useT, useDur;           // using a medkit / shield cell: seconds left of the channel
+        public LootKind useKind;
+        public bool Using => useT > 0;
+        public bool gliding;
+        GameObject chute;
+
         // -- Wi-Fi play --
         // HostRemote: on the host, the guest's soldier (its position comes from the guest's device, everything else runs here).
         // Replica: on the guest, a copy of a host soldier drawn from snapshots. GuestLocal: on the guest, your own soldier
@@ -147,6 +158,8 @@ namespace BIS
             if (InVehicle && d.type != DmgType.Environment) return;
             float amt = d.amount;
             if (hero != null && d.type == DmgType.Explosive) amt *= 0.7f;
+            // royale armour soaks hits first (the zone goes straight through it)
+            if (armor > 0 && d.type != DmgType.Environment) { float a = Mathf.Min(armor, amt); armor -= a; amt -= a; }
             hp -= amt;
             lastHurt = Time.time;
             if (d.attacker) lastAttacker = d.attacker;
@@ -178,8 +191,10 @@ namespace BIS
             if (jetLoop) jetLoop.volume = 0;
             foreach (var d in detpacks) if (d) Destroy(d.gameObject);
             detpacks.Clear();
+            if (chute) Destroy(chute);
+            gliding = false; useT = 0;
             battle.OnUnitKilled(this, killer, w);
-            if (!IsHero && Random.value < 0.35f) Pickup.Drop(transform.position + Vector3.up * 0.3f);
+            if (!IsHero && battle.royale == null && Random.value < 0.35f) Pickup.Drop(transform.position + Vector3.up * 0.3f);
             Destroy(gameObject, 6f);
         }
 
@@ -193,8 +208,15 @@ namespace BIS
             for (int i = 0; i < 2; i++) weapons[i]?.Tick(dt);
             abilityCd -= dt;
 
+            // using a medkit or shield cell: firing or swapping weapons cancels it
+            if (useT > 0 && net != NetMode.GuestLocal)
+            {
+                if (input.fire || input.swap) useT = 0;
+                else { useT -= dt; if (useT <= 0) FinishUse(); }
+            }
+
             // hero health slowly drains (kills restore it)
-            if (hero != null && net != NetMode.GuestLocal)
+            if (hero != null && net != NetMode.GuestLocal && !part.boss)
             {
                 heroDrainAcc += dt;
                 if (heroDrainAcc > 1) { heroDrainAcc -= 1; hp -= maxHp * 0.006f; if (hp <= 0) { Die(null, Vector3.zero); return; } }
@@ -225,9 +247,10 @@ namespace BIS
         void Move(float dt)
         {
             grounded = cc.isGrounded;
+            if (gliding && Glide(dt)) return;
             crouching = input.crouch && grounded && hero == null;
             bool aimingSlow = input.aim && (Weapon.def.zoomFov > 0);
-            float spd = Speed * (input.sprint && !crouching && !input.fire ? 1.45f : 1f) * (crouching ? 0.5f : 1f) * (aimingSlow ? 0.5f : 1f);
+            float spd = Speed * (input.sprint && !crouching && !input.fire ? 1.45f : 1f) * (crouching ? 0.5f : 1f) * (aimingSlow ? 0.5f : 1f) * (Using ? 0.45f : 1f);
             if (InSpaceZeroG()) spd *= 0.8f;
             // wading slows you down; lava burns
             if (battle.land != null && battle.land.LiquidAt(transform.position.x, transform.position.z, out float liq, out bool lava) && transform.position.y < liq - 0.15f)
@@ -313,6 +336,7 @@ namespace BIS
             grounded = netGrounded;
             crouching = (netFlags & 1) != 0 && hero == null && grounded;
             push = Vector3.zero;
+            NetGlideCheck();
             if (Time.time < dashUntil) DashDamage();
             if (battle.space != null)
             {
@@ -336,6 +360,7 @@ namespace BIS
             pitch = Mathf.Lerp(pitch, netPitch, 1 - Mathf.Exp(-16 * dt));
             transform.rotation = Quaternion.Euler(0, yaw, 0);
             velocity = netVel; grounded = netGrounded; crouching = (netFlags & 1) != 0;
+            NetGlideCheck();
             int want = (netFlags & 32) != 0 && weapons[1] != null ? 1 : 0;
             if (want != cur) { cur = want; rig.SetWeapon(Weapon.def); }
             bool firing = (netFlags & 64) != 0;
@@ -692,6 +717,73 @@ namespace BIS
                     Sfx.Play("award", transform.position, 0.6f, 1.2f);
                     break;
             }
+        }
+
+        // ── battle royale ────────────────────────────────────────────────
+        /// <summary>Out of the dropship: fall fast under a grav-chute, steer with the move stick, slow near the ground.</summary>
+        public void StartGlide()
+        {
+            gliding = true;
+            velocity = new Vector3(0, -18, 0);
+            var k = new MeshKit();
+            Color c = faction.bolt;
+            k.Sphere(new Vector3(0, 0, 0), new Vector3(2.4f, 0.6f, 1.8f), Quaternion.identity, Color.Lerp(c, Color.white, 0.35f), 10, 4);
+            k.Ring(new Vector3(0, -0.1f, 0), 1.1f, 1.22f, MeshKit.Glow(c), 20);
+            for (int i = 0; i < 4; i++) k.Box(new Vector3(i % 2 == 0 ? -0.55f : 0.55f, -0.85f, i < 2 ? -0.38f : 0.38f), new Vector3(0.025f, 1.5f, 0.025f), Quaternion.Euler(i < 2 ? -14 : 14, 0, i % 2 == 0 ? -22 : 22), MeshKit.Glow(c * 0.6f));
+            chute = k.Make("chute", transform, false);
+            chute.transform.localPosition = Vector3.up * 3.1f;
+            invulnUntil = Time.time + 2f;
+        }
+
+        bool Glide(float dt)
+        {
+            float agl = transform.position.y - battle.GroundY(transform.position);
+            if (grounded || agl < 0.8f) { EndGlide(); velocity.y = -2; return false; }
+            Vector3 wish = input.move * 17f;
+            velocity.x = Mathf.MoveTowards(velocity.x, wish.x, 22 * dt);
+            velocity.z = Mathf.MoveTowards(velocity.z, wish.z, 22 * dt);
+            velocity.y = Mathf.MoveTowards(velocity.y, agl > 26 ? -24f : -6.5f, 30 * dt);
+            if (cc.enabled) cc.Move(velocity * dt);
+            if (chute)
+            {
+                Vector3 hv = new Vector3(velocity.x, 0, velocity.z);
+                Vector3 tilt = Vector3.Cross(Vector3.up, hv) * 1.4f;
+                chute.transform.rotation = Quaternion.Euler(tilt.x, transform.eulerAngles.y, tilt.z);
+            }
+            return true;
+        }
+
+        public void EndGlide()
+        {
+            if (!gliding) return;
+            gliding = false;
+            if (chute) Destroy(chute);
+            Fx.Smoke(transform.position, 2f, 1.2f);
+            Sfx.Play("thud", transform.position, 0.6f, 0.8f);
+        }
+
+        /// <summary>Copies of a soldier (Wi-Fi) fold their chute once the real one is down.</summary>
+        void NetGlideCheck()
+        {
+            if (gliding && (grounded || transform.position.y - battle.GroundY(transform.position) < 1.2f)) EndGlide();
+        }
+
+        /// <summary>Start a medkit (if hurt) or a shield cell (if the armour isn't full). Returns false if there is nothing to use.</summary>
+        public bool UseBest()
+        {
+            if (Using || !Alive || InVehicle) return false;
+            if (medkits > 0 && hp < maxHp - 1) { useKind = LootKind.Medkit; useT = useDur = MedkitTime; }
+            else if (shields > 0 && armor < MaxArmor - 1) { useKind = LootKind.Shield; useT = useDur = ShieldTime; }
+            else return false;
+            Sfx.Play("repair", transform.position, 0.5f, useKind == LootKind.Medkit ? 0.8f : 1.3f);
+            return true;
+        }
+
+        void FinishUse()
+        {
+            if (useKind == LootKind.Medkit && medkits > 0) { medkits--; Heal(maxHp * 0.65f); Fx.Burst(AimPoint, new Color(0.4f, 1f, 0.5f), 12, 2, 0.25f, 0.6f); }
+            else if (useKind == LootKind.Shield && shields > 0) { shields--; armor = Mathf.Min(MaxArmor, armor + 75); Fx.Burst(AimPoint, new Color(0.4f, 0.75f, 1f), 12, 2, 0.25f, 0.6f); }
+            if (part.isPlayer) Sfx.Play2D("ui2", 0.6f);
         }
 
         public void Resupply()

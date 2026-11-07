@@ -120,6 +120,7 @@ namespace BIS
                 if (TouchInput.Down("hero")) Hero = true;
                 if (TouchInput.Down("pause")) Pause = true;
                 if (TouchInput.Held("score")) ScoreHeld = true;
+                if (TouchInput.Down("map")) Map = true;
             }
 
             Move = Vector2.ClampMagnitude(mv, 1);

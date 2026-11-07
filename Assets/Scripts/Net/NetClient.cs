@@ -7,7 +7,7 @@ namespace BIS.Net
     /// vehicles, posts and capital ships up to date from snapshots and events, moves our own soldier / vehicle
     /// here so it feels instant, and sends our input and pose back. Damage, scoring and the rules are the host's.
     /// </summary>
-    public static class NetClient
+    public static partial class NetClient
     {
         static Battle b;
         static float sendT;
@@ -34,6 +34,15 @@ namespace BIS.Net
             for (int i = 0; i < n; i++) { cfg.rosterNames[i] = r.Str(); cfg.rosterTeams[i] = r.U8(); cfg.rosterHuman[i] = r.B(); }
             cfg.localIndex = r.U16();
             cfg.playerTeam = cfg.rosterTeams[Mathf.Clamp(cfg.localIndex, 0, n - 1)];
+            if (r.B())
+            {
+                // a battle royale: everyone's race and class, and who the boss is
+                cfg.royale = true; cfg.land = Maps.Royale;
+                cfg.royaleClasses = r.B(); cfg.royalePlayers = r.U8();
+                cfg.rosterFactions = new int[n]; cfg.rosterClasses = new int[n]; cfg.rosterBoss = new bool[n];
+                for (int i = 0; i < n; i++) { cfg.rosterFactions[i] = r.U8(); cfg.rosterClasses[i] = r.U8(); cfg.rosterBoss[i] = r.B(); }
+                lastPick = Vector3.zero; lastJump = false; pickSendT = 0;
+            }
             cfg.title = "Wi-Fi battle with " + (Session.peerName ?? "the host");
             heldFlags = 0;
             Game.I.StartBattle(cfg, res => { b = null; Game.I.ShowMenu(); Game.I.menu.ShowMulti(); });
@@ -141,6 +150,7 @@ namespace BIS.Net
                     if (!b.over) b.NetEnd(-1, "The host left the game", "");
                     Session.link?.Close(); Session.link = null; Session.role = Session.Role.None;
                     break;
+                default: HandleRoyale(r); break;
             }
         }
 
@@ -160,11 +170,13 @@ namespace BIS.Net
             var f = b.Faction(p.team);
             var cls = hi >= 0 ? null : ClassOf(f, ci);
             var hero = hi >= 0 && hi < f.heroes.Length ? f.heroes[hi] : null;
+            if (b.royale != null) { hero = p.boss ? Royale.BossDef : null; cls = hero == null ? b.royale.ClassFor(p) : null; }
             if (cls == null && hero == null) cls = f.classes[0];
             if (cls != null) p.awards[(int)cls.role] = award;
             var u = b.SpawnUnit(p, cls, hero, pos, yaw);
             u.net = p.isPlayer ? Unit.NetMode.GuestLocal : Unit.NetMode.Replica;
             u.netPos = pos; u.netYaw = yaw; u.netGrounded = true;
+            if (b.royale != null && !p.boss && pos.y - b.GroundY(pos) > 15) { u.StartGlide(); u.netGrounded = false; }
             if (p.isPlayer)
             {
                 b.control.OnSpawned(u);
@@ -274,6 +286,7 @@ namespace BIS.Net
             }
             var p = b.player;
             p.points = r.I16(); p.heroReady = r.B(); p.pointsAtHero = r.I16(); p.heroCost = r.F();
+            if (b.royale != null) ReadRoyaleLocal(r);
         }
 
         static void Stats(R r)

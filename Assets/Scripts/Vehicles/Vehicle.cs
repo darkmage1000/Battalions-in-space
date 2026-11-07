@@ -58,6 +58,12 @@ namespace BIS
         bool destroyed;
         int muzzleIdx, gunnerIdx;
         float yaw, smokeT, crashCd, fxT;
+        // space craft brush past each other instead of meeting head on: a sideways slip when a pass would touch
+        // (`CraftSlip`), and a bounce that decays after a glancing knock (`bump`)
+        Vector3 bump;
+        public float lastNearMiss = -99;
+        public const float SlipLook = 1.1f, SlipMax = 34f, SlipMargin = 4f;
+        public const float BumpDamagePer = 3f, BumpCap = 0.3f, BumpMinClose = 18f, BumpPush = 14f;
         Quaternion tilt = Quaternion.identity;
         AudioSource hum;
         static readonly RaycastHit[] hits = new RaycastHit[16];
@@ -699,6 +705,12 @@ namespace BIS
                 vel += Vector3.up * inp.climb * 9 * Mathf.Max(0.25f, lift);
                 if (Stalling) vel += Vector3.down * (1 - lift) * 7f;
             }
+            if (space)
+            {
+                vel += CraftSlip(pos);
+                vel += bump;
+                bump = Vector3.MoveTowards(bump, Vector3.zero, BumpPush * 1.6f * dt);
+            }
             Vector3 step = vel * dt;
 
             // collisions
@@ -715,6 +727,23 @@ namespace BIS
                     bool soft = space && battle.space.HangarAt(pos) != null && speed < 25;
                     float into = Vector3.Dot(vel, -h.normal);
                     if (into <= 0) continue;
+                    var other = space ? h.collider.GetComponentInParent<Vehicle>() : null;
+                    if (other && other != this && other.def.IsShip)
+                    {
+                        // two craft touching: a glancing knock that throws them apart, never a double kill
+                        float close = Vector3.Dot(vel - other.vel, -h.normal);
+                        if (close > BumpMinClose && crashCd <= 0)
+                        {
+                            crashCd = 0.8f;
+                            TakeDamage(new DamageInfo { amount = Mathf.Min(close * BumpDamagePer, maxHp * BumpCap), team = -1, type = DmgType.Crush, point = h.point });
+                            Fx.Sparks(h.point, h.normal, Color.white, 22);
+                            Sfx.Play("thud", h.point, 0.9f, 0.6f);
+                            if (!Alive) return;
+                        }
+                        bump = h.normal * BumpPush;
+                        step += h.normal * (into * dt + 0.4f);
+                        continue;
+                    }
                     if (!soft && into > 16 && crashCd <= 0)
                     {
                         crashCd = 0.5f;
@@ -748,6 +777,37 @@ namespace BIS
                 if (!battle.land.InBounds(pos)) { rot = Quaternion.RotateTowards(rot, Quaternion.LookRotation(-new Vector3(pos.x, 0, pos.z)), 40 * dt); }
             }
             transform.SetPositionAndRotation(pos, rot);
+        }
+
+        /// <summary>Space: if another craft's pass would come within touching distance in the next ~1 s, slide
+        /// sideways out of its way (both craft do it, so each moves half). Ramming on purpose still works when slow
+        /// and close; flying past each other at speed no longer ends in a collision.</summary>
+        Vector3 CraftSlip(Vector3 pos)
+        {
+            if (battle == null || battle.vehicles == null) return Vector3.zero;
+            Vector3 slip = Vector3.zero;
+            foreach (var o in battle.vehicles)
+            {
+                if (!o || o == this || !o.Alive || !o.def.IsShip || o.landed) continue;
+                Vector3 p = o.transform.position - pos;
+                if (p.sqrMagnitude > 160 * 160) continue;
+                Vector3 rv = vel - o.vel;
+                float rv2 = rv.sqrMagnitude;
+                if (rv2 < 25) continue;
+                float t = Vector3.Dot(p, rv) / rv2;
+                if (t <= 0 || t > SlipLook) continue;
+                Vector3 closest = p - rv * t;          // where the other craft will be relative to us at the closest point
+                float need = radius + o.radius + SlipMargin;
+                float miss = closest.magnitude;
+                if (miss >= need) continue;
+                Vector3 away = miss > 0.05f ? -closest / miss : Vector3.Cross(rv.normalized, Vector3.up).normalized;
+                if (away.sqrMagnitude < 0.01f) away = transform.right;
+                if (miss <= 0.05f && GetInstanceID() < o.GetInstanceID()) away = -away;   // dead centre: the two go opposite ways
+                float sp = Mathf.Min(SlipMax, (need - miss) * 0.6f / Mathf.Max(0.18f, t));
+                slip += away * sp;
+                lastNearMiss = Time.time;
+            }
+            return Vector3.ClampMagnitude(slip, SlipMax);
         }
 
         public void Land(Hangar hangar)

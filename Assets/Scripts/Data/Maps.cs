@@ -17,7 +17,14 @@ namespace BIS
         public bool IsHome => home || vehicles.Length >= 3;
     }
 
-    public enum FeatureKind { Ridge, River, Lava, Wadi, Road, Forest, Town, Boulders, Lake, Crater, Ford, City, Isle, Span, Wall, Tower }
+    public enum FeatureKind { Ridge, River, Lava, Wadi, Road, Forest, Town, Boulders, Lake, Crater, Ford, City, Isle, Span, Wall, Tower, Compound, Vault, Wreck }
+
+    /// <summary>A named part of a map with its own biome (battle royale: one map holds several). Centre in map units.</summary>
+    public class RegionDef
+    {
+        public string name; public Theme theme; public Vector2 pos;
+        public RegionDef(string n, Theme t, float x, float z) { name = n; theme = t; pos = new Vector2(x, z); }
+    }
 
     /// <summary>
     /// One piece of a land map's layout, in the same -1..1 space as posts (x 0.72 of the half size).
@@ -59,6 +66,13 @@ namespace BIS
         public static MapFeature Wall(float height, params float[] xy) => new MapFeature { kind = FeatureKind.Wall, height = height, width = 1, pts = P(xy) };
         /// <summary>A landmark tower (clock tower, radio mast, spire).</summary>
         public static MapFeature Tower(float x, float z, float height) => new MapFeature { kind = FeatureKind.Tower, height = height, width = 0.03f, pts = P(new[] { x, z }) };
+        /// <summary>A walled compound of large buildings you can enter (military base, research station, spaceport hangars).
+        /// style: 0 barracks, 1 hangars + landing pads, 2 research labs.</summary>
+        public static MapFeature Compound(float x, float z, float radius, int buildings, int style) => new MapFeature { kind = FeatureKind.Compound, width = radius, density = buildings, height = style, pts = P(new[] { x, z }) };
+        /// <summary>A sealed vault: its door opens only with a vault key (battle royale); the best loot is inside.</summary>
+        public static MapFeature Vault(float x, float z, float yaw) => new MapFeature { kind = FeatureKind.Vault, height = yaw, width = 0.03f, pts = P(new[] { x, z }) };
+        /// <summary>A crashed warship section you can walk into through its breach.</summary>
+        public static MapFeature Wreck(float x, float z, float yaw) => new MapFeature { kind = FeatureKind.Wreck, height = yaw, width = 0.06f, pts = P(new[] { x, z }) };
     }
 
     public class LandMapDef
@@ -68,7 +82,10 @@ namespace BIS
         public Theme theme;
         public int seed;
         public float size = 640, hills = 1, roughness = 1, props = 1;
+        public float cell = 2.5f;          // terrain grid (metres); the big royale map uses a coarser one
         public PostDef[] posts;
+        public RegionDef[] regions;        // several biomes on one map (null = the whole map is `theme`)
+        public bool royale;                // the battle royale map: no posts; loot, buildings and the zone
         /// <summary>Islands over a void: falling off kills, the ground below is never drawn.</summary>
         public bool Floating => theme == Theme.Sky;
         public LandMapDef Variant(string planetName, int newSeed)
@@ -433,6 +450,130 @@ namespace BIS
                     new PostDef("Storm Terrace", 0.45f, 0.15f, 1),
                     new PostDef("Dusk Dock", 0.8f, 0.62f, 1, VKind.Air, VKind.Air).Home(),
                 }
+            };
+        }
+
+        /// <summary>
+        /// The battle royale map: every land biome but the floating isles, side by side on one 1.6 km world, plus three new
+        /// zones (a military base, farmlands with a crashed warship, a desert spaceport). Map units: 1 = 576 m from the middle.
+        /// </summary>
+        public static readonly LandMapDef Royale = BuildRoyale();
+
+        static LandMapDef BuildRoyale()
+        {
+            var f = new System.Collections.Generic.List<MapFeature>
+            {
+                // roads between the nine regions (a grid with four diagonals); bridges appear where they cross water or lava
+                MapFeature.Road(10, -0.72f, 0.72f, -0.36f, 0.76f, 0f, 0.74f, 0.36f, 0.75f, 0.72f, 0.72f),
+                MapFeature.Road(10, -0.75f, 0f, -0.4f, 0.02f, 0f, 0f, 0.4f, -0.02f, 0.75f, 0f),
+                MapFeature.Road(10, -0.72f, -0.72f, -0.36f, -0.74f, 0f, -0.76f, 0.36f, -0.73f, 0.72f, -0.72f),
+                MapFeature.Road(10, -0.72f, 0.72f, -0.76f, 0.36f, -0.75f, 0f, -0.74f, -0.36f, -0.72f, -0.72f),
+                MapFeature.Road(10, 0f, 0.74f, 0.02f, 0.36f, 0f, 0f, -0.02f, -0.38f, 0f, -0.76f),
+                MapFeature.Road(10, 0.72f, 0.72f, 0.76f, 0.36f, 0.75f, 0f, 0.74f, -0.36f, 0.72f, -0.72f),
+                MapFeature.Road(9, -0.72f, 0.72f, -0.4f, 0.38f, -0.2f, 0.2f),
+                MapFeature.Road(9, 0.72f, 0.72f, 0.4f, 0.4f, 0.2f, 0.2f),
+                MapFeature.Road(9, -0.72f, -0.72f, -0.38f, -0.4f, -0.2f, -0.2f),
+                MapFeature.Road(9, 0.72f, -0.72f, 0.4f, -0.38f, 0.2f, -0.2f),
+
+                // hamlets at the crossroads between regions: more buildings to clear and loot
+                MapFeature.Village(-0.4f, 0.4f, 0.055f, 7),
+                MapFeature.Village(0.42f, 0.42f, 0.055f, 7),
+                MapFeature.Village(-0.4f, -0.38f, 0.055f, 7),
+                MapFeature.Village(0.42f, -0.38f, 0.055f, 7),
+                MapFeature.Village(0.03f, 0.42f, 0.05f, 6),
+                MapFeature.Village(-0.03f, -0.44f, 0.05f, 6),
+                MapFeature.Village(-0.44f, 0.04f, 0.05f, 6),
+                MapFeature.Village(0.38f, 0.06f, 0.045f, 5),
+
+                // NW - Frostfall: a long ridge, a frozen lake and the research station
+                MapFeature.Ridge(54, 44, -1.05f, 0.5f, -0.86f, 0.48f, -0.66f, 0.5f),
+                MapFeature.Ridge(44, 38, -0.5f, 1.02f, -0.42f, 0.9f),
+                MapFeature.Lake(-0.52f, 0.6f, 0.11f),
+                MapFeature.Compound(-0.84f, 0.84f, 0.11f, 6, 2),
+                MapFeature.Town(-0.6f, 0.86f, 0.07f, 4),
+                MapFeature.Forest(-0.95f, 0.66f, 0.1f, 1.1f),
+                MapFeature.Forest(-0.38f, 0.5f, 0.08f, 1f),
+                MapFeature.Boulders(-0.66f, 0.98f, 0.08f, 6),
+
+                // N - Highwood: a river through deep forest, a mill village and its bridges
+                MapFeature.River(18, 2.2f, -0.22f, 1.2f, -0.12f, 0.96f, -0.18f, 0.74f, -0.08f, 0.56f, 0.04f, 0.44f, 0.18f, 0.36f),
+                MapFeature.Lake(0.22f, 0.33f, 0.06f),
+                MapFeature.Ford(-0.15f, 0.84f, 0.05f),
+                MapFeature.Village(0.1f, 0.62f, 0.08f, 12),
+                MapFeature.Forest(-0.3f, 0.95f, 0.13f, 1.5f),
+                MapFeature.Forest(0.26f, 0.92f, 0.12f, 1.4f),
+                MapFeature.Forest(0.3f, 0.56f, 0.07f, 1.2f),
+                MapFeature.Forest(-0.3f, 0.48f, 0.07f, 1.2f),
+
+                // NE - Harrak: a mesa, a dry gulch and the mining town
+                MapFeature.Ridge(46, 40, 0.48f, 0.98f, 0.62f, 1.0f, 0.84f, 0.94f),
+                MapFeature.Ridge(40, 34, 1.02f, 0.44f, 0.96f, 0.6f),
+                MapFeature.Wadi(20, 5, 0.42f, 0.46f, 0.56f, 0.52f, 0.7f, 0.48f, 0.9f, 0.52f),
+                MapFeature.Town(0.78f, 0.62f, 0.12f, 18),
+                MapFeature.Boulders(0.56f, 0.84f, 0.1f, 9),
+                MapFeature.Boulders(0.95f, 0.8f, 0.08f, 6),
+
+                // W - Briar Hollow: a dense village to clear house by house, hedged fields, the chapel
+                MapFeature.Village(-0.76f, 0.02f, 0.13f, 36),
+                MapFeature.Tower(-0.76f, 0.02f, 16),
+                MapFeature.Tower(-0.62f, -0.14f, 11),
+                MapFeature.Forest(-1.0f, 0.2f, 0.09f, 1f),
+                MapFeature.Forest(-0.5f, 0.22f, 0.06f, 1f),
+                MapFeature.Wall(1.3f, -1.02f, -0.18f, -0.86f, -0.24f, -0.7f, -0.22f),
+                MapFeature.Wall(1.3f, -0.98f, 0.28f, -0.82f, 0.32f, -0.66f, 0.26f),
+                MapFeature.Wall(1.2f, -0.5f, -0.12f, -0.48f, 0.14f),
+
+                // centre - Novo Meridian: a grid of towers, buildings you can enter, parks and rubble
+                MapFeature.City(0, 0, 0.27f, 0.27f, 52),
+
+                // E - Cinder Foundry: a lava river crossed only on bridges, the caldera, a foundry town
+                MapFeature.Lava(16, 0.56f, 0.32f, 0.52f, 0.14f, 0.57f, -0.06f, 0.52f, -0.24f, 0.56f, -0.36f),
+                MapFeature.Crater(0.86f, 0.12f, 0.09f, 14),
+                MapFeature.Town(0.9f, -0.2f, 0.1f, 12),
+                MapFeature.Ridge(34, 30, 1.02f, -0.1f, 1.04f, 0.3f),
+                MapFeature.Boulders(0.7f, 0.24f, 0.08f, 7),
+                MapFeature.Boulders(0.7f, -0.28f, 0.07f, 6),
+
+                // SW - Fort Halvard: a walled military base of barracks, with a vault
+                MapFeature.Compound(-0.72f, -0.72f, 0.14f, 9, 0),
+                MapFeature.Vault(-0.84f, -0.88f, 30),
+                MapFeature.Boulders(-0.98f, -0.5f, 0.08f, 6),
+                MapFeature.Forest(-0.44f, -0.96f, 0.08f, 0.8f),
+
+                // S - Greenreach: farms and the crashed warship
+                MapFeature.Village(0.16f, -0.66f, 0.08f, 9),
+                MapFeature.Wreck(-0.16f, -0.86f, 24),
+                MapFeature.Wall(1.2f, -0.2f, -0.5f, 0.02f, -0.46f, 0.24f, -0.5f),
+                MapFeature.Wall(1.2f, 0.32f, -0.92f, 0.36f, -0.6f),
+                MapFeature.Wall(1.2f, -0.36f, -0.6f, -0.3f, -0.42f),
+                MapFeature.Forest(0.34f, -0.98f, 0.08f, 1.1f),
+                MapFeature.Forest(-0.34f, -0.98f, 0.06f, 0.9f),
+
+                // SE - Sunscar Spaceport: hangars round the landing pads, a control mast and a vault
+                MapFeature.Compound(0.74f, -0.7f, 0.14f, 6, 1),
+                MapFeature.Vault(0.93f, -0.91f, -40),
+                MapFeature.Tower(0.58f, -0.88f, 22),
+                MapFeature.Boulders(0.98f, -0.46f, 0.09f, 8),
+                MapFeature.Wadi(18, 4, 0.42f, -0.42f, 0.5f, -0.5f, 0.46f, -0.62f),
+            };
+            return new LandMapDef
+            {
+                name = "Kharos Frontier", planet = "Kharos", theme = Theme.Forest, seed = 8807, size = 1600, cell = 3.125f, hills = 0.75f, props = 4.2f, royale = true,
+                blurb = "Every land you have fought on, side by side on one world: snowfields, forest, desert, a village, a city, lava, a military base, farms and a spaceport.",
+                features = f.ToArray(),
+                posts = new PostDef[0],
+                regions = new[]
+                {
+                    new RegionDef("Frostfall Station", Theme.Snow, -0.72f, 0.72f),
+                    new RegionDef("Highwood", Theme.Forest, 0f, 0.75f),
+                    new RegionDef("Harrak Mines", Theme.Desert, 0.72f, 0.72f),
+                    new RegionDef("Briar Hollow", Theme.Forest, -0.75f, 0f),
+                    new RegionDef("Novo Meridian", Theme.Urban, 0f, 0f),
+                    new RegionDef("Cinder Foundry", Theme.Volcanic, 0.75f, 0f),
+                    new RegionDef("Fort Halvard", Theme.Urban, -0.72f, -0.72f),
+                    new RegionDef("Greenreach Farms", Theme.Forest, 0f, -0.75f),
+                    new RegionDef("Sunscar Spaceport", Theme.Desert, 0.72f, -0.72f),
+                },
             };
         }
 

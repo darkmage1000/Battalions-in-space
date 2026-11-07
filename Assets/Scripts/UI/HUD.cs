@@ -4,7 +4,7 @@ using UnityEngine;
 namespace BIS
 {
     /// <summary>In-battle interface: HUD, radar, spawn screen, map, scoreboard, pause and results.</summary>
-    public class HUD : MonoBehaviour
+    public partial class HUD : MonoBehaviour
     {
         public Battle battle;
         static HUD I;
@@ -146,6 +146,7 @@ namespace BIS
             if (!battle) return;
             UI.Begin();
             var pc = battle.control;
+            if (battle.royale) { RoyaleGUI(pc); return; }
             switch (pc.mode)
             {
                 case PlayerControl.Mode.Play: PlayHUD(pc); break;
@@ -228,7 +229,7 @@ namespace BIS
         {
             var b = battle;
             var me = pc.Me;
-            TopBar();
+            if (b.royale) RoyaleTop(); else TopBar();
             Feed();
             if (me == null) return;
             WorldMarkers(me);
@@ -368,6 +369,11 @@ namespace BIS
             else
             {
                 UI.Text(new Rect(hb.x + 14, hb.y + 8, 400, 28), me.ClassName + (me.IsHero ? "  (hero)" : ""), 22, me.IsHero ? UI.Gold : Color.white);
+                if (b.royale)
+                {
+                    UI.Bar(new Rect(hb.x + 14, hb.y + 36, 392, 8), me.armor / Unit.MaxArmor, ArmorCol, new Color(0.1f, 0.14f, 0.2f, 0.8f));
+                    if (me.armor > 0) UI.Text(new Rect(hb.x + 300, hb.y + 8, 106, 26), $"armour {Mathf.CeilToInt(me.armor)}", 16, ArmorCol, TextAnchor.UpperRight);
+                }
                 UI.Bar(new Rect(hb.x + 14, hb.y + 44, 392, 18), me.hp / me.maxHp, Color.Lerp(UI.Bad, UI.Good, me.hp / me.maxHp));
                 UI.Text(new Rect(hb.x + 14, hb.y + 42, 392, 22), $"{Mathf.CeilToInt(me.hp)}", 16, Color.white, TextAnchor.MiddleCenter);
                 string extra = "";
@@ -388,7 +394,8 @@ namespace BIS
                 else wname = "riding";
             }
             else { ws = me.Weapon; wname = ws.def.name + (me.weapons[1] != null ? $"   [Q] {me.weapons[1 - me.cur]?.def.name}" : ""); }
-            UI.Text(new Rect(wb.x + 14, wb.y + 8, 400, 28), wname, 20);
+            Color wcol = !me.InVehicle && ws != null && ws.def.tier >= 0 ? Tiers.Of(ws.def.tier) : Color.white;
+            UI.Text(new Rect(wb.x + 14, wb.y + 8, 400, 28), wname, 20, wcol);
             if (ws != null)
             {
                 if (ws.def.UsesHeat) UI.Bar(new Rect(wb.x + 14, wb.y + 44, 392, 14), ws.heat, ws.overheated ? UI.Bad : Color.Lerp(UI.Gold, UI.Bad, ws.heat));
@@ -401,7 +408,8 @@ namespace BIS
             // hero / points / award progress
             var pp = b.player;
             Rect hp2 = new Rect(w / 2 - 210, h - 54, 420, 40);
-            if (!me.IsHero)
+            if (b.royale) RoyaleInventory(me, w, h);
+            else if (!me.IsHero)
             {
                 UI.Bar(new Rect(hp2.x, hp2.y + 22, hp2.width, 8), pp.HeroProgress, UI.Gold);
                 UI.Text(new Rect(hp2.x, hp2.y - 4, hp2.width, 26), pp.heroReady ? "HERO READY - press H" : $"{pp.points} points - hero {Mathf.RoundToInt(pp.HeroProgress * 100)}%", 18, pp.heroReady ? UI.Gold : UI.Dim, TextAnchor.MiddleCenter);
@@ -422,10 +430,12 @@ namespace BIS
                 }
 
             // prompts
-            string prompt = null;
+            string prompt = null; Color promptCol = Color.white;
             if (!me.InVehicle) { var nv = pc.NearbyVehicle(); if (nv) prompt = $"[E] enter {nv.def.name}"; }
             else if (me.vehicle.IsShip && me.vehicle.CanExitHere()) prompt = "[E] land and get out";
-            if (prompt != null) UI.Text(new Rect(0, h / 2 + 70, w, 30), prompt, 22, Color.white, TextAnchor.MiddleCenter);
+            if (b.royale && !me.InVehicle && pc.royalePrompt != null) { prompt = pc.royalePrompt; promptCol = pc.royalePromptCol; }
+            if (prompt != null && TouchInput.Active) prompt = prompt.Replace("[E] ", "");
+            if (prompt != null) UI.Text(new Rect(0, h / 2 + 70, w, 30), prompt, 22, promptCol, TextAnchor.MiddleCenter);
             if (pc.outOfBounds > 0) UI.Text(new Rect(0, h / 2 - 140, w, 40), $"RETURN TO THE BATTLEFIELD  {Mathf.CeilToInt(10 - pc.outOfBounds)}", 30, UI.Bad, TextAnchor.MiddleCenter);
             if (b.space) SpaceStatus(me);
         }
@@ -484,7 +494,7 @@ namespace BIS
                 {
                     Vector3 sp = cam.WorldToScreenPoint(u.transform.position + Vector3.up * (u.Height + 0.6f));
                     if (sp.z <= 0) continue;
-                    UI.Text(new Rect(sp.x / UI.S - 120, (Screen.height - sp.y) / UI.S - 22, 240, 22), "ENEMY HERO: " + u.hero.name, 15, UI.Bad, TextAnchor.LowerCenter);
+                    UI.Text(new Rect(sp.x / UI.S - 120, (Screen.height - sp.y) / UI.S - 22, 240, 22), (u.part.boss ? "" : "ENEMY HERO: " + u.hero.name), 15, UI.Bad, TextAnchor.LowerCenter);
                 }
             }
             // vehicles being repaired: a health bar over them that fills as the repair goes in
@@ -585,6 +595,26 @@ namespace BIS
                 if (!friend && v.IsEmpty) continue;
                 var q = Map(v.transform.position);
                 UI.Fill(new Rect(q.x - 3.5f, q.y - 3.5f, 7, 7), friend ? b.TeamColor(v.Team) : UI.Bad);
+            }
+            if (b.royale && b.royale.phase == Royale.Phase.Play)
+            {
+                // the zone edge (and the next one) where they cross the radar
+                float sc = (r.width / 2 - 6) / range;
+                for (int z = 0; z < 2; z++)
+                {
+                    Vector2 zc = z == 0 ? b.royale.zoneC : b.royale.nextC; float zr = z == 0 ? b.royale.zoneR : b.royale.nextR;
+                    if (z == 1 && b.royale.zonePhase >= Royale.Phases.Length) continue;
+                    for (int i = 0; i < 64; i++)
+                    {
+                        float a = i / 64f * Mathf.PI * 2;
+                        Vector3 wp = new Vector3(zc.x + Mathf.Cos(a) * zr, 0, zc.y + Mathf.Sin(a) * zr);
+                        Vector3 d = wp - mp; d.y = 0;
+                        if (d.magnitude > range) continue;
+                        UI.Dot(Map(wp), 1.6f, z == 0 ? ZoneCol : NextCol);
+                    }
+                }
+                if (b.royale.boss != null && b.royale.boss.Alive) UI.Dot(Map(b.royale.boss.unit.transform.position), 5, new Color(1f, 0.45f, 0.2f));
+                foreach (var v in b.land.vaults) if (!v.open) { var q = Map(v.lockPoint); UI.Fill(new Rect(q.x - 3, q.y - 3, 6, 6), UI.Gold); }
             }
             UI.Fill(new Rect(c.x - 3, c.y - 3, 6, 6), Color.white);
             UI.Line(c, c + new Vector2(0, -14), Color.white, 2);
@@ -745,7 +775,7 @@ namespace BIS
         {
             var b = battle;
             var land = b.land;
-            GUI.DrawTextureWithTexCoords(r, land.minimap, new Rect(0, 1, 1, -1));
+            GUI.DrawTexture(r, land.minimap);
             Vector2 M(Vector3 p) => new Vector2(r.x + (p.x + land.half) / land.size * r.width, r.y + (1 - (p.z + land.half) / land.size) * r.height);
             foreach (var p in b.posts)
             {

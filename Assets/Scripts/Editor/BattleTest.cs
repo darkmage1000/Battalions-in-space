@@ -220,10 +220,52 @@ namespace BIS.EditorTools
         }
 
         /// <summary>Builds a land map and saves Previews/Maps/&lt;name&gt;.png: the minimap beside the bot walk grid (grey walk, dark blocked, tan walk-only, blue wade).</summary>
+        /// <summary>Starts a battle royale (players = you + bots; classes on / off).</summary>
+        public static string StartRoyale(int players = 100, bool classes = true, int faction = 0, int cls = 0)
+        {
+            Step(0.06f);
+            if (Battle.I) Battle.I.Finish(true);
+            var cfg = new BattleConfig { land = Maps.Royale, royale = true, royalePlayers = players, royaleClasses = classes, royaleFaction = faction, royaleClass = cls, factions = new[] { faction, (faction + 1) % 4 }, difficulty = 1, tickets = 1 };
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            Game.I.StartBattle(cfg, r => Game.I.ShowMenu());
+            var b = Battle.I;
+            return $"built in {sw.ElapsedMilliseconds} ms: houses {b.land.houses.Count}, vaults {b.land.vaults.Count}, loot {b.royale.loot.Count}, chests {b.royale.chests.Count}, keys {b.royale.keysSpawned}, vehicles {b.vehicles.Count}, people {b.people.Count}, teams {b.teams.Length}, nav blocked foot {b.land.nav.blockedFoot}";
+        }
+
+        public static string RoyaleReport()
+        {
+            var b = Battle.I; if (!b || !b.royale) return "no royale";
+            var r = b.royale;
+            int inVeh = 0, gliding = 0, using_ = 0, armored = 0, withKey = 0, kills = 0; float best = 0, bestSum = 0; int nb = 0;
+            var goals = new System.Collections.Generic.Dictionary<string, int>();
+            var gf = typeof(BotBrain).GetField("rGoal", BindingFlags.NonPublic | BindingFlags.Instance);
+            var tiers = new int[5];
+            foreach (var u in b.units)
+            {
+                if (!u || !u.Alive || u.part.boss) continue;
+                if (u.InVehicle) inVeh++; if (u.gliding) gliding++; if (u.Using) using_++; if (u.armor > 0) armored++; if (u.keys > 0) withKey++;
+                float v = 0; foreach (var w in u.weapons) if (w != null) { v = Mathf.Max(v, LootTable.Value(w.def)); if (w.def.tier >= 0) tiers[w.def.tier]++; }
+                bestSum += v; nb++; best = Mathf.Max(best, v);
+                if (u.bot != null) { string g = gf.GetValue(u.bot).ToString(); goals[g] = goals.TryGetValue(g, out int c) ? c + 1 : 1; }
+            }
+            foreach (var p in b.people) kills += p.kills;
+            int opened = 0; foreach (var c in r.chests) if (c.opened) opened++;
+            var sb = new StringBuilder();
+            sb.Append($"t={b.time:0} phase {r.phase} drop {r.dropT:0} alive {r.AlivePlayers} teams {r.AliveTeams} kills {kills} over {b.over} {b.result?.reason}\n");
+            sb.Append($"zone phase {r.zonePhase} r {r.zoneR:0} -> {r.nextR:0} timer {r.zoneTimer:0} shrinking {r.shrinking}\n");
+            sb.Append($"loot left {r.loot.Count} chests opened {opened}/{r.chests.Count} keys {r.keysSpawned} held {withKey} vaults open {b.land.vaults.FindAll(v => v.open).Count}\n");
+            sb.Append($"boss spawned {r.bossSpawned} at {r.bossPlace} alive {(r.boss != null && r.boss.Alive)} dead {r.bossDead} hp {(r.boss != null && r.boss.unit ? r.boss.unit.hp : 0):0}\n");
+            sb.Append($"in vehicles {inVeh} gliding {gliding} healing {using_} armoured {armored} gun avg {(nb > 0 ? bestSum / nb : 0):0} best {best:0} tiers held {string.Join("/", tiers)}\n");
+            foreach (var kv in goals) sb.Append($"{kv.Key}={kv.Value} ");
+            var me = b.player.unit;
+            if (me) sb.Append($"\nplayer alive {me.Alive} at {me.transform.position} gliding {me.gliding} placement {b.player.placement}");
+            return sb.ToString();
+        }
+
         public static string MapShot(int map)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            Start(false, map, 0, 1, 2, 200);
+            if (map < 0) StartRoyale(2); else Start(false, map, 0, 1, 2, 200);
             long ms = sw.ElapsedMilliseconds;
             var land = Battle.I.land;
             var nav = land.nav.Picture();

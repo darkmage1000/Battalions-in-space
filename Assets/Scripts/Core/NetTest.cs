@@ -16,7 +16,7 @@ namespace BIS
         readonly StringBuilder log = new StringBuilder();
         bool host;
         string joinIp;
-        bool space, against;
+        bool space, against, royale;
         string File => Path.Combine(Application.persistentDataPath, host ? "autotest_net_host.txt" : "autotest_net_guest.txt");
 
         public static void MaybeStart(System.Collections.Generic.List<string> args)
@@ -28,6 +28,7 @@ namespace BIS
             t.joinIp = ji >= 0 && ji + 1 < args.Count ? args[ji + 1] : "auto";
             t.space = args.Contains("-space");
             t.against = args.Contains("-against");
+            t.royale = args.Contains("-royale");
         }
 
         void Line(string s) { log.AppendLine($"{Time.realtimeSinceStartup:0.0} {s}"); Debug.Log("[nettest] " + s); System.IO.File.WriteAllText(File, log.ToString()); }
@@ -38,7 +39,8 @@ namespace BIS
             Invoke(nameof(Bail), 240);
             Application.logMessageReceived += (c, st, t) => { if (t == LogType.Error || t == LogType.Exception) Line("ERROR " + c + " " + st.Split('\n')[0]); };
             yield return new WaitForSeconds(1);
-            if (host) yield return Host(); else yield return Guest();
+            if (royale) { if (host) yield return RoyaleHost(); else yield return RoyaleGuest(); }
+            else if (host) yield return Host(); else yield return Guest();
             yield return new WaitForSeconds(2);
             Application.Quit();
         }
@@ -79,6 +81,107 @@ namespace BIS
             Line("host ends the battle");
             if (!ended) { b.End(0, "self-test over"); yield return new WaitForSeconds(2); b.Finish(false); }
             yield return new WaitForSeconds(2);
+            Session.Shutdown();
+        }
+
+        // ── battle royale over Wi-Fi: a duo drops in, the guest loots and heals ──
+        IEnumerator RoyaleHost()
+        {
+            Session.HostLobby(() => "self-test royale");
+            Line($"hosting a battle royale on {NetLink.LocalIp()}");
+            float t0 = Time.realtimeSinceStartup;
+            while (Session.peerName == null && Time.realtimeSinceStartup - t0 < 90) { Session.HostLobbyUpdate(); yield return null; }
+            if (Session.peerName == null) { Line("nobody joined"); yield break; }
+            Line($"{Session.peerName} joined");
+            var cfg = new BattleConfig { land = Maps.Royale, royale = true, royalePlayers = 40, royaleClasses = true, royaleClass = 0, royaleFaction = 0, factions = new[] { 0, 1 },
+                                         difficulty = 1, tickets = 1, netHost = true, royaleDuo = !against, remoteName = Session.peerName };
+            bool ended = false;
+            Game.I.StartBattle(cfg, r => { ended = true; Game.I.ShowMenu(); });
+            yield return new WaitForSeconds(1);
+            var b = Battle.I; var ry = b.royale;
+            var rp = b.RemoteHuman;
+            Line($"royale built: {b.people.Count} people, loot {ry.loot.Count}, chests {ry.chests.Count}, guest team {rp?.team} (mine {b.player.team})");
+            ry.dropPickPos = new Vector3(0, b.land.Top(0, 0), 0); ry.playerPicked = true;
+            t0 = Time.realtimeSinceStartup; float next = 0; bool hurtGuest = false;
+            while (Time.realtimeSinceStartup - t0 < 75 && !ended)
+            {
+                if (b.player.unit) b.player.unit.invulnUntil = Time.time + 5;
+                var gh = rp != null ? rp.unit : null;
+                if (gh && gh.Alive && !gh.gliding && !hurtGuest && Time.realtimeSinceStartup - t0 > 38) { hurtGuest = true; gh.TakeDamage(new DamageInfo { amount = 120, type = DmgType.Environment, team = -1, point = gh.transform.position }); Line($"hurt the guest: hp {gh.hp:0}"); }
+                if (Time.realtimeSinceStartup - t0 > next)
+                {
+                    next += 5;
+                    var gu = rp != null ? rp.unit : null;
+                    string g = gu ? $"guest {(gu.Alive ? "alive" : "dead")} {gu.net} at {gu.transform.position:F1} gliding {gu.gliding} hp {gu.hp:0} armour {gu.armor:0} medkits {gu.medkits} shields {gu.shields} weapons {gu.weapons[0]?.def.name}/{gu.weapons[1]?.def.name} using {gu.Using}"
+                                  : $"guest not down yet (dropped {rp?.dropped}, picked {rp?.dropAt:F0})";
+                    Line($"t {Time.realtimeSinceStartup - t0:0} {ry.phase} drop {ry.dropT:0} alive {ry.AlivePlayers} loot {ry.loot.Count} | {g} | out {Session.link?.bytesOut / 1024} KB");
+                }
+                yield return null;
+            }
+            Line("host ends the battle");
+            if (!ended) { b.End(b.player.team, "self-test over"); yield return new WaitForSeconds(2); b.Finish(false); }
+            yield return new WaitForSeconds(2);
+            Session.Shutdown();
+        }
+
+        IEnumerator RoyaleGuest()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while (!Session.Join(joinIp == "auto" ? "127.0.0.1" : joinIp)) { if (Time.realtimeSinceStartup - t0 > 60) { Line("could not connect"); yield break; } yield return new WaitForSeconds(1); }
+            Line("connected");
+            t0 = Time.realtimeSinceStartup;
+            while ((Battle.I == null || !Battle.I.cfg.netClient) && Time.realtimeSinceStartup - t0 < 90) { Session.ClientLobbyUpdate(); yield return null; }
+            var b = Battle.I;
+            if (b == null || b.royale == null) { Line("no royale started"); yield break; }
+            var ry = b.royale;
+            yield return new WaitForSeconds(2);
+            Line($"royale on the guest: {b.people.Count} people, we are '{b.player.name}' team {b.player.team} mode {b.control.mode}; loot {ry.loot.Count} chests {ry.chests.Count} phase {ry.phase} drop {ry.dropT:0}");
+            // pick a spot by the city and jump
+            ry.dropPickPos = new Vector3(30, b.land.Top(30, 30), 30); ry.playerPicked = true; ry.playerWantsJump = true;
+            t0 = Time.realtimeSinceStartup;
+            while (!(b.player.unit && b.player.unit.Alive) && Time.realtimeSinceStartup - t0 < 30) yield return null;
+            var me = b.player.unit;
+            if (!me) { Line("never dropped"); yield break; }
+            Line($"dropped: {me.net} at {me.transform.position:F0} gliding {me.gliding} class {me.ClassName}");
+            while (me && me.Alive && me.gliding && Time.realtimeSinceStartup - t0 < 50) { PlayerControl.testMove = Vector3.zero; yield return null; }
+            Line($"landed at {me.transform.position:F1} after {Time.realtimeSinceStartup - t0:0} s; host sees us at {NetClient.DebugHostSeesMe:F1}");
+            // walk to the nearest loot and ask for it, a few times
+            int took = 0; float start = Time.realtimeSinceStartup, next = 0;
+            var asked = new System.Collections.Generic.HashSet<int>();
+            while (Time.realtimeSinceStartup - start < 45 && me && me.Alive && !b.over)
+            {
+                // the nearest item we can take: step next to it (a test, not a path-finder) and ask the host for it
+                LootItem it = null; float bd = float.MaxValue;
+                foreach (var x in ry.loot) { if (x.taken || ry.CantTake(me, x) != null || asked.Contains(x.id)) continue; float d = (x.pos - me.transform.position).sqrMagnitude; if (d < bd) { bd = d; it = x; } }
+                if (it != null && took < 8)
+                {
+                    Vector3 to = it.pos - me.transform.position; to.y = 0;
+                    if (to.magnitude > 1.6f)
+                    {
+                        me.cc.enabled = false; me.transform.position = it.pos - to.normalized * 1.2f + Vector3.up * 0.2f; me.cc.enabled = true; Physics.SyncTransforms();
+                        yield return new WaitForSeconds(0.4f);
+                    }
+                    PlayerControl.testMove = Vector3.zero;
+                    asked.Add(it.id);
+                    NetClient.RequestLoot(0, it.id); took++; Line($"asked for {(it.kind == LootKind.Weapon ? Tiers.Names[it.tier] + " " : "")}{it.Name} (id {it.id})");
+                    yield return new WaitForSeconds(0.8f);
+                    Line($"  now: taken on our side {it.taken}, medkits {me.medkits} shields {me.shields} keys {me.keys} weapons {me.weapons[0]?.def.name}({me.weapons[0]?.def.tier})/{me.weapons[1]?.def.name}({me.weapons[1]?.def.tier})");
+                }
+                if (me.medkits > 0 && me.hp < me.maxHp && !me.Using && Time.frameCount % 30 == 0) { NetClient.RequestHeal(); Line($"asked to heal at hp {me.hp:0}"); }
+                if (Time.realtimeSinceStartup - start > next)
+                {
+                    next += 5;
+                    Line($"t {Time.realtimeSinceStartup - start:0} hp {me.hp:0} armour {me.armor:0} medkits {me.medkits} shields {me.shields} keys {me.keys} weapons {me.weapons[0]?.def.name}({me.weapons[0]?.def.tier})/{me.weapons[1]?.def.name}({me.weapons[1]?.def.tier}) | loot here {ry.loot.Count} | {ry.phase} zone r {ry.zoneR:0} next {ry.nextR:0} timer {ry.zoneTimer:0} alive {ry.AlivePlayers} | in {Session.link?.bytesIn / 1024} KB");
+                }
+                yield return null;
+            }
+            PlayerControl.testMove = Vector3.zero;
+            Line($"asked for {took} items");
+            t0 = Time.realtimeSinceStartup;
+            while (Battle.I != null && !Battle.I.over && Time.realtimeSinceStartup - t0 < 30) yield return null;
+            Line(Battle.I != null && Battle.I.over ? $"battle over: {Battle.I.result?.reason}" : "battle did not end");
+            if (Battle.I != null) Battle.I.Finish(false);
+            yield return new WaitForSeconds(1);
             Session.Shutdown();
         }
 

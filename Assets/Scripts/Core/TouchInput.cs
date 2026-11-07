@@ -50,6 +50,7 @@ namespace BIS
             B("down", "DOWN", -620, -230, 100);
             B("pause", "II", -110, 20, 90);
             B("score", "TAB", -220, 20, 90);
+            B("map", "MAP", -330, 20, 90);
         }
 
         public static Rect ScreenRect(Btn b)
@@ -68,6 +69,7 @@ namespace BIS
             foreach (var b in Buttons) b.visible = false;
             void Show(string id, string label = null) { var b = Get(id); b.visible = true; if (label != null) b.label = label; }
             Show("pause"); Show("score");
+            if (Battle.I != null && Battle.I.land != null) Show("map");
             if (me == null) return;
             if (!me.InVehicle)
             {
@@ -78,6 +80,12 @@ namespace BIS
                 if (me.AbilityName != null) Show("ability", me.AbilityName.Length > 6 ? "SKILL" : me.AbilityName);
                 if (Battle.I.player.heroReady && !me.IsHero) Show("hero", "HERO");
                 if (pc.NearbyVehicle()) Show("use", "ENTER");
+                if (Battle.I.royale)
+                {
+                    if (me.medkits + me.shields > 0) Show("hero", me.Using ? "..." : "HEAL");
+                    string rp = pc.royalePrompt;
+                    if (rp != null && rp.StartsWith("[E]")) Show("use", rp.Contains("VAULT") || rp.Contains("CHEST") ? "OPEN" : "TAKE");
+                }
                 return;
             }
             var v = me.vehicle;

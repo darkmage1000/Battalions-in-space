@@ -8,7 +8,7 @@ namespace BIS
     /// </summary>
     public class PlayerControl : MonoBehaviour
     {
-        public enum Mode { Spawn, Play, Dead, Over }
+        public enum Mode { Spawn, Play, Dead, Over, Drop }
         public Battle b;
         public Mode mode = Mode.Spawn;
         public bool paused, showScore, showMap, showHelp;
@@ -34,7 +34,7 @@ namespace BIS
         public void Init(Battle battle)
         {
             b = battle;
-            mode = Mode.Spawn;
+            mode = b.royale ? Mode.Drop : Mode.Spawn;
             fov = Settings.Fov;
             if (b.land) { var hp = b.HomePost(b.player.team); if (hp) selPost = hp.index; }
             selClass = 0;
@@ -142,7 +142,12 @@ namespace BIS
             {
                 case Mode.Dead:
                     deadT += dt;
+                    if (b.royale) { SpectateTick(dt); break; }     // no respawns in a battle royale: watch until you leave
                     if (deadT > 3.5f) { mode = Mode.Spawn; }
+                    break;
+                case Mode.Drop:
+                    if (Ctl.Confirm || Ctl.JumpDown) b.royale.playerWantsJump = true;
+                    if (Net.Session.IsClient && (b.royale.playerPicked || b.royale.playerWantsJump)) Net.NetClient.RequestJump(b.royale.dropPickPos, b.royale.playerWantsJump);
                     break;
                 case Mode.Spawn:
                     if (Ctl.Confirm) TrySpawn(false);
@@ -216,6 +221,7 @@ namespace BIS
             if (inp.aim && wd.zoomFov > 0 && ws.clip == 0 && ws.ammo > 0) Say("Lower the scope to reload", 0.3f);
             else if (wd.zoomFov > 0 && ws.clip == 0 && ws.ammo == 0) Say("Out of rifle rounds - find ammo or a supply crate", 0.3f);
 
+            if (b.royale) { RoyaleFoot(me); if (b.royale.usedUse) return; }
             if (Ctl.Use)
             {
                 Vehicle best = null; float bd = 36;
@@ -461,7 +467,9 @@ namespace BIS
             var me = b.player.unit;
             float wantFov = Settings.Fov;
 
-            if (mode == Mode.Spawn || (mode == Mode.Over && (me == null || !me.Alive)))
+            if (mode == Mode.Drop) DropCam(cam, dt);
+            else if (b.royale && (mode == Mode.Dead || mode == Mode.Over) && spectate && spectate.Alive && (me == null || !me.Alive)) SpectateCam(cam, dt);
+            else if (mode == Mode.Spawn || (mode == Mode.Over && (me == null || !me.Alive)))
             {
                 OverviewCam(cam, dt);
             }
@@ -502,7 +510,7 @@ namespace BIS
                 Quaternion q = Quaternion.Euler(camPitch, camYaw, 0);
                 float h = me.Height * 0.92f;
                 Vector3 pivot = me.transform.position + Vector3.up * h;
-                float want = zoom ? 0.3f : aiming ? 2.2f : 3.9f * (me.IsHero ? 1.25f : 1f);
+                float want = zoom ? 0.3f : aiming ? 2.2f : me.gliding ? 8.5f : 3.9f * (me.IsHero ? 1.25f : 1f);
                 camDist = Mathf.Lerp(camDist, want, dt * 12);
                 Vector3 shoulder = q * new Vector3(zoom ? 0.15f : 0.85f, 0.3f, 0);
                 Vector3 desired = pivot + shoulder - q * Vector3.forward * camDist;
@@ -530,6 +538,97 @@ namespace BIS
                 if (h.distance < best) best = h.distance;
             }
             return pivot + d / len * Mathf.Max(0.2f, best - 0.1f);
+        }
+
+        // ── battle royale ────────────────────────────────────────────────
+        /// <summary>The thing E acts on right now (shown as the prompt): a vault, a chest, an item, or null.</summary>
+        public string royalePrompt;
+        public Color royalePromptCol = Color.white;
+        public Unit spectate;
+        float spectateT;
+
+        void RoyaleFoot(Unit me)
+        {
+            var r = b.royale;
+            r.usedUse = false;
+            royalePrompt = null; royalePromptCol = Color.white;
+            Vector3 p = me.transform.position;
+            if (Ctl.Hero)
+            {
+                if (Net.Session.IsClient) Net.NetClient.RequestHeal();
+                else if (!me.UseBest()) { Say(me.medkits + me.shields == 0 ? "No medkits or shield cells" : "Health and armour are full", 1.5f); Sfx.Play2D("deny"); }
+            }
+            var vault = r.VaultNear(p, 3.5f);
+            if (vault != null)
+            {
+                royalePrompt = me.keys > 0 ? "[E] OPEN THE VAULT (uses your key)" : "VAULT - LOCKED (find a vault key: one in ten legendary finds has one)";
+                royalePromptCol = new Color(1f, 0.8f, 0.3f);
+                if (Ctl.Use && me.keys > 0)
+                {
+                    r.usedUse = true;
+                    if (Net.Session.IsClient) Net.NetClient.RequestLoot(2, b.land.vaults.IndexOf(vault)); else r.TryOpenVault(me, vault);
+                }
+                if (me.keys > 0) return;
+            }
+            var chest = r.NearestChest(p, 2.4f);
+            var item = r.NearestLoot(p, 2.3f);
+            float cd = chest != null ? (chest.pos - p).sqrMagnitude : 999, idist = item != null ? (item.pos - p).sqrMagnitude : 999;
+            if (chest != null && cd <= idist)
+            {
+                royalePrompt = "[E] OPEN SUPPLY CHEST"; royalePromptCol = new Color(0.5f, 0.9f, 1f);
+                if (Ctl.Use) { r.usedUse = true; if (Net.Session.IsClient) Net.NetClient.RequestLoot(1, r.chests.IndexOf(chest)); else r.OpenChest(me, chest); }
+            }
+            else if (item != null)
+            {
+                string why = r.CantTake(me, item);
+                string what = (item.kind == LootKind.Weapon ? Tiers.Names[item.tier] + " " : "") + item.Name;
+                if (item.kind == LootKind.Weapon)
+                {
+                    var hand = me.weapons[1] == null ? null : me.Weapon;
+                    what += hand != null ? $"  (swap for {hand.def.name})" : "";
+                }
+                royalePrompt = why != null ? $"{what} - {why}" : $"[E] TAKE {what}";
+                royalePromptCol = why != null ? UI.Dim : Tiers.Of(item.tier);
+                if (Ctl.Use && why == null) { r.usedUse = true; if (Net.Session.IsClient) Net.NetClient.RequestLoot(0, item.id); else r.Take(me, item); }
+            }
+        }
+
+        void SpectateTick(float dt)
+        {
+            spectateT -= dt;
+            if (spectate && spectate.Alive && spectateT > 0) return;
+            spectateT = 6;
+            if (killer && killer.Alive && deadT < 8) { spectate = killer; return; }
+            Unit best = null; float bd = float.MaxValue;
+            Vector3 from = Cam ? Cam.transform.position : Vector3.zero;
+            foreach (var u in b.units)
+            {
+                if (!u || !u.Alive || u.part.boss) continue;
+                float d = (u.transform.position - from).sqrMagnitude * (u.part.Human ? 0.01f : 1f);
+                if (d < bd) { bd = d; best = u; }
+            }
+            spectate = best;
+        }
+
+        void SpectateCam(Camera cam, float dt)
+        {
+            Vector3 fp = spectate.InVehicle ? spectate.vehicle.transform.position : spectate.transform.position;
+            Quaternion q = Quaternion.Euler(14, spectate.yaw, 0);
+            Vector3 pivot = fp + Vector3.up * (spectate.InVehicle ? 4 : spectate.Height * 0.95f);
+            Vector3 want = CamCollide(pivot, pivot - q * Vector3.forward * (spectate.InVehicle ? 12 : 4.5f) + q * Vector3.right * 0.8f, spectate.transform);
+            cam.transform.position = Vector3.SmoothDamp(cam.transform.position, want, ref camVel, 0.15f, 400, dt);
+            cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, q, dt * 8);
+        }
+
+        /// <summary>Before jumping: high over the map, slowly circling (the HUD shows the map to pick a landing spot).</summary>
+        void DropCam(Camera cam, float dt)
+        {
+            float t = Time.unscaledTime * 0.05f;
+            Vector3 focus = b.royale.dropPickPos;
+            float r = 260;
+            Vector3 pos = focus + new Vector3(Mathf.Cos(t) * r, 240, Mathf.Sin(t) * r);
+            cam.transform.position = Vector3.SmoothDamp(cam.transform.position, pos, ref camVel, 1.2f, 2000, dt);
+            cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, Quaternion.LookRotation(focus - pos), dt * 2);
         }
 
         void OverviewCam(Camera cam, float dt)

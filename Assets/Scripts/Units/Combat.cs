@@ -57,6 +57,12 @@ namespace BIS
         public int shipChoice = -1;   // -1 = on foot, else index into faction ships
         public float heroCost = 36;
         public bool everHero;
+        public bool boss;            // battle royale: the boss (not a player; never counted among the living)
+        public int placement;        // battle royale: where this player finished (1 = last one standing)
+        public int royaleClass;      // battle royale: class picked (when classes are on)
+        public int faction = -1;     // battle royale: this player's race
+        public Vector3 dropAt;       // battle royale: where they chose to land
+        public bool dropped;         // battle royale: has left the dropship
         public float aimSkill;       // bots: 0..1
         public float repairAcc;
         public readonly List<string> awardsEarned = new List<string>();

@@ -8,7 +8,7 @@ namespace BIS
     /// drivers / gunners / gunship pilots, and in space: dogfighting, bombing runs on capital ship systems,
     /// boarding the enemy hangar and sabotaging Life Support / the Reactor, and defending its own ship.
     /// </summary>
-    public class BotBrain
+    public partial class BotBrain
     {
         enum SpaceJob { Dogfight, Bomb, Board, Escort, Defend, Sabotage }
         enum RunPhase { Approach, Attack, Break }
@@ -17,6 +17,9 @@ namespace BIS
         readonly Battle b;
         float think, seeT, objT, strafeT, strafe = 1, stuckT, noiseT, burst, sideStepT, abilityT, grenadeT, enterT;
         float evadeRoll = -1;   // starfighter pilots: a die rolled once per missile chase - do we roll out of this one?
+        bool chased;            // starfighter pilots: an enemy craft sits behind us with its nose on us (checked every think)
+        float dodgeRollT;       // next time a pilot under fire may throw an evasive roll that isn't for a missile
+        float weaveSeed = Random.value * 10f;
         Vector3 lastPos, noise, moveGoal, sideStep;
         IDamageable target;
         Vector3 targetVel;
@@ -97,6 +100,7 @@ namespace BIS
                 return;
             }
             if (b.space != null) SpaceInfantry(dt);
+            else if (b.royale != null) RoyaleInfantry(dt);
             else LandInfantry(dt);
         }
 
@@ -163,7 +167,7 @@ namespace BIS
             if (noiseT <= 0)
             {
                 noiseT = Random.Range(0.25f, 0.5f);
-                float errDeg = Mathf.Lerp(7.5f, 1.4f, skill) * Mathf.Lerp(1.6f, 0.6f, Mathf.Clamp01(trackTime / 3f));
+                float errDeg = Mathf.Lerp(7.5f, 1.4f, skill) * Mathf.Lerp(1.6f, 0.6f, Mathf.Clamp01(trackTime / 3f)) * (b.royale != null && !u.part.boss ? 1.3f : 1f);
                 noise = Random.insideUnitSphere * Mathf.Tan(errDeg * Mathf.Deg2Rad) * dist;
             }
             return point + noise;
@@ -484,7 +488,10 @@ namespace BIS
         {
             think -= dt; objT -= dt; seeT -= dt;
             Vector3 pos = v.transform.position;
-            if (objT <= 0 || objective == null) PickObjective();
+            Vector3 royaleGoal = pos;
+            if (b.royale != null) RoyaleDrive(v, dt, ref royaleGoal);
+            else if (objT <= 0 || objective == null) PickObjective();
+            if (!u.InVehicle) return;
             if (think <= 0)
             {
                 think = 0.35f;
@@ -496,7 +503,7 @@ namespace BIS
             if (v.hp < v.maxHp * 0.12f && Random.value < 0.02f) { v.Leave(u, true); return; }
 
             var inp = new VehicleInput();
-            Vector3 goal = objective ? moveGoal : pos;
+            Vector3 goal = b.royale != null ? royaleGoal : objective ? moveGoal : pos;
             Vector3 aimAt = pos + v.transform.forward * 40;
             if (target != null)
             {
@@ -720,6 +727,15 @@ namespace BIS
                 }
                 if (job == SpaceJob.Bomb && (sysTarget == null || sysTarget.destroyed)) sysTarget = PickSystem(enemy);
                 if (job == SpaceJob.Bomb && sysTarget == null) job = SpaceJob.Dogfight;
+                chased = false;
+                foreach (var o in b.vehicles)
+                {
+                    if (!o || o == v || !o.Alive || !o.IsShip || o.landed || o.Team == u.team) continue;
+                    Vector3 rel = pos - o.transform.position;
+                    float rd = rel.magnitude;
+                    if (rd > 420 || rd < 1) continue;
+                    if (Vector3.Dot(v.transform.forward, -rel / rd) < -0.2f && Vector3.Dot(o.transform.forward, rel / rd) > 0.92f) { chased = true; break; }
+                }
             }
             if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
 
@@ -819,6 +835,15 @@ namespace BIS
                         boost = d > 500;
                         // overshoot: if very close and facing it, break off
                         if (d < 30) point = pos + (v.transform.forward + Vector3.Cross(v.transform.forward, Vector3.up) * strafe).normalized * 200;
+                        // nose to nose: aim to pass beside it rather than through it (a pilot keeps shooting until ~90 m,
+                        // then slides off to the side - a joust, not a ram)
+                        else if (target is Vehicle tv && tv.IsShip && d < 260 && Vector3.Dot(tv.transform.forward, (pos - tp) / Mathf.Max(1, d)) > 0.75f)
+                        {
+                            Vector3 side = Vector3.Cross(v.transform.forward, v.transform.up) * strafe;
+                            float off = Mathf.Lerp(45, 14, Mathf.InverseLerp(90, 260, d));
+                            point = point + side * off + v.transform.up * off * 0.4f;
+                            if (d < 90) inp.fire = false;
+                        }
                     }
                     else
                     {
@@ -827,6 +852,26 @@ namespace BIS
                         point = Vector3.Lerp(home.transform.position, enemy.transform.position, 0.5f + 0.25f * Mathf.Sin(a)) + new Vector3(Mathf.Cos(a) * 300, Mathf.Sin(a * 1.7f) * 120, 0);
                     }
                     break;
+            }
+
+            // nothing to shoot or bomb right now and under fire (or with someone on our tail): weave so we're hard to hit,
+            // and now and then throw the evasive roll
+            bool busy = inp.fire || inp.alt || job == SpaceJob.Board || (job == SpaceJob.Bomb && run != RunPhase.Break && sysTarget);
+            bool hurtNow = Time.time - v.lastHurt < 2.5f;
+            if (!busy && (hurtNow || chased))
+            {
+                float t = Time.time * (1.6f + skill * 0.8f) + weaveSeed;
+                float amp = 70 + skill * 60;
+                Vector3 fwd = v.transform.forward;
+                Vector3 right = Vector3.Cross(Vector3.up, fwd); if (right.sqrMagnitude < 0.01f) right = v.transform.right; right.Normalize();
+                Vector3 up = Vector3.Cross(fwd, right);
+                point = pos + (point - pos).normalized * 200 + (right * Mathf.Sin(t) + up * Mathf.Sin(t * 1.37f + 1) * 0.7f) * amp;
+                throttleWant = Mathf.Max(throttleWant, 0.95f);
+                if (hurtNow && v.EvadeReadyIn <= 0 && Time.time > dodgeRollT)
+                {
+                    dodgeRollT = Time.time + Random.Range(4f, 9f);
+                    if (Random.value < 0.25f + skill * 0.45f) { inp.evade = true; inp.evadeSide = Mathf.Sin(t) > 0 ? 1 : -1; }
+                }
             }
 
             // bounds

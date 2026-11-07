@@ -25,6 +25,41 @@ namespace BIS
 
         public float PlayHalf => half * 0.8f;
 
+        // ── biomes: a map with regions mixes themes (battle royale); `here` / `th` are the theme of the spot being built ──
+        Theme here;
+        static ThemeInfo[] infos;
+        public static ThemeInfo Info(Theme t)
+        {
+            if (infos == null) { infos = new ThemeInfo[6]; for (int i = 0; i < infos.Length; i++) infos[i] = ThemeInfo.Of((Theme)i); }
+            return infos[(int)t];
+        }
+        Vector2[] regC;
+        public bool Biomes => regC != null && regC.Length > 0;
+        const float BiomeBlend = 70f;     // metres over which two regions blend into each other
+
+        /// <summary>The two nearest regions to a point and how much of the nearest one shows (0.5 on the border).</summary>
+        public void Biome(float x, float z, out int ra, out int rb, out float wa)
+        {
+            // warp the borders so they wander instead of running in straight lines
+            float wx = x + (Mathf.PerlinNoise(x * 0.004f + 7.1f, z * 0.004f + 3.3f) - 0.5f) * 150f;
+            float wz = z + (Mathf.PerlinNoise(x * 0.004f + 1.7f, z * 0.004f + 9.2f) - 0.5f) * 150f;
+            float d1 = float.MaxValue, d2 = float.MaxValue; ra = 0; rb = 0;
+            for (int i = 0; i < regC.Length; i++)
+            {
+                float d = (regC[i].x - wx) * (regC[i].x - wx) + (regC[i].y - wz) * (regC[i].y - wz);
+                if (d < d1) { d2 = d1; rb = ra; d1 = d; ra = i; }
+                else if (d < d2) { d2 = d; rb = i; }
+            }
+            d1 = Mathf.Sqrt(d1); d2 = Mathf.Sqrt(d2);
+            wa = Mathf.SmoothStep(0, 1, Mathf.Clamp01(0.5f + (d2 - d1) / (2 * BiomeBlend)));
+        }
+
+        public int RegionAt(float x, float z) { if (!Biomes) return -1; Biome(x, z, out int a, out _, out _); return a; }
+        public Theme ThemeAt(float x, float z) { if (!Biomes) return def.theme; Biome(x, z, out int a, out _, out _); return def.regions[a].theme; }
+        public Vector3 RegionCentre(int i) => new Vector3(regC[i].x, 0, regC[i].y);
+        void At(float x, float z) { if (!Biomes) return; here = ThemeAt(x, z); th = Info(here); }
+        void AtBase() { here = def.theme; th = Info(def.theme); }
+
         // ── height field ─────────────────────────────────────────────────
         float Noise(float x, float z) => Mathf.PerlinNoise(x + ox, z + oz);
         float Fbm(float x, float z, int oct = 4)
@@ -39,8 +74,24 @@ namespace BIS
             if (def.Floating) return VoidY;      // nothing but sky; the islands are added in LayoutHeight
             float nx = x / size, nz = z / size;
             float b = (Fbm(nx * 3.2f, nz * 3.2f) - 0.47f) * 2f;
+            float y;
+            if (Biomes)
+            {
+                Biome(x, z, out int ra, out int rb, out float wa);
+                y = ThemeY(def.regions[ra].theme, x, z, nx, nz, b);
+                if (wa < 0.999f) y = Mathf.Lerp(ThemeY(def.regions[rb].theme, x, z, nx, nz, b), y, wa);
+            }
+            else y = ThemeY(def.theme, x, z, nx, nz, b);
+            // mountains round the edge
+            float d = Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) / half;
+            if (d > 0.76f) { float e = (d - 0.76f) / 0.24f; y += e * e * 75f + Fbm(nx * 9, nz * 9, 3) * e * 25f; }
+            return y;
+        }
+
+        float ThemeY(Theme t, float x, float z, float nx, float nz, float b)
+        {
             float y = b * 16f * def.hills;
-            switch (def.theme)
+            switch (t)
             {
                 case Theme.Urban:
                     y = b * 4f * def.hills;      // a city is built on level ground
@@ -62,9 +113,6 @@ namespace BIS
                     y += Mathf.Pow(Mathf.Abs(c - 0.5f) * 2, 2) * 22f - 4;
                     break;
             }
-            // mountains round the edge
-            float d = Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)) / half;
-            if (d > 0.76f) { float e = (d - 0.76f) / 0.24f; y += e * e * 75f + Fbm(nx * 9, nz * 9, 3) * e * 25f; }
             return y;
         }
 
@@ -122,14 +170,19 @@ namespace BIS
         public void Build(LandMapDef d, Battle battle)
         {
             def = d;
-            th = ThemeInfo.Of(d.theme);
+            th = Info(d.theme); here = d.theme;
             size = d.size; half = size / 2;
             rng = new System.Random(d.seed);
             ox = (float)rng.NextDouble() * 500; oz = (float)rng.NextDouble() * 500;
-            cell = 2.5f;
+            cell = d.cell > 0 ? d.cell : 2.5f;
             res = Mathf.RoundToInt(size / cell);
 
             float postScale = half * 0.72f;
+            if (d.regions != null && d.regions.Length > 0)
+            {
+                regC = new Vector2[d.regions.Length];
+                for (int i = 0; i < regC.Length; i++) regC[i] = d.regions[i].pos * postScale;
+            }
             PrepareLayout();
             foreach (var p in d.posts)
             {
@@ -158,6 +211,7 @@ namespace BIS
             BuildMinimap();
             var props = new List<PropKit>();
             BuildProps(props);
+            if (def.royale) PaintBuildings();
             BuildPosts(battle);
             SetupAtmosphere();
             Physics.SyncTransforms();
@@ -166,6 +220,21 @@ namespace BIS
 
         Color GroundColor(float x, float z, float y, float slope)
         {
+            if (!Biomes) return GroundColorT(def.theme, th, x, z, y, slope);
+            Biome(x, z, out int ra, out int rb, out float wa);
+            Theme ta = def.regions[ra].theme, tb = def.regions[rb].theme;
+            Color c = GroundColorT(ta, Info(ta), x, z, y, slope);
+            if (wa < 0.999f && tb != ta)
+            {
+                Color c2 = GroundColorT(tb, Info(tb), x, z, y, slope);
+                float al = wa >= 0.5f ? c.a : c2.a;
+                c = Color.Lerp(c2, c, wa); c.a = al;
+            }
+            return c;
+        }
+
+        Color GroundColorT(Theme theme, ThemeInfo th, float x, float z, float y, float slope)
+        {
             float n = Mathf.PerlinNoise(x * 0.045f + 33, z * 0.045f + 71);
             float n2 = Mathf.PerlinNoise(x * 0.17f + 3, z * 0.17f + 9);
             float hn = Mathf.InverseLerp(-15, 35, y);
@@ -173,13 +242,13 @@ namespace BIS
             Color c = Color.Lerp(th.low, th.mid, Mathf.SmoothStep(0, 1, n));
             c = Color.Lerp(c, th.high, Mathf.SmoothStep(0.45f, 0.95f, hn));
             if (n2 > 0.66f) c = Color.Lerp(c, th.patch, (n2 - 0.66f) * 2.5f);
-            if (def.theme == Theme.Snow) c = Color.Lerp(c, th.steep, Mathf.SmoothStep(0.5f, 0.75f, slope));
+            if (theme == Theme.Snow) c = Color.Lerp(c, th.steep, Mathf.SmoothStep(0.5f, 0.75f, slope));
             else c = Color.Lerp(c, th.steep, Mathf.SmoothStep(0.45f, 0.7f, slope));
-            if ((tg & TagLake) != 0) c = def.theme == Theme.Snow ? Color.Lerp(new Color(0.62f, 0.8f, 0.9f), new Color(0.85f, 0.93f, 0.98f), n2) : Color.Lerp(c, new Color(0.3f, 0.28f, 0.22f), 0.6f);
-            if ((tg & TagWet) != 0) c = def.theme == Theme.Desert ? Color.Lerp(th.patch, th.path, 0.6f) * 0.92f : def.theme == Theme.Volcanic ? new Color(0.1f, 0.08f, 0.08f) : def.theme == Theme.Snow ? new Color(0.5f, 0.56f, 0.62f) : new Color(0.3f, 0.27f, 0.2f);
-            if ((tg & TagRoad) != 0 && slope < 0.3f && def.theme != Theme.Urban) c = Color.Lerp(c, th.path, 0.85f);   // city streets are laid as asphalt meshes
+            if ((tg & TagLake) != 0) c = theme == Theme.Snow ? Color.Lerp(new Color(0.62f, 0.8f, 0.9f), new Color(0.85f, 0.93f, 0.98f), n2) : Color.Lerp(c, new Color(0.3f, 0.28f, 0.22f), 0.6f);
+            if ((tg & TagWet) != 0) c = theme == Theme.Desert ? Color.Lerp(th.patch, th.path, 0.6f) * 0.92f : theme == Theme.Volcanic ? new Color(0.1f, 0.08f, 0.08f) : theme == Theme.Snow ? new Color(0.5f, 0.56f, 0.62f) : new Color(0.3f, 0.27f, 0.2f);
+            if ((tg & TagRoad) != 0 && slope < 0.3f && theme != Theme.Urban) c = Color.Lerp(c, th.path, 0.85f);   // city streets are laid as asphalt meshes
             if (def.Floating) c = Color.Lerp(c, Color.Lerp(th.steep, new Color(0.48f, 0.4f, 0.31f), n2), Mathf.SmoothStep(0.3f, 0.55f, slope));   // island cliffs are rock
-            if (def.theme == Theme.Volcanic && y < -5 && n2 < (channels.Count > 0 ? 0.1f : 0.32f) && (tg & (TagRoad | TagClear)) == 0) { c = new Color(1f, 0.35f, 0.08f, 0); }
+            if (theme == Theme.Volcanic && y < -5 && n2 < (channels.Count > 0 ? 0.1f : 0.32f) && (tg & (TagRoad | TagClear)) == 0) { c = new Color(1f, 0.35f, 0.08f, 0); }
             c *= 0.94f + 0.12f * n2;
             c.a = c.a < 0.5f ? 0 : 1;
             return c;
@@ -222,7 +291,7 @@ namespace BIS
 
         void BuildMinimap()
         {
-            const int n = 256;
+            int n = def.royale ? 512 : 256;
             minimap = new Texture2D(n, n, TextureFormat.RGB24, false) { wrapMode = TextureWrapMode.Clamp, name = "minimap" };
             for (int y = 0; y < n; y++)
                 for (int x = 0; x < n; x++)
@@ -298,6 +367,7 @@ namespace BIS
             for (int i = 0; i < kits.Length; i++) kits[i] = new MeshKit();
             MeshKit KitAt(float x, float z)
             {
+                At(x, z);
                 int gx = Mathf.Clamp((int)((x + half) / gs), 0, grid - 1), gz = Mathf.Clamp((int)((z + half) / gs), 0, grid - 1);
                 return kits[gz * grid + gx];
             }
@@ -315,7 +385,7 @@ namespace BIS
                 var k = KitAt(x, z);
                 Vector3 p = new Vector3(x, y, z);
                 Quaternion yawQ = Quaternion.Euler(0, R(0, 360), 0);
-                switch (def.theme)
+                switch (here)
                 {
                     case Theme.Desert:
                         if (roll < 0.55f) { float s = R(1.5f, 5f); k.Rock(p + Vector3.up * s * 0.25f, new Vector3(s * 1.4f, s * 0.9f, s * 1.1f), yawQ, Color.Lerp(th.steep, th.high, R()), rng.Next(), 0.3f); ColSphere(p + Vector3.up * s * 0.2f, s * 0.5f); }
@@ -475,8 +545,9 @@ namespace BIS
             var k = new MeshKit();
             var r = new System.Random(def.seed + idx * 31);
             float Rn(float a, float b) => a + (b - a) * (float)r.NextDouble();
-            Color wall = def.theme == Theme.Snow ? new Color(0.72f, 0.75f, 0.8f) : def.theme == Theme.Volcanic ? new Color(0.3f, 0.28f, 0.28f) : def.theme == Theme.Forest ? new Color(0.5f, 0.46f, 0.38f)
-                       : def.theme == Theme.Urban || def.theme == Theme.Sky ? WallColor : new Color(0.78f, 0.68f, 0.52f);
+            At(p.x, p.z);
+            Color wall = here == Theme.Snow ? new Color(0.72f, 0.75f, 0.8f) : here == Theme.Volcanic ? new Color(0.3f, 0.28f, 0.28f) : here == Theme.Forest ? new Color(0.5f, 0.46f, 0.38f)
+                       : here == Theme.Urban || here == Theme.Sky ? WallColor : new Color(0.78f, 0.68f, 0.52f);
             Color dark = wall * 0.6f; dark.a = 1;
             // central platform
             k.Cyl(p + Vector3.up * 0.15f, 4.2f, 0.5f, Quaternion.identity, dark, 6);
@@ -548,6 +619,7 @@ namespace BIS
             }
             k.Make("outpost", parent, true).transform.position = Vector3.zero;   // vertices are in world space
             KitProps(parent, p, big, idx, rad);
+            AtBase();
         }
 
         /// <summary>Kenney Space Kit (CC0) dressing round a post: a dish, an antenna or station, barrels, a console.</summary>
@@ -610,6 +682,7 @@ namespace BIS
         void SetupAtmosphere()
         {
             var sky = Mats.Sky(false);
+            skyMat = sky;
             sky.SetColor("_Top", th.skyTop); sky.SetColor("_Horizon", th.skyHorizon); sky.SetColor("_Bottom", th.skyBottom);
             sky.SetColor("_SunCol", th.sun);
             var sunRot = Quaternion.Euler(th.sunPitch, th.sunYaw, 0);
@@ -624,18 +697,20 @@ namespace BIS
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogColor = th.fog;
-            RenderSettings.fogDensity = th.fogDensity;
+            RenderSettings.fogDensity = th.fogDensity * (def.royale ? 0.6f : 1f);
             Game.I.sun.transform.rotation = sunRot;
             Game.I.sun.color = th.sun;
             Game.I.sun.intensity = def.theme == Theme.Volcanic ? 0.9f : 1.15f;
             Game.I.sun.shadows = LightShadows.Soft;
             Game.Cam.clearFlags = CameraClearFlags.Skybox;
-            Game.Cam.farClipPlane = 1400;
+            Game.Cam.farClipPlane = def.royale ? 1700 : 1400;
             if (def.Floating) BuildClouds();
         }
 
         void Update()
         {
+            TickBiomeSky(Time.deltaTime);
+            if (vaults.Count > 0) TickVaults(Time.deltaTime);
             // smoke and embers over lava
             if (lavaSpots.Count > 0 && Random.value < 0.35f)
             {

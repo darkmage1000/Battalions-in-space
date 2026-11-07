@@ -30,6 +30,8 @@ namespace BIS
         public string sound = "blaster";
         public float pitch = 1f;
         public bool auto = true;                 // hold to fire
+        public int tier = -1;                    // battle royale loot rarity (0 common .. 4 legendary); -1 = issued, not found
+        public int lootGun = -1, lootFaction;    // battle royale: which loot gun of which faction (so a Wi-Fi guest can rebuild it)
 
         public WeaponDef Copy() => (WeaponDef)MemberwiseClone();
 
