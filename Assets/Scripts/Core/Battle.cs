@@ -498,7 +498,7 @@ namespace BIS
                 foreach (var p in posts) p.Tick(dt);
                 commander?.Tick(dt);
                 FillPlayerVehicle(dt);
-                if (space) foreach (var s in space.ships) s.Tick(dt);
+                if (space) { foreach (var s in space.ships) s.Tick(dt); SpaceHangars(dt); }
                 if (royale) royale.Rules(dt); else Rules(dt);
             }
             else
@@ -578,10 +578,18 @@ namespace BIS
                 if (!defenders && hero == null && CountShips(p.team) >= MaxShipsPerSide) { p.respawn = 3; return; }
                 if (hero == null && !defenders)
                 {
-                    ship = r < 0.42f ? 0 : r < 0.62f ? 2 : r < 0.88f ? 1 : 3;
+                    ship = r < 0.4f ? 0 : r < 0.58f ? 2 : r < 0.82f ? 1 : r < 0.92f ? 3 : 4;
                 }
                 else cls = Random.value < 0.6f ? 1 : 0;
-                Spawn(p, cls, hero, -1, ship);
+                // pilots start on foot in their own hangar and run to a parked craft (unless the hangar is knocked out)
+                var home = space.ships[p.team];
+                if (ship >= 0 && hero == null && home.HangarOpen && !home.destroyed)
+                {
+                    var f = Faction(p.team);
+                    var u = SpawnUnit(p, ship == 4 ? f.marine : f.pilot, null, home.FootSpawn(), home.transform.eulerAngles.y);
+                    if (u.bot != null) u.bot.wantShipKind = ship;
+                }
+                else Spawn(p, cls, hero, -1, ship);
             }
             else
             {
@@ -616,8 +624,69 @@ namespace BIS
         int CountOnFoot(int t)
         {
             int n = 0;
-            foreach (var u in units) if (u && u.Alive && u.team == t && !u.InVehicle) n++;
+            foreach (var u in units) if (u && u.Alive && u.team == t && !u.InVehicle && !(u.bot != null && u.bot.HeadingForShip)) n++;
             return n;
+        }
+
+        // ── space: craft parked in each hangar for pilots to run to, and boarding shuttles filling up ──
+        public const int ParkedPerHangar = 6;
+        float parkT, shuttleT;
+
+        void SpaceHangars(float dt)
+        {
+            parkT -= dt; shuttleT -= dt;
+            if (parkT <= 0)
+            {
+                parkT = 2f;
+                for (int t = 0; t < 2; t++)
+                {
+                    var home = space.ships[t];
+                    if (!home || home.destroyed || !home.HangarOpen) continue;
+                    int parked = 0;
+                    foreach (var v in vehicles) if (v && v.Alive && v.IsShip && v.landed && v.IsEmpty && home.hangar.Contains(v.transform.position)) parked++;
+                    if (parked >= ParkedPerHangar) continue;
+                    var f = Faction(t);
+                    float r = Random.value;
+                    int k = r < 0.34f ? 0 : r < 0.52f ? 2 : r < 0.74f ? 1 : r < 0.86f ? 3 : 4;
+                    var def = f.ships[k];
+                    Vector3 slot = FreeParkSlot(home);
+                    if (Physics.CheckSphere(slot + Vector3.up * 3, 4.5f, 1 << Layers.Vehicle)) continue;
+                    var nv = SpawnVehicle(def, t, slot + Vector3.up * (VehicleModels.Get(def, f).bounds.extents.y + 0.4f), home.transform.rotation);
+                    nv.Land(home.hangar);
+                }
+            }
+            if (shuttleT <= 0)
+            {
+                shuttleT = 1f;
+                // a shuttle sitting in its own hangar with someone at the controls: friendly soldiers nearby climb aboard
+                foreach (var v in vehicles)
+                {
+                    if (!v || !v.Alive || v.def.kind != VKind.Dropship || !v.landed || !v.Driver) continue;
+                    var home = space.ships[v.Team];
+                    if (!home.hangar.Contains(v.transform.position)) continue;
+                    int free = 0; foreach (var rd in v.riders) if (!rd) free++;
+                    foreach (var u in units) if (u && u.Alive && u.bot != null && u.bot.WantsRide && u.team == v.Team) free--;
+                    foreach (var u in units)
+                    {
+                        if (free <= 0) break;
+                        if (!u || !u.Alive || u.bot == null || u.team != v.Team || u.InVehicle || u.IsHero || u.bot.WantsRide) continue;
+                        if ((u.transform.position - v.transform.position).sqrMagnitude > 45 * 45 || !home.hangar.Contains(u.transform.position)) continue;
+                        u.bot.RideWith(v); free--;
+                    }
+                    // a person waiting in a shuttle: reinforcements who are due to spawn come out beside it and climb in
+                    if (free > 0 && v.Driver.part.Human && !over)
+                        foreach (var p in people)
+                        {
+                            if (p.Human || p.team != v.Team || (p.unit && p.unit.Alive) || Time.time - p.diedAt < RespawnPost * 0.5f) continue;
+                            Vector3 sp = v.transform.position - v.transform.forward * 7 + v.transform.right * Random.Range(-3f, 3f);
+                            sp.y = home.hangar.FloorY + 0.2f;
+                            var nu = SpawnUnit(p, Faction(p.team).marine, null, sp, v.transform.eulerAngles.y);
+                            if (nu.bot != null) nu.bot.RideWith(v);
+                            p.respawn = 5;
+                            break;      // one a second
+                        }
+                }
+            }
         }
 
         float rideT;
@@ -801,13 +870,17 @@ namespace BIS
             bool mine = ship.team == player.team;
             HUD.Message($"{(mine ? "Our" : "Enemy")} {s.sysName} destroyed!{(s.critical ? " (critical system)" : "")}", mine ? new Color(1f, 0.5f, 0.4f) : new Color(0.5f, 1f, 0.6f), 4);
             Sfx.Play2D(mine ? "alarm" : "capture", 0.7f);
-            if (s.kind == SysKind.Shield) HUD.Message(mine ? "Our shields are down!" : "Enemy shields are down - hit their systems!", Color.yellow, 4);
+            bool shieldsGone = s.kind == SysKind.Shield && !ship.ShieldUp;
+            if (s.kind == SysKind.Shield && ship.ShieldUp) HUD.Message(mine ? "One of our shield projectors is down" : "One enemy shield projector down - one to go", Color.yellow, 4);
+            if (shieldsGone) HUD.Message(mine ? "Our shield cruiser is lost - our shields are down!" : "Enemy shield cruiser crippled - their shields are down, hit their systems!", Color.yellow, 5);
+            if (s.kind == SysKind.Bridge) HUD.Message(mine ? "Our bridge is gone - broadsides stop, turrets slow" : "Enemy bridge destroyed - their broadsides stop and turrets slow", Color.yellow, 4);
+            if (s.kind == SysKind.Sensors) HUD.Message(mine ? "Our sensors are down - turrets lose range" : "Enemy sensors down - their turrets lose range and accuracy", Color.yellow, 4);
             var rh = RemoteHuman;
             if (rh != null)
             {
                 bool theirs = ship.team == rh.team;
                 Net.NetHost.Text($"{(theirs ? "Our" : "Enemy")} {s.sysName} destroyed!{(s.critical ? " (critical system)" : "")}", theirs ? new Color(1f, 0.5f, 0.4f) : new Color(0.5f, 1f, 0.6f), 4, theirs ? "alarm" : "capture");
-                if (s.kind == SysKind.Shield) Net.NetHost.Text(theirs ? "Our shields are down!" : "Enemy shields are down - hit their systems!", Color.yellow, 4, null);
+                if (s.kind == SysKind.Shield && !ship.ShieldUp) Net.NetHost.Text(theirs ? "Our shield cruiser is lost - our shields are down!" : "Enemy shield cruiser crippled - their shields are down, hit their systems!", Color.yellow, 5, null);
             }
         }
 

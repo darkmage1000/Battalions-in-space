@@ -268,6 +268,7 @@ namespace BIS
                 {
                     if (rSkip.Contains(it.id) || (it.claimedBy && it.claimedBy != u && it.claimedBy.Alive && Time.time < it.claimUntil)) continue;
                     if (r.CantTake(u, it) != null) continue;
+                    if (it.pos.y - b.land.Top(it.pos.x, it.pos.z) > 2.5f && Mathf.Abs(it.pos.y - pos.y) > 2f) continue;   // up a floor: bots can't route there
                     float want;
                     switch (it.kind)
                     {

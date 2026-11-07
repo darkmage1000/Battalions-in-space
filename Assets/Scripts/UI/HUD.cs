@@ -688,7 +688,7 @@ namespace BIS
             }
             else
             {
-                for (int i = 0; i < 4; i++)
+                for (int i = 0; i < f.ships.Length; i++)
                 {
                     var sd = f.ships[i];
                     if (UI.Button(new Rect(left.x + 20, y, 480, 46), sd.name, !pc.spaceOnFoot && pc.selShip == i && pc.selHero < 0, true, 22)) { pc.selShip = i; pc.spaceOnFoot = false; pc.selHero = -1; }

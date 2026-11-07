@@ -34,10 +34,11 @@ namespace BIS
                 case VKind.Fighter: Fighter(m, f); break;
                 case VKind.Bomber: Bomber(m, f); break;
                 case VKind.Interceptor: Interceptor(m, f); break;
+                case VKind.Dropship: Dropship(m, f); break;
                 default: Support(m, f); break;
             }
             m.bounds = m.body.bounds;
-            if (d.IsShip) UseShipArt(m, d, f);
+            if (d.IsShip && d.kind != VKind.Dropship) UseShipArt(m, d, f);
             cache[key] = m;
             return m;
         }
@@ -343,6 +344,30 @@ namespace BIS
             m.muzzles = new[] { new Vector3(-1.4f, -0.2f, 0.6f), new Vector3(1.4f, -0.2f, 0.6f) };
             m.engines = new[] { new Vector3(0, 0, -3.2f) };
             m.camDist = 12; m.camHeight = 3.5f;
+        }
+
+        /// <summary>The boarding shuttle: a boxy armoured hull with a rear ramp, side doors and a cockpit up front.</summary>
+        static void Dropship(VModel m, FactionDef f)
+        {
+            var k = new MeshKit();
+            Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt, eng = new Color(1f, 0.6f, 0.3f);
+            k.Box(new Vector3(0, 0, -0.5f), new Vector3(4.8f, 3.4f, 9f), a);
+            k.Nose(new Vector3(0, 0.3f, 5.2f), new Vector3(4.2f, 2.6f, 2.6f), Quaternion.identity, a, -0.2f);
+            k.Box(new Vector3(0, 1.1f, 4.9f), new Vector3(2.6f, 0.7f, 1.2f), G(D(glow, 0.6f)));
+            k.Box(new Vector3(0, 1.85f, -0.5f), new Vector3(3.6f, 0.3f, 7.6f), b);
+            k.Wedge(new Vector3(0, -1.2f, -5.3f), new Vector3(4.2f, 1f, 1.8f), Quaternion.Euler(0, 180, 0), dk);
+            for (int s = -1; s <= 1; s += 2)
+            {
+                k.Box(new Vector3(s * 2.45f, -0.2f, 0.5f), new Vector3(0.1f, 2f, 2.4f), dk);
+                k.Box(new Vector3(s * 2.5f, 0.9f, 0.5f), new Vector3(0.05f, 0.2f, 2.2f), G(f.accent));
+                k.Box(new Vector3(s * 3.3f, -0.6f, -1.5f), new Vector3(1.6f, 0.5f, 4f), b);
+                k.Cyl(new Vector3(s * 3.3f, -0.6f, -3.6f), 0.7f, 1.2f, Quaternion.Euler(90, 0, 0), dk, 8);
+                k.Cyl(new Vector3(s * 3.3f, -0.6f, -4.25f), 0.6f, 0.12f, Quaternion.Euler(90, 0, 0), G(eng), 8);
+            }
+            m.body = k.Build("dropship_" + f.id);
+            m.muzzles = new[] { new Vector3(-1.6f, -1.2f, 5f), new Vector3(1.6f, -1.2f, 5f) };
+            m.engines = new[] { new Vector3(-3.3f, -0.6f, -4.3f), new Vector3(3.3f, -0.6f, -4.3f) };
+            m.camDist = 22; m.camHeight = 7f;
         }
 
         static void Support(VModel m, FactionDef f)

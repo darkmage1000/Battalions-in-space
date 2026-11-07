@@ -321,7 +321,8 @@ namespace BIS
         {
             if (NearPost(b.c.x, b.c.y, b.size * 0.5f + 20)) { Plaza(b, kitAt); return; }
             float roll = R();
-            if (roll < 0.3f) CityTower(b.c, b.size * R(0.55f, 0.8f), b.size * R(0.55f, 0.8f), R(26, 62), kitAt, placed);
+            if (def.royale && roll < 0.42f && R() < 0.6f) OpenTower(b.c, Mathf.Clamp(b.size * 0.6f, 14, 18), 3 + rng.Next(3), kitAt, placed);
+            else if (roll < 0.3f) CityTower(b.c, b.size * R(0.55f, 0.8f), b.size * R(0.55f, 0.8f), R(26, 62), kitAt, placed);
             else if (roll < 0.58f)
             {
                 // a cluster of four buildings, some of them enterable
@@ -361,7 +362,8 @@ namespace BIS
             }
             placed.Add((c, Mathf.Sqrt(w * w + d * d) / 2));
             var k = kitAt(c.x, c.y);
-            if (shell) HouseShell(k, new Vector3(c.x, hi, c.y), rot, w, d, lo, door);
+            if (shell && def.royale && w >= 9.5f && R() < 0.4f) TwoStory(k, new Vector3(c.x, hi, c.y), rot, w, d, lo, door);
+            else if (shell) HouseShell(k, new Vector3(c.x, hi, c.y), rot, w, d, lo, door);
             else HouseSolid(k, new Vector3(c.x, hi, c.y), rot, w, d, lo);
         }
 

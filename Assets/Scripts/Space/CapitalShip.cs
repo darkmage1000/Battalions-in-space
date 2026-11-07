@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace BIS
 {
-    public enum SysKind { Shield, Engine, Turret, Hangar, LifeSupport, Reactor }
+    public enum SysKind { Shield, Engine, Turret, Hangar, LifeSupport, Reactor, Bridge, Sensors }
 
     /// <summary>A destructible capital ship system (exterior or interior).</summary>
     public class Subsystem : MonoBehaviour, IDamageable, IRepairable
@@ -65,7 +65,7 @@ namespace BIS
             if (think <= 0)
             {
                 think = 0.5f;
-                target = null; float best = 760 * 760;
+                target = null; float best = ship.TurretRange * ship.TurretRange;
                 foreach (var v in ship.battle.vehicles)
                 {
                     if (!v || !v.Alive || v.Team == ship.team || v.IsEmpty || !v.IsShip || v.LaunchShield) continue;
@@ -84,9 +84,11 @@ namespace BIS
                 aim.rotation = Quaternion.RotateTowards(aim.rotation, Quaternion.LookRotation(dir), 60 * dt);
                 if (cool <= 0 && Vector3.Angle(aim.forward, dir) < 6)
                 {
-                    cool = 1f / w.rate * Random.Range(0.8f, 1.4f);
+                    // a ship without its bridge fires slower; without its sensors, wider
+                    cool = 1f / w.rate * Random.Range(0.8f, 1.4f) * (ship.BridgeDown ? 1.7f : 1f);
                     Vector3 from = barrel ? barrel.position : aim.position + aim.forward * 4;
-                    Vector3 d = Quaternion.Euler(Random.Range(-w.spread, w.spread), Random.Range(-w.spread, w.spread), 0) * aim.forward;
+                    float spread = w.spread * (ship.SensorsDown ? 2.2f : 1f);
+                    Vector3 d = Quaternion.Euler(Random.Range(-spread, spread), Random.Range(-spread, spread), 0) * aim.forward;
                     Shots.Fire(w, from, d, ship.team, null, ship.transform, ship.faction.bolt);
                     Sfx.Play("heavy", from, 0.6f, 0.7f, 500);
                 }
@@ -144,6 +146,13 @@ namespace BIS
         }
 
         public bool HangarOpen => systems.Exists(s => s.kind == SysKind.Hangar && !s.destroyed);
+        public bool BridgeDown => systems.Exists(s => s.kind == SysKind.Bridge && s.destroyed);
+        public bool SensorsDown => systems.Exists(s => s.kind == SysKind.Sensors && s.destroyed);
+        public float TurretRange => SensorsDown ? 480 : 760;
+        /// <summary>The escort cruiser that feeds the capital ship's shield (its two projectors are the Shield systems).</summary>
+        public Transform cruiser;
+        public bool CruiserAlive => ShieldUp;
+        LineRenderer[] shieldBeams;
         public Subsystem Sys(SysKind k) => systems.Find(s => s.kind == k);
         public float HullFrac => hull / maxHull;
 
@@ -238,7 +247,9 @@ namespace BIS
             hangarField = fg.GetComponent<Renderer>();
 
             // ── systems ──
-            AddShield(new Vector3(70, 30, -12));
+            BuildCruiser(new Vector3(40, 95, -175));
+            AddBridge(new Vector3(-30, 28, -24));
+            AddSensors(new Vector3(70, 28, -30));
             AddEngine(new Vector3(-158, 6, -22));
             AddEngine(new Vector3(-158, 6, 4));
             AddTurret(new Vector3(-100, 28.5f, 12), Vector3.up);
@@ -404,21 +415,79 @@ namespace BIS
             bc.size = colliderSize; bc.center = colliderCenter;
         }
 
-        void AddShield(Vector3 p)
+        /// <summary>
+        /// The shield cruiser: a smaller escort hull above and behind the capital ship, with two shield projectors (the
+        /// capital ship is shielded while either stands, and a beam shows the link) and two turrets of its own.
+        /// </summary>
+        void BuildCruiser(Vector3 at)
         {
-            var s = Make(SysKind.Shield, "Shield Generator", p, 18000, false, false);
+            var root = new GameObject("shield_cruiser").transform;
+            root.SetParent(transform, false); root.localPosition = at;
+            cruiser = root;
+            Color hc = Hull(faction), hd = HullDark(faction);
             var k = new MeshKit();
-            k.Cyl(new Vector3(0, 2, 0), 10, 4, Quaternion.identity, HullDark(faction), 12);
-            k.Sphere(new Vector3(0, 6, 0), new Vector3(16, 12, 16), Quaternion.identity, new Color(0.7f, 0.72f, 0.76f), 12, 6);
-            k.Cyl(new Vector3(0, 12, 0), 1.5f, 6, Quaternion.identity, MeshKit.Glow(faction.bolt), 8);
-            Visual(s, k, new Vector3(16, 14, 16), new Vector3(0, 6, 0));
-            s.aim = s.transform;
-            // ship-wide shimmer bubble while the generator stands
+            void Block(Vector3 c, Vector3 sz, Color col)
+            {
+                k.Box(c, sz, col);
+                var go = new GameObject("h"); go.layer = Layers.Hull; go.transform.SetParent(root, false); go.transform.localPosition = c;
+                go.AddComponent<BoxCollider>().size = sz;
+            }
+            Block(new Vector3(0, 0, 0), new Vector3(110, 16, 28), hc);
+            Block(new Vector3(-48, 0, 0), new Vector3(22, 22, 34), hd);
+            k.Nose(new Vector3(62, 0, 0), new Vector3(28, 16, 24), Quaternion.Euler(0, 90, 0), hc);
+            Block(new Vector3(10, 11, 0), new Vector3(30, 6, 16), hd);
+            for (int i = 0; i < 3; i++) k.Cyl(new Vector3(-60, -5 + i * 5, 0), 3.5f, 4, Quaternion.Euler(0, 0, 90), MeshKit.Glow(faction.bolt * 0.8f), 10);
+            for (int i = 0; i < 6; i++) k.Box(new Vector3(-30 + i * 14, 2, 14.1f), new Vector3(6, 1.2f, 0.3f), MeshKit.Glow(faction.second));
+            var go2 = k.Make("cruiser_mesh", root, true); go2.layer = Layers.Hull;
+            shieldBeams = new LineRenderer[2];
+            for (int i = 0; i < 2; i++)
+            {
+                var s = Make(SysKind.Shield, i == 0 ? "Shield Projector (fore)" : "Shield Projector (aft)", at + new Vector3(i == 0 ? 30 : -20, 8, 0), 9000, false, false);
+                var pk = new MeshKit();
+                pk.Cyl(new Vector3(0, 1.5f, 0), 5, 3, Quaternion.identity, hd, 12);
+                pk.Sphere(new Vector3(0, 5, 0), new Vector3(9, 7, 9), Quaternion.identity, new Color(0.72f, 0.74f, 0.78f), 12, 6);
+                pk.Cyl(new Vector3(0, 9.5f, 0), 1.2f, 4, Quaternion.identity, MeshKit.Glow(faction.bolt), 8);
+                Visual(s, pk, new Vector3(10, 11, 10), new Vector3(0, 5, 0));
+                var aim = new GameObject("aim").transform; aim.SetParent(s.transform, false); aim.localPosition = new Vector3(0, 5, 0); s.aim = aim;
+                var lr = new GameObject("beam").AddComponent<LineRenderer>();
+                lr.transform.SetParent(transform, false);
+                lr.useWorldSpace = true; lr.positionCount = 2; lr.widthMultiplier = 2.2f;
+                lr.material = Mats.Additive(new Color(faction.bolt.r, faction.bolt.g, faction.bolt.b, 0.5f));
+                shieldBeams[i] = lr;
+            }
+            AddTurret(at + new Vector3(40, -8, 0), Vector3.down);
+            AddTurret(at + new Vector3(-30, -8, 0), Vector3.down);
+            // ship-wide shimmer bubble while the cruiser feeds it
             var bk = new MeshKit();
             bk.Sphere(Vector3.zero, new Vector3(380, 110, 150), Quaternion.identity, Color.white, 24, 12);
             var bg = bk.Make("shield_bubble", transform, false, Mats.Additive(new Color(faction.bolt.r, faction.bolt.g, faction.bolt.b, 0.035f), false));
             bg.transform.localPosition = new Vector3(0, 6, -7);
             shieldBubble = bg.GetComponent<Renderer>();
+        }
+
+        void AddBridge(Vector3 p)
+        {
+            var s = Make(SysKind.Bridge, "Command Bridge", p, 7000, true, false);
+            var k = new MeshKit();
+            Color hc = Hull(faction), hd = HullDark(faction);
+            k.Box(new Vector3(0, 4, 0), new Vector3(16, 8, 12), hd);
+            k.Box(new Vector3(0, 11, 0), new Vector3(24, 6, 14), hc);
+            k.Box(new Vector3(0, 11.5f, 7.05f), new Vector3(20, 1.6f, 0.2f), MeshKit.Glow(new Color(0.7f, 0.9f, 1f)));
+            k.Box(new Vector3(12.05f, 11.5f, 0), new Vector3(0.2f, 1.6f, 10), MeshKit.Glow(new Color(0.7f, 0.9f, 1f)));
+            k.Cyl(new Vector3(-6, 17, 0), 0.3f, 6, Quaternion.identity, hd, 5);
+            Visual(s, k, new Vector3(24, 15, 14), new Vector3(0, 7, 0));
+            var aim = new GameObject("aim").transform; aim.SetParent(s.transform, false); aim.localPosition = new Vector3(0, 10, 0); s.aim = aim;
+        }
+
+        void AddSensors(Vector3 p)
+        {
+            var s = Make(SysKind.Sensors, "Sensor Array", p, 3500, false, false);
+            var k = new MeshKit();
+            k.Cyl(new Vector3(0, 3, 0), 1.2f, 6, Quaternion.identity, HullDark(faction), 8);
+            k.Cone(new Vector3(0, 8, 0), 7, 2.4f, Quaternion.Euler(160, 0, 0), new Color(0.82f, 0.84f, 0.88f), 16);
+            k.Sphere(new Vector3(0, 7.2f, 0), Vector3.one * 1.2f, Quaternion.identity, MeshKit.Glow(new Color(1f, 0.35f, 0.2f)), 6, 4);
+            Visual(s, k, new Vector3(14, 10, 14), new Vector3(0, 5, 0));
+            var aim = new GameObject("aim").transform; aim.SetParent(s.transform, false); aim.localPosition = new Vector3(0, 6, 0); s.aim = aim;
         }
 
         void AddEngine(Vector3 p)
@@ -505,11 +574,22 @@ namespace BIS
         {
             foreach (var s in systems) s.Tick(dt);
             if (shieldBubble) shieldBubble.enabled = ShieldUp && !destroyed;
+            if (shieldBeams != null)
+            {
+                int i = 0;
+                foreach (var s in systems)
+                {
+                    if (s.kind != SysKind.Shield || i >= shieldBeams.Length) continue;
+                    var lr = shieldBeams[i++];
+                    lr.enabled = !s.destroyed && !destroyed;
+                    if (lr.enabled) { lr.SetPosition(0, s.AimPoint + s.transform.up * 4); lr.SetPosition(1, transform.TransformPoint(new Vector3(0, 30, -10))); }
+                }
+            }
             if (hangarField) hangarField.enabled = HangarOpen;
             if (destroyed || battle.over || Net.Session.IsClient) return;
             // ambient broadsides at the enemy capital ship
             broadside -= dt;
-            if (broadside <= 0)
+            if (broadside <= 0 && !BridgeDown)
             {
                 broadside = Random.Range(6f, 10f);
                 var enemy = battle.space.ships[1 - team];
@@ -536,7 +616,7 @@ namespace BIS
 
         public static float HullShare(SysKind k)
         {
-            switch (k) { case SysKind.Turret: return 0.04f; case SysKind.Shield: return 0.12f; case SysKind.Engine: return 0.1f; case SysKind.Hangar: return 0.08f; default: return 0.12f; }
+            switch (k) { case SysKind.Turret: return 0.04f; case SysKind.Shield: return 0.06f; case SysKind.Engine: return 0.1f; case SysKind.Hangar: return 0.08f; case SysKind.Sensors: return 0.05f; case SysKind.Bridge: return 0.12f; default: return 0.12f; }
         }
 
         public Vector3 Node(int i) => transform.TransformPoint(nodes[i]);

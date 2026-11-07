@@ -101,8 +101,10 @@ namespace BIS
                 placed.Add((q, rr));
                 made++;
                 var kk = kitAt(q.x, q.y);
-                HouseShell(kk, new Vector3(q.x, hi, q.y), rot, w, dp, lo, 0, doorW, hgt, style != 1, wallC);
-                Vector3 top = new Vector3(q.x, hi + hgt + 0.4f, q.y);
+                bool two = style != 1 && R() < 0.5f;
+                if (two) TwoStory(kk, new Vector3(q.x, hi, q.y), rot, w, dp, lo, 0, wallC);
+                else HouseShell(kk, new Vector3(q.x, hi, q.y), rot, w, dp, lo, 0, doorW, hgt, style != 1, wallC);
+                Vector3 top = new Vector3(q.x, hi + (two ? 9.2f : hgt + 0.4f), q.y);
                 if (style == 1)
                 {
                     // a curved hangar roof and the big door's frame
@@ -121,6 +123,17 @@ namespace BIS
                     for (int v = -1; v <= 1; v++) kk.Box(top + rot * new Vector3(v * w * 0.3f, 0.4f, 0), new Vector3(1.4f, 0.8f, 1.4f), rot, dark);
                 }
             }
+
+            // a lookout: an open tower inside the wall (military base and spaceport)
+            if (style != 2)
+                for (int t = 0; t < 8; t++)
+                {
+                    float ang = (t * 45 + 22) * Mathf.Deg2Rad;
+                    Vector2 q = c + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rad * 0.8f;
+                    int before = towersBuilt;
+                    OpenTower(q, 14, style == 1 ? 4 : 3, kitAt, placed);
+                    if (towersBuilt > before) break;
+                }
 
             // the yard
             if (style == 1)

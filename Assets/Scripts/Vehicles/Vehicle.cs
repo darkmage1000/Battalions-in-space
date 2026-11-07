@@ -345,7 +345,7 @@ namespace BIS
             if (wasLanded && !landed) launchTime = Time.time;
             wasLanded = landed;
             if (IsEmpty) IdleTime += dt; else IdleTime = 0;
-            if (def.IsShip && IsEmpty && IdleTime > 90) { SelfDestruct(); return; }   // starships have no pads; tidy up abandoned ones
+            if (def.IsShip && IsEmpty && IdleTime > 90 && !landed) { SelfDestruct(); return; }   // parked craft wait in their hangar   // starships have no pads; tidy up abandoned ones
 
             var drv = Driver;
             var din = drv ? seatIn[0] : default;

@@ -17,6 +17,9 @@ namespace BIS
         readonly Battle b;
         float think, seeT, objT, strafeT, strafe = 1, stuckT, noiseT, burst, sideStepT, abilityT, grenadeT, enterT;
         float evadeRoll = -1;   // starfighter pilots: a die rolled once per missile chase - do we roll out of this one?
+        public int wantShipKind = -1;  // space: spawned on foot in our hangar, running to a parked craft of this kind
+        float shuttleWait;             // a shuttle pilot waits a little for boarders
+        public bool HeadingForShip => wantShipKind >= 0 || (b.space != null && wantVehicle != null);
         bool chased;            // starfighter pilots: an enemy craft sits behind us with its nose on us (checked every think)
         float dodgeRollT;       // next time a pilot under fire may throw an evasive roll that isn't for a missile
         float weaveSeed = Random.value * 10f;
@@ -574,6 +577,16 @@ namespace BIS
 
         void Passenger(Vehicle v, float dt)
         {
+            // space: a shuttle that has set down in the enemy hangar (or whose pilot got out there) - everyone storms the ship
+            if (b.space != null)
+            {
+                var enemy = b.space.ships[1 - u.team];
+                float lz = enemy.transform.InverseTransformPoint(v.transform.position).z;
+                bool there = enemy.hangar.Contains(v.transform.position) && lz < 28 && (v.landed || !v.Driver || v.speed < 14);
+                if (there && v.CanExitHere()) { v.Leave(u, true); job = SpaceJob.Sabotage; boarded = true; return; }
+                if (v.hp < v.maxHp * 0.15f && v.CanExitHere()) v.Leave(u, true);
+                return;
+            }
             // riding with the player: stay aboard while they drive; get out when they stop at a post that isn't ours
             if (v.Driver && v.Driver.part.Human)
             {
@@ -677,6 +690,7 @@ namespace BIS
             {
                 case VKind.Bomber: job = r < 0.85f ? SpaceJob.Bomb : SpaceJob.Dogfight; break;
                 case VKind.Support: job = r < 0.45f ? SpaceJob.Board : SpaceJob.Escort; break;
+                case VKind.Dropship: job = SpaceJob.Board; break;
                 case VKind.Interceptor: job = r < 0.9f ? SpaceJob.Dogfight : SpaceJob.Board; break;
                 default: job = r < 0.72f ? SpaceJob.Dogfight : r < 0.86f ? SpaceJob.Board : SpaceJob.Bomb; break;
             }
@@ -709,6 +723,13 @@ namespace BIS
             var enemy = space.ships[1 - u.team];
             var home = space.ships[u.team];
 
+            // a shuttle waits in the hangar for a few boarders (up to 8 s)
+            if (v.def.kind == VKind.Dropship && v.landed && home.hangar.Contains(pos) && !boarded)
+            {
+                int aboard = 0; foreach (var rd in v.riders) if (rd) aboard++;
+                shuttleWait += dt;
+                if (aboard < 4 && shuttleWait < 8) { v.seatIn[0] = new VehicleInput { aimPoint = pos + v.transform.forward * 50 }; return; }
+            }
             // taxi out of the hangar first
             if (v.landed || (home.hangar.Contains(pos) && !boarded))
             {
@@ -757,7 +778,7 @@ namespace BIS
                         if (enemy.hangar.Contains(pos))
                         {
                             point = inside; throttleWant = 0.1f;
-                            if (v.speed < 14 || (inside - pos).magnitude < 12)
+                            if ((v.speed < 14 && local.z < 26) || (inside - pos).magnitude < 12)   // well inside, not on the lip of the deck
                             {
                                 boarded = true;
                                 v.Land(enemy.hangar);
@@ -898,11 +919,47 @@ namespace BIS
         }
 
         // ── on foot inside a capital ship ────────────────────────────────
+        /// <summary>Space, on foot in our own hangar: run to a parked craft (or a shuttle that is taking boarders) and get in.</summary>
+        bool RunToShip()
+        {
+            var space = b.space;
+            Vector3 pos = u.transform.position;
+            var home = space.ships[u.team];
+            if (wantVehicle && !wantVehicle.CanEnter(u)) wantVehicle = null;
+            if (!wantVehicle && wantShipKind >= 0)
+            {
+                Vehicle best = null; float bd = float.MaxValue;
+                foreach (var v in b.vehicles)
+                {
+                    if (!v || !v.Alive || !v.IsShip || !v.landed || !v.IsEmpty || !v.CanEnter(u) || !home.hangar.Contains(v.transform.position)) continue;
+                    float d = (v.transform.position - pos).sqrMagnitude * (v.def.kind == (VKind)((int)VKind.Fighter + wantShipKind) ? 0.3f : 1f);
+                    if (d < bd) { bd = d; best = v; }
+                }
+                wantVehicle = best;
+            }
+            if (!wantVehicle) { if (wantShipKind >= 0 && Time.time - u.spawnTime > 12) wantShipKind = -1; return wantShipKind >= 0; }
+            Vector3 to = wantVehicle.transform.position - pos; to.y = 0;
+            var ext = wantVehicle.model != null ? wantVehicle.model.bounds.extents : Vector3.one * wantVehicle.radius;
+            if (to.magnitude < Mathf.Max(wantVehicle.radius, Mathf.Max(ext.x, ext.z)) + 3.2f)
+            {
+                if (wantVehicle.Enter(u) >= 0) { if (u.seat == 0) { PickSpaceJob(); shuttleWait = 0; } }
+                wantVehicle = null; wantShipKind = -1;
+                return true;
+            }
+            Vector3 move = to.normalized;
+            move = Avoid(pos, move, Time.deltaTime);
+            u.input.move = new Vector3(move.x, 0, move.z);
+            u.input.aimPoint = wantVehicle.transform.position + Vector3.up;
+            u.input.sprint = true; u.input.fire = false;
+            return true;
+        }
+
         void SpaceInfantry(float dt)
         {
             think -= dt; seeT -= dt; detpackT -= dt;
             var space = b.space;
             Vector3 pos = u.transform.position;
+            if ((wantShipKind >= 0 || wantVehicle) && RunToShip()) return;
             var inShip = space.ShipAt(pos);
             if (!inShip) { u.input = default; u.input.aimPoint = pos + Vector3.forward; return; }
             bool enemyShip = inShip.team != u.team;

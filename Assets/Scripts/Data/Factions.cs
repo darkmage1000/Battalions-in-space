@@ -75,6 +75,7 @@ namespace BIS
                 case VKind.Bomber: v.hp = 1250; v.speed = 52; v.turn = 65; v.seats = 2; v.primary = W.ShipLaser(p, 34, 4); v.secondary = W.Torpedo(s); v.gunner = W.ShipLaser(g ?? "Tail Gun", 28, 6); v.respawn = 10; break;
                 case VKind.Interceptor: v.hp = 420; v.speed = 94; v.turn = 125; v.seats = 1; v.primary = W.ShipLaser(p, 32, 11); v.secondary = W.Flechette(s); v.respawn = 6; break;
                 case VKind.Support: v.hp = 950; v.speed = 62; v.turn = 80; v.seats = 3; v.primary = W.ShipLaser(p, 36, 5); v.secondary = W.RepairPulse(s); v.respawn = 10; break;
+                case VKind.Dropship: v.hp = 3200; v.speed = 58; v.turn = 60; v.seats = 6; v.primary = W.ShipLaser(p, 26, 5); v.secondary = W.Flechette(s); v.respawn = 12; break;
             }
             if (v.IsShip)
             {
@@ -142,6 +143,7 @@ namespace BIS
                 Veh("Hammerhead Bomber", VKind.Bomber, "Heavy bomber; torpedoes wreck capital ship systems.", "Nose Guns", "Hammer Torpedoes"),
                 Veh("Swiftwing Interceptor", VKind.Interceptor, "Very fast and fragile; rapid cannons and a flechette burst.", "Rapid Cannons", "Flechette Burst"),
                 Veh("Aegis Support Craft", VKind.Support, "Repairs nearby friendly craft and carries two boarders.", "Point Guns", "Repair Pulse"),
+                Veh("Bulwark Boarding Shuttle", VKind.Dropship, "Armoured shuttle for five boarders: land in the enemy hangar and storm their ship.", "Shuttle Guns", "Breach Flechettes"),
             };
 
             // ── 1. Vorrkai Dominion ───────────────────────────────────────────
@@ -184,6 +186,7 @@ namespace BIS
                 Veh("Maw Bomber", VKind.Bomber, "Armoured bomber hauling fusion torpedoes.", "Maw Guns", "Fusion Torpedoes"),
                 Veh("Viper Interceptor", VKind.Interceptor, "Fast striker that tears fighters apart.", "Viper Cannons", "Venom Burst"),
                 Veh("Brood Tender", VKind.Support, "Mends nearby craft and carries boarders.", "Tender Guns", "Mending Pulse"),
+                Veh("Gorefang Assault Barge", VKind.Dropship, "Carries five warriors into the enemy hangar.", "Barge Guns", "Spine Flechettes"),
             };
 
             // ── 2. Iron Synod ─────────────────────────────────────────────────
@@ -226,6 +229,7 @@ namespace BIS
                 Veh("Anvil Bomber", VKind.Bomber, "Heavy drone bomber with breach torpedoes.", "Anvil Guns", "Breach Torpedoes"),
                 Veh("Needle Interceptor", VKind.Interceptor, "Fastest craft in the sky.", "Needle Cannons", "Shard Burst"),
                 Veh("Mender Drone", VKind.Support, "Repairs nearby drones and carries boarders.", "Mender Guns", "Repair Swarm"),
+                Veh("Lattice Insertion Carrier", VKind.Dropship, "Delivers five frames into the enemy hangar.", "Carrier Guns", "Shard Flechettes"),
             };
 
             // ── 3. Kessari Veil ───────────────────────────────────────────────
@@ -268,6 +272,7 @@ namespace BIS
                 Veh("Bloom Bomber", VKind.Bomber, "Heavy bomber with starfire torpedoes.", "Bloom Guns", "Starfire Torpedoes"),
                 Veh("Mote Interceptor", VKind.Interceptor, "Tiny, fast and furious.", "Mote Cannons", "Mote Burst"),
                 Veh("Lantern Support", VKind.Support, "Heals nearby craft; carries boarders.", "Lantern Guns", "Healing Light"),
+                Veh("Veilglass Boarding Skiff", VKind.Dropship, "Slips five boarders into the enemy hangar.", "Skiff Guns", "Glass Flechettes"),
             };
 
             All = new[] { concord, vorr, synod, kess };

@@ -471,7 +471,8 @@ namespace BIS
                     Vector3 local = Quaternion.Inverse(rot) * new Vector3(toRoad.x, 0, toRoad.y);
                     door = Mathf.Abs(local.x) > Mathf.Abs(local.z) ? (local.x > 0 ? 1 : 3) : (local.z > 0 ? 0 : 2);
                 }
-                if (shell) HouseShell(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo, door);
+                if (shell && def.royale && w >= 9.5f && R() < 0.4f) TwoStory(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo, door);
+                else if (shell) HouseShell(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo, door);
                 else HouseSolid(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo);
             }
         }
@@ -526,7 +527,7 @@ namespace BIS
         }
 
         /// <summary>A building you can walk into: four walls with a doorway, window gaps and a flat roof.</summary>
-        House HouseShell(MeshKit k, Vector3 p, Quaternion rot, float w, float dp, float lowGround, int door, float doorW = 2.2f, float height = 0, bool windows = true, Color? wallCol = null)
+        House HouseShell(MeshKit k, Vector3 p, Quaternion rot, float w, float dp, float lowGround, int door, float doorW = 2.2f, float height = 0, bool windows = true, Color? wallCol = null, bool topFloor = true)
         {
             float hh = height > 0 ? height : Mathf.Min(BuildingHeight, 5.5f), t = 0.45f;
             Color wall = (wallCol ?? WallColor) * R(0.85f, 1.05f); wall.a = 1;
@@ -594,8 +595,8 @@ namespace BIS
             Vector3 roof = b + Vector3.up * (hh + 0.2f);
             k.Box(roof, new Vector3(w + 0.4f, 0.4f, dp + 0.4f), rot, dark);
             Col(roof, new Vector3(w + 0.4f, 0.4f, dp + 0.4f), rot);
-            if (here == Theme.Forest) k.Wedge(roof + Vector3.up * 1.4f, new Vector3(w + 0.8f, 2.6f, dp + 0.8f), rot, new Color(0.35f, 0.2f, 0.14f));
-            if (here == Theme.Snow) k.Box(roof + Vector3.up * 0.3f, new Vector3(w + 0.2f, 0.25f, dp + 0.2f), rot, new Color(0.93f, 0.95f, 1f));
+            if (here == Theme.Forest && topFloor) k.Wedge(roof + Vector3.up * 1.4f, new Vector3(w + 0.8f, 2.6f, dp + 0.8f), rot, new Color(0.35f, 0.2f, 0.14f));
+            if (here == Theme.Snow && topFloor) k.Box(roof + Vector3.up * 0.3f, new Vector3(w + 0.2f, 0.25f, dp + 0.2f), rot, new Color(0.93f, 0.95f, 1f));
             return made;
         }
 

@@ -7,7 +7,7 @@ namespace BIS
     public enum Equip { None, Grenade, Mine, Detpack, Supply }
     public enum Special { None, Jetpack, Frenzy, Cloak, Rally }
     public enum HeroKind { Blade, Gunslinger, Juggernaut, Mystic }
-    public enum VKind { Tank, Transport, Air, Fighter, Bomber, Interceptor, Support }
+    public enum VKind { Tank, Transport, Air, Fighter, Bomber, Interceptor, Support, Dropship }
     public enum Body { Human, Reptile, Machine, Slender }
     public enum DmgType { Bolt, Explosive, Melee, Psi, Crush, Environment }
 

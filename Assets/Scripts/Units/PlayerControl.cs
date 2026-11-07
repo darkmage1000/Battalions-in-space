@@ -293,6 +293,7 @@ namespace BIS
         {
             if (t is Vehicle tv) return tv.def.name;
             if (t is Unit tu) return tu.IsHero ? tu.hero.name : tu.displayName;
+            if (t is Subsystem ts) return ts.sysName;
             return "target";
         }
 
@@ -300,11 +301,33 @@ namespace BIS
         {
             if (flyLock != null) { DropLock("Lock released"); return; }
             bool space = v.IsShip;
-            var t = AimAssist.Find(b, me.team, v.transform.position, v.transform.forward, space ? 26 : 22, space ? 1100 : 520, shot,
-                                   v.transform, !space, true, space, out _, out _);
+            var t = space ? SpaceLockTarget(v, me) : AimAssist.Find(b, me.team, v.transform.position, v.transform.forward, 22, 520, shot,
+                                   v.transform, true, true, false, out _, out _);
             if (t == null) { Say("No target near the crosshair", 1.5f); Sfx.Play2D("deny"); return; }
             flyLock = t; lockVehicle = v; lockBreakT = 0;
             Sfx.Play2D("lock", 0.9f); Sfx.Play2D("ui2", 0.5f);
+        }
+
+        /// <summary>Space lock: the enemy craft or capital ship / cruiser system nearest the nose (systems win a close call,
+        /// so aiming at a ship's engine locks the engine, not the fighter launching past it).</summary>
+        IDamageable SpaceLockTarget(Vehicle v, Unit me)
+        {
+            IDamageable best = null; float bs = float.MaxValue;
+            Vector3 p = v.transform.position, f = v.transform.forward;
+            void Try(IDamageable d, float bias)
+            {
+                Vector3 to = d.AimPoint - p; float dist = to.magnitude;
+                if (dist > 1400 || dist < 5) return;
+                float a = Vector3.Angle(f, to);
+                if (a > 26) return;
+                float sc = a * bias + dist * 0.004f;
+                if (sc < bs) { bs = sc; best = d; }
+            }
+            foreach (var o in b.vehicles) if (o && o.Alive && o.Team != me.team && !o.IsEmpty && o.IsShip) Try(o, 1.15f);
+            foreach (var cs in b.space.ships)
+                if (cs && cs.team != me.team && !cs.destroyed)
+                    foreach (var s in cs.systems) if (!s.destroyed && !s.interior) Try(s, 0.8f);
+            return best;
         }
 
         bool LockValid(Vehicle v)
@@ -378,6 +401,9 @@ namespace BIS
                 bool space = v.IsShip;
                 float conv = AimAssist.On ? Mathf.Min(10f, Mathf.Max(4f, AimAssist.MagnetCone * (space ? 1.8f : 1.4f))) : 4f;
                 float pullCone = AimAssist.On ? AimAssist.PullCone * (space ? 1.6f : 1.3f) : 0;
+                // space: no pulling the stick toward whatever fighter is launching near the crosshair, only a small
+                // convergence - the strong help comes with a lock (LOCK), which can also take a capital ship's systems
+                if (space && flyLock == null) { conv = Mathf.Min(conv, 3.5f); pullCone = 0; }
                 float shot = v.prim != null ? v.prim.def.speed : 300;
                 float effRange = v.prim != null ? Mathf.Min(space ? 650 : 350, v.prim.def.EffectiveRange) : 300;
                 var t = AimAssist.Find(b, me.team, v.transform.position, v.transform.forward, Mathf.Max(conv, pullCone), effRange, shot,

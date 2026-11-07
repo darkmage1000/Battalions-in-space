@@ -141,6 +141,12 @@ namespace BIS
                 int bonus = area > 160 ? 1 : 0;           // compounds, hangars and the wreck hold better loot
                 for (int i = 0; i < n; i++) RandomItem(InHouse(h), bonus);
             }
+            // upper floors and tower decks: the climb is worth it (the top of a tower a tier better)
+            foreach (var h in land.upperFloors)
+            {
+                int n = h.w * h.d > 90 ? 2 : 1;
+                for (int i = 0; i < n; i++) RandomItem(InHouse(h, 1.0f), rng.NextDouble() < 0.35 ? 1 : 0);
+            }
             // out in the open: fewer and plainer
             int outside = Mathf.RoundToInt(TotalPlayers * 3.6f);
             for (int i = 0; i < outside; i++) RandomItem(RandomGround(land.PlayHalf * 0.94f), -1);

@@ -283,7 +283,9 @@ namespace BIS
                 const int vmask = (1 << Layers.Default) | (1 << Layers.Hull) | (1 << Layers.Vehicle);
                 if (Physics.Raycast(basePos + Vector3.up * 0.55f, d, out var low, 0.95f, vmask, QueryTriggerInteraction.Ignore) && !low.collider.transform.IsChildOf(transform)
                     && !Physics.Raycast(basePos + Vector3.up * 1.9f, d, 1.6f, vmask, QueryTriggerInteraction.Ignore)
-                    && !Physics.Raycast(basePos + Vector3.up * 0.2f, Vector3.up, 2.4f, vmask, QueryTriggerInteraction.Ignore))
+                    && !Physics.Raycast(basePos + Vector3.up * 0.2f, Vector3.up, 2.4f, vmask, QueryTriggerInteraction.Ignore)
+                    // never hop a parapet into a long drop (tower floors, balconies)
+                    && Physics.Raycast(basePos + d * 1.8f + Vector3.up * 1.5f, Vector3.down, 4f, Layers.MoveMask, QueryTriggerInteraction.Ignore))
                 {
                     velocity.y = 6.6f; velocity += d * 1.5f; grounded = false; vaultCd = 0.7f;
                 }
