@@ -388,6 +388,8 @@ namespace BIS
             if (attacker && attacker.DamageBoost > 1) mul *= attacker.DamageBoost;
             var b = Battle.I;
             if (b != null) mul *= b.DamageMul(team);
+            // battle royale: bot against bot hits softer (people are never affected), so the field lasts until the zone matters
+            if (b != null && b.royale != null && attacker && !attacker.part.Human && !attacker.part.boss && target is Unit vu && !vu.part.Human && !vu.part.boss) mul *= 0.65f;
             var tu = target as Unit; var tv = target as Vehicle;
             float hp0 = tu ? tu.hp : tv ? tv.hp : 0, ar0 = tu ? tu.armor : 0;
             target.TakeDamage(new DamageInfo { amount = amount * mul, type = type, attacker = attacker, team = team, point = p, dir = dir, weapon = w });

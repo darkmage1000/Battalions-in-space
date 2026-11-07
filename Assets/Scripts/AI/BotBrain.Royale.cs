@@ -15,9 +15,10 @@ namespace BIS
         LootItem rItem;
         LootChest rChest;
         LandWorld.VaultSite rVault;
-        float rGoalT, rScanT, rHealT, rStuckT;
+        float rGoalT, rScanT, rHealT, rStuckT, rProgD = 1e9f, rProgT;
         Vector3 rRoam;
         readonly HashSet<int> rSkip = new HashSet<int>();
+        readonly HashSet<LootChest> rSkipChests = new HashSet<LootChest>();
         static readonly List<LootItem> rScratch = new List<LootItem>();
 
         float GunValue(WeaponState w) => w == null || OutOfAmmo(w) ? 0 : LootTable.Value(w.def);
@@ -123,7 +124,8 @@ namespace BIS
                 float d = to.magnitude;
                 if (rGoal == RGoal.Loot && rItem != null && d < 1.9f && Mathf.Abs(yd) < 2.2f)
                 {
-                    if (!r.Take(u, rItem)) rSkip.Add(rItem.id);
+                    int worst = u.weapons[1] == null ? 1 : GunValue(u.weapons[0]) <= GunValue(u.weapons[1]) ? 0 : 1;
+                    if (!r.Take(u, rItem, worst)) rSkip.Add(rItem.id);
                     rItem = null; rGoalT = 0;
                 }
                 else if (rGoal == RGoal.Chest && rChest != null && d < 2.3f) { r.OpenChest(u, rChest); rChest = null; rGoalT = 0.5f; rScanT = 0; }
@@ -131,6 +133,9 @@ namespace BIS
                 else if (d > 1.2f) { move = Toward(pos, goal); sprint = d > 18 || rGoal == RGoal.Zone; }
                 // stuck on the way to an item (a wall, a roof): give it up
                 if (rGoal == RGoal.Loot || rGoal == RGoal.Chest) { if (stuckT > 0.8f) rStuckT += dt; if (rStuckT > 4) { if (rItem != null) rSkip.Add(rItem.id); rItem = null; rChest = null; rGoalT = 0; rStuckT = 0; } }
+                // any goal: no real progress toward it for 6 s (a wall, a fence, a roof) = give it up and pick another
+                if (d < rProgD - 2) { rProgD = d; rProgT = 0; }
+                else if (d > 2.5f) { rProgT += dt; if (rProgT > 6) { if (rItem != null) rSkip.Add(rItem.id); if (rChest != null) rSkipChests.Add(rChest); rItem = null; rChest = null; rGoalT = 0; rProgT = 0; rProgD = 1e9f; } }
                 aimPoint = u.Eye + (move.sqrMagnitude > 0.01f ? move : u.transform.forward) * 30 + Vector3.up * 0.4f;
                 // a long way to go: take a vehicle if one is close
                 if (enterT <= 0 && d > 200 && !u.IsHero)
@@ -234,6 +239,7 @@ namespace BIS
         {
             var r = b.royale;
             rGoalT = Random.Range(5f, 9f);
+            rProgD = 1e9f; rProgT = 0;
             rStuckT = 0;
             if (rItem != null && rItem.claimedBy == u) rItem.claimedBy = null;
             rItem = null; rChest = null; rVault = null;
@@ -266,11 +272,11 @@ namespace BIS
                     switch (it.kind)
                     {
                         case LootKind.Weapon: { float v = LootTable.Value(it.weapon); want = v > worst * 1.15f ? (v - worst) / 40f + (top < 150 ? 3 : 0) : 0; break; }
-                        case LootKind.Medkit: want = u.medkits < 2 ? 2.2f : 0.8f; break;
-                        case LootKind.Shield: want = u.shields < 2 ? 2.4f : 0.9f; break;
+                        case LootKind.Medkit: want = u.medkits < 2 ? 2.2f : u.medkits < 4 && !Supplied ? 0.8f : 0; break;
+                        case LootKind.Shield: want = u.shields < 2 ? 2.4f : u.shields < 4 && !Supplied ? 0.9f : 0; break;
                         case LootKind.Ammo: want = 1.2f; break;
                         case LootKind.Key: want = 4f; break;
-                        default: want = 0.6f; break;
+                        default: want = Supplied ? 0 : 0.6f; break;
                     }
                     if (want <= 0) continue;
                     float dd = (it.pos - pos).magnitude;
@@ -278,7 +284,7 @@ namespace BIS
                     if (s > best) { best = s; pick = it; }
                 }
                 var chest = r.NearestChest(pos, 55);
-                if (chest != null && !(chest.claimedBy && chest.claimedBy != u && chest.claimedBy.Alive && Time.time < chest.claimUntil))
+                if (chest != null && !rSkipChests.Contains(chest) && !(chest.claimedBy && chest.claimedBy != u && chest.claimedBy.Alive && Time.time < chest.claimUntil))
                 {
                     float s = 3.2f / (8 + (chest.pos - pos).magnitude);
                     if (s > best) { rGoal = RGoal.Chest; rChest = chest; chest.claimedBy = u; chest.claimUntil = Time.time + 20; return; }
@@ -288,13 +294,13 @@ namespace BIS
             // 4. the boss, if we are ready for it
             if (Strong && r.boss != null && r.boss.Alive && (r.boss.unit.transform.position - pos).magnitude < 320 && Random.value < 0.75f) { rGoal = RGoal.Boss; return; }
             // late in the match a well-supplied bot goes looking for someone (where it last heard shooting, roughly)
-            if (r.AlivePlayers <= 25 && Supplied && Random.value < 0.6f)
+            if (r.AlivePlayers <= 30 && Supplied && Random.value < 0.65f)
             {
-                Unit prey = null; float pd = 220 * 220;
+                Unit prey = null; float pd = 300 * 300;
                 foreach (var o in b.units)
                 {
                     if (!o || !o.Alive || o.team == u.team || o.part.boss) continue;
-                    float d2 = (o.transform.position - pos).sqrMagnitude;
+                    float d2 = (o.transform.position - pos).sqrMagnitude * (o.part.Human ? 0.5f : 1f);   // people draw them in
                     if (d2 < pd) { pd = d2; prey = o; }
                 }
                 if (prey) { rGoal = RGoal.Roam; Vector2 j = Random.insideUnitCircle * 15; rRoam = b.land.nav.SnapPoint(prey.transform.position + new Vector3(j.x, 0, j.y)); rGoalT = 6; return; }

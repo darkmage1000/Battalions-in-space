@@ -167,7 +167,10 @@ namespace BIS
             if (noiseT <= 0)
             {
                 noiseT = Random.Range(0.25f, 0.5f);
-                float errDeg = Mathf.Lerp(7.5f, 1.4f, skill) * Mathf.Lerp(1.6f, 0.6f, Mathf.Clamp01(trackTime / 3f)) * (b.royale != null && !u.part.boss ? 1.3f : 1f);
+                float errDeg = Mathf.Lerp(7.5f, 1.4f, skill) * Mathf.Lerp(1.6f, 0.6f, Mathf.Clamp01(trackTime / 3f));
+                // battle royale: bots are full strength against people but shakier against each other, so the
+                // field doesn't wipe itself out before the zone and the players get a say
+                if (b.royale != null && !u.part.boss && target is Unit tu && !tu.part.Human) errDeg *= 1.6f;
                 noise = Random.insideUnitSphere * Mathf.Tan(errDeg * Mathf.Deg2Rad) * dist;
             }
             return point + noise;

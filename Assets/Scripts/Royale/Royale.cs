@@ -151,7 +151,23 @@ namespace BIS
                 Drop(LootKind.Shield, 3, null, 3, InHouse(v.house, 1.6f), false);
                 Drop(LootKind.Medkit, 3, null, 3, InHouse(v.house, 1.6f), false);
             }
+            // the 10% roll can leave a match with no keys at all: make sure there are at least one per vault and one
+            // spare, each beside a gold (else purple) weapon out in the world
+            int want = land.vaults.Count + 1;
+            for (int tier = 4; tier >= 3 && keysSpawned < want; tier--)
+            {
+                var gold = loot.FindAll(it => it.kind == LootKind.Weapon && it.tier == tier && !InVault(it.pos));
+                while (keysSpawned < want && gold.Count > 0)
+                {
+                    var g = gold[rng.Next(gold.Count)]; gold.Remove(g);
+                    keysSpawned++;
+                    Vector2 o = Random.insideUnitCircle.normalized * 0.9f;
+                    Drop(LootKind.Key, 4, null, 1, g.pos + new Vector3(o.x, 0, o.y), false);
+                }
+            }
         }
+
+        bool InVault(Vector3 p) { foreach (var v in b.land.vaults) if ((p - v.inside).sqrMagnitude < 64) return true; return false; }
 
         void RandomItem(Vector3 p, int bonus)
         {
@@ -383,6 +399,7 @@ namespace BIS
             zoneTimer = Phases[0].wait;
             bossAt = Random.Range(150f, 210f);
             HUD.Message("Everyone has jumped - find weapons and stay inside the zone", Color.white, 5);
+            if (keysSpawned > 0) Say($"{keysSpawned} vault keys are out there - look beside gold weapons", new Color(1f, 0.8f, 0.3f), 6, null);
             Net.NetHost.Text("Everyone has jumped - find weapons and stay inside the zone", Color.white, 5, null);
         }
 
@@ -555,14 +572,14 @@ namespace BIS
         }
 
         /// <summary>Take an item: weapons fill the empty slot or swap with the one in hand (which drops), the rest goes in the pockets.</summary>
-        public bool Take(Unit u, LootItem it)
+        public bool Take(Unit u, LootItem it, int intoSlot = -1)
         {
             if (it == null || it.taken || u == null || !u.Alive || u.InVehicle) return false;
             if (CantTake(u, it) != null) return false;
             switch (it.kind)
             {
                 case LootKind.Weapon:
-                    int slot = u.weapons[1] == null ? 1 : u.cur;
+                    int slot = u.weapons[1] == null ? 1 : intoSlot >= 0 ? intoSlot : u.cur;
                     if (u.weapons[0] != null && u.weapons[0].def.kind == WKind.Pistol && u.weapons[0].def.tier < 0 && u.weapons[1] != null && u.weapons[1].def.tier >= 0) slot = 0;   // the starting pistol goes first
                     var old = u.weapons[slot];
                     if (old != null && old.def.tier >= 0 && old.def.kind != WKind.Repair) Drop(LootKind.Weapon, old.def.tier, old.def, 1, it.pos, false);
