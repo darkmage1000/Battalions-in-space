@@ -10,19 +10,19 @@ namespace BIS
     /// </summary>
     public partial class HUD
     {
-        class DmgNum { public IDamageable t; public Vector3 p; public float hp, ar, born; public bool kill; }
+        class DmgNum { public IDamageable t; public Vector3 p; public float hp, ar, born; public bool kill, head; }
         static readonly List<DmgNum> dmgNums = new List<DmgNum>();
         static IDamageable hitTarget;
         static float hitTargetAt;
 
-        public static void Damage(IDamageable t, Vector3 p, float hp, float ar, bool kill)
+        public static void Damage(IDamageable t, Vector3 p, float hp, float ar, bool kill, bool head = false)
         {
             if (t == null || (hp + ar < 0.5f && !kill)) return;
             float now = Time.unscaledTime;
             hitTarget = kill ? null : t; hitTargetAt = now;
             foreach (var n in dmgNums)
-                if (n.t == t && now - n.born < 0.4f && !n.kill) { n.hp += hp; n.ar += ar; n.kill |= kill; n.born = now; n.p = p; return; }
-            dmgNums.Add(new DmgNum { t = t, p = p, hp = hp, ar = ar, born = now, kill = kill });
+                if (n.t == t && now - n.born < 0.4f && !n.kill) { n.hp += hp; n.ar += ar; n.kill |= kill; n.head |= head; n.born = now; n.p = p; return; }
+            dmgNums.Add(new DmgNum { t = t, p = p, hp = hp, ar = ar, born = now, kill = kill, head = head });
             if (dmgNums.Count > 16) dmgNums.RemoveAt(0);
         }
 
@@ -41,11 +41,12 @@ namespace BIS
                 Vector2 g = new Vector2(sp.x / UI.S, (Screen.height - sp.y) / UI.S);
                 int total = Mathf.RoundToInt(n.hp + n.ar);
                 bool armourOnly = n.hp < 0.5f && n.ar > 0;
-                Color c = n.kill ? UI.Gold : armourOnly ? ArmorCol : Color.white;
+                Color c = n.kill ? UI.Gold : n.head ? new Color(1f, 0.62f, 0.15f) : armourOnly ? ArmorCol : Color.white;
                 c.a = 1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(0.65f, 1.1f, age));
                 int size = total >= 150 ? 30 : total >= 60 ? 25 : 21;
                 float pop = age < 0.08f ? 1.25f : 1f;
-                UI.Text(new Rect(g.x - 80, g.y - 20, 160, 40), n.kill ? $"{total}  KILL" : total.ToString(), Mathf.RoundToInt(size * pop), c, TextAnchor.MiddleCenter);
+                string tag = n.kill ? (n.head ? "  HEADSHOT" : "  KILL") : n.head ? "  HEAD" : "";
+                UI.Text(new Rect(g.x - 110, g.y - 20, 220, 40), total + tag, Mathf.RoundToInt(size * pop), c, TextAnchor.MiddleCenter);
             }
 
             // the last thing you hit: name, armour and health

@@ -327,6 +327,34 @@ namespace BIS
 
         public static System.Action<Vector3, Collider, WeaponDef, Unit> DebugImpact;   // test harness only
 
+        // ── headshots ──
+        public const float HeadMul = 1.5f, HeadMulShotgun = 1.25f;    // per pellet for a scattergun
+        public const float HeadFrom = 0.84f;                          // the top of a soldier above this share of its height
+        public static bool headshotNow;                               // set while Deal runs for a head hit (HUD reads it)
+        public static int Headshots;                                  // test harness: head hits by anyone
+
+        /// <summary>How much a head hit multiplies this weapon's damage (1 = no headshots: rockets, launchers, cannons, grenades).</summary>
+        public static float HeadshotMul(WeaponDef w)
+        {
+            if (w == null) return 1;
+            switch (w.kind)
+            {
+                case WKind.Rocket: case WKind.Missile: case WKind.Torpedo: case WKind.Cannon: case WKind.Grenade:
+                case WKind.Repair: case WKind.Blade: case WKind.Beam: return 1;
+                case WKind.Shotgun: return HeadMulShotgun;
+                default: return HeadMul;
+            }
+        }
+
+        /// <summary>Did a shot that struck soldier u at p hit the head? (The capsule doesn't crouch, so this goes by the
+        /// soldier's current height: a shot over a crouched head is a body hit, not a headshot.)</summary>
+        public static bool IsHeadshot(Unit u, Vector3 p)
+        {
+            if (u == null || u.InVehicle) return false;
+            float h = u.Height, y = p.y - u.transform.position.y;
+            return y >= h * HeadFrom && y <= h + 0.15f;
+        }
+
         void Impact(Shot s, Vector3 p, Vector3 normal, Collider c)
         {
             var w = s.w;
@@ -364,7 +392,10 @@ namespace BIS
             }
             if (target != null && target.Alive && target.Team != s.team)
             {
-                Deal(target, w.damage * s.dmgMul, w, s.owner, s.team, p, s.vel.normalized, w.splash > 0 ? DmgType.Explosive : DmgType.Bolt);
+                float head = !s.grenade && target is Unit hu && IsHeadshot(hu, p) ? HeadshotMul(w) : 1;
+                if (head > 1) { headshotNow = true; Headshots++; }
+                Deal(target, w.damage * s.dmgMul * head, w, s.owner, s.team, p, s.vel.normalized, w.splash > 0 ? DmgType.Explosive : DmgType.Bolt);
+                headshotNow = false;
             }
             if (w.splash > 0 || s.grenade)
             {
@@ -398,7 +429,7 @@ namespace BIS
             {
                 float hpDmg = Mathf.Max(0, hp0 - Mathf.Max(0, tu ? tu.hp : tv ? tv.hp : 0)), arDmg = tu ? Mathf.Max(0, ar0 - tu.armor) : 0;
                 bool kill = !target.Alive;
-                if (attacker.part.isPlayer) { HUD.HitMarker(kill, target.IsVehicle); HUD.Damage(target, p, hpDmg, arDmg, kill); }
+                if (attacker.part.isPlayer) { HUD.HitMarker(kill, target.IsVehicle, headshotNow); HUD.Damage(target, p, hpDmg, arDmg, kill, headshotNow); }
                 else if (attacker.part.remote) { Net.NetHost.Hit(kill, target.IsVehicle); Net.NetHost.Damage(target, p, hpDmg, arDmg, kill); }
             }
         }

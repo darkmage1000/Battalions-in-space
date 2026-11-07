@@ -33,11 +33,12 @@ namespace BIS
             if (kills.Count > 6) kills.RemoveAt(0);
         }
 
-        static float killT; static bool hitVehicle;
+        static float killT, headT; static bool hitVehicle;
         /// <summary>X at the crosshair on every hit (bigger and red on a kill), with a tick sound.</summary>
-        public static void HitMarker(bool kill = false, bool vehicle = false)
+        public static void HitMarker(bool kill = false, bool vehicle = false, bool head = false)
         {
             hitT = 0.3f; hitVehicle = vehicle;
+            if (head) { headT = 0.5f; Sfx.Play2D("hitmark", 0.7f, 1.45f); }
             if (kill) { killT = 0.6f; Sfx.Play2D("hitmark", 0.8f, 0.75f); }
             else Sfx.Play2D("hitmark", 0.5f);
         }
@@ -47,7 +48,7 @@ namespace BIS
         void Update()
         {
             float dt = Time.unscaledDeltaTime;
-            hitT -= dt; hurtT -= dt; pointsT -= dt; killT -= dt;
+            hitT -= dt; hurtT -= dt; pointsT -= dt; killT -= dt; headT -= dt;
             fpsT += dt; if (fpsT > 0.5f) { fps = 1f / Mathf.Max(0.0001f, Time.unscaledDeltaTime); fpsT = 0; }
             UpdateThreat(dt);
         }
@@ -268,7 +269,8 @@ namespace BIS
                 bool kill = killT > 0;
                 float t = kill ? killT / 0.6f : hitT / 0.3f;
                 float r0 = kill ? 9 : 7, r1 = (kill ? 26 : 19) + (1 - t) * 4;
-                Color mc = kill ? new Color(1f, 0.25f, 0.2f, Mathf.Clamp01(t * 2)) : hitVehicle ? new Color(1f, 0.85f, 0.3f, Mathf.Clamp01(t * 2.5f)) : new Color(1f, 1f, 1f, Mathf.Clamp01(t * 2.5f));
+                bool headHit = headT > 0;
+                Color mc = kill ? new Color(1f, 0.25f, 0.2f, Mathf.Clamp01(t * 2)) : headHit ? new Color(1f, 0.78f, 0.2f, Mathf.Clamp01(t * 2.5f)) : hitVehicle ? new Color(1f, 0.85f, 0.3f, Mathf.Clamp01(t * 2.5f)) : new Color(1f, 1f, 1f, Mathf.Clamp01(t * 2.5f));
                 Color sh = new Color(0, 0, 0, mc.a * 0.6f);
                 float wd = kill ? 4 : 3;
                 foreach (var dx in new[] { -1, 1 })
@@ -278,7 +280,8 @@ namespace BIS
                         UI.Line(a + Vector2.one, e + Vector2.one, sh, wd + 1);
                         UI.Line(a, e, mc, wd);
                     }
-                if (kill) UI.Text(new Rect(c.x - 60, c.y + 30, 120, 22), "KILL", 16, mc, TextAnchor.MiddleCenter);
+                if (kill) UI.Text(new Rect(c.x - 80, c.y + 30, 160, 22), headHit ? "HEADSHOT KILL" : "KILL", 16, mc, TextAnchor.MiddleCenter);
+                else if (headHit) UI.Text(new Rect(c.x - 80, c.y + 30, 160, 22), "HEADSHOT", 15, mc, TextAnchor.MiddleCenter);
             }
             if (hurtT > 0)
             {
