@@ -329,6 +329,7 @@ namespace BIS
 
         // ── headshots ──
         public const float HeadMul = 1.5f, HeadMulShotgun = 1.25f;    // per pellet for a scattergun
+        public const float HeadMulSniper = 2.5f;                      // a sniper headshot kills any soldier (not a hero, not through royale armour): 147-160 x 2.5 > 346, the toughest class
         public const float HeadFrom = 0.84f;                          // the top of a soldier above this share of its height
         public static bool headshotNow;                               // set while Deal runs for a head hit (HUD reads it)
         public static int Headshots;                                  // test harness: head hits by anyone
@@ -342,6 +343,7 @@ namespace BIS
                 case WKind.Rocket: case WKind.Missile: case WKind.Torpedo: case WKind.Cannon: case WKind.Grenade:
                 case WKind.Repair: case WKind.Blade: case WKind.Beam: return 1;
                 case WKind.Shotgun: return HeadMulShotgun;
+                case WKind.Sniper: return HeadMulSniper;
                 default: return HeadMul;
             }
         }
