@@ -378,12 +378,18 @@ namespace BIS
             {
                 if (p.dropped || p.boss) continue;
                 bool go;
-                if (p.isPlayer) go = playerWantsJump || dropT <= 0;
+                if (Follower(p))
+                {
+                    // duos: the mate jumps when their leader does
+                    var l = LeaderOf(p);
+                    go = l.dropped;
+                    if (go) p.dropAt = l.dropAt + new Vector3(Random.Range(-6f, 6f), 0, Random.Range(-6f, 6f));
+                }
+                else if (p.isPlayer) go = playerWantsJump || dropT <= 0;
                 else if (p.remote) go = p.dropAt != Vector3.zero && (remoteJump || dropT <= 0);
-                else if (Duos && MateOf(p) is Participant hm && hm.Human) { go = hm.dropped; if (go) p.dropAt = hm.dropAt + new Vector3(Random.Range(-6f, 6f), 0, Random.Range(-6f, 6f)); }   // a person's bot partner jumps with them
                 else go = jumpAt.TryGetValue(p, out float at) && gone >= at;
                 if (!go) continue;
-                if (p.isPlayer) p.dropAt = playerPicked ? dropPickPos : RandomGround(b.land.PlayHalf * 0.6f);
+                if (p.isPlayer && !Follower(p)) p.dropAt = playerPicked ? dropPickPos : RandomGround(b.land.PlayHalf * 0.6f);
                 if (p.dropAt == Vector3.zero) p.dropAt = p.Human ? RandomGround(b.land.PlayHalf * 0.6f) : BotDropSpot();
                 Jump(p);
             }
@@ -402,11 +408,15 @@ namespace BIS
             float gy = land.Top(at.x, at.z);
             Vector2 off = Random.insideUnitCircle * (p.Human ? 0 : Duos ? 5 : 30);
             Vector3 pos = new Vector3(at.x - 40 + off.x, gy + DropAlt, at.z - 40 + off.y);
+            // a follower leaves the dropship right beside their leader
+            var lu = Follower(p) ? LeaderOf(p).unit : null;
+            if (lu && lu.Alive && lu.gliding) pos = FollowSpot(lu);
             var cls = ClassFor(p);
             var u = b.SpawnUnit(p, cls, null, pos, 45);
             p.dropped = true;
             u.StartGlide();
-            if (p.isPlayer) { b.control.OnSpawned(u); HUD.Message("Steer your grav-chute to the ground", new Color(0.6f, 0.85f, 1f), 4); }
+            if (p.isPlayer) { b.control.OnSpawned(u); HUD.Message(lu ? $"Gliding with {lu.displayName} - move to split off on your own" : "Steer your grav-chute to the ground", new Color(0.6f, 0.85f, 1f), 4); }
+            else if (p.remote && lu) Net.NetHost.Text($"Gliding with {lu.displayName} - move to split off on your own", new Color(0.6f, 0.85f, 1f), 4, null);
         }
 
         void StartPlay()

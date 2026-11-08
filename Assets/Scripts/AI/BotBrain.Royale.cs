@@ -72,7 +72,11 @@ namespace BIS
             if (u.gliding)
             {
                 Vector3 to = u.part.dropAt - pos; to.y = 0;
-                u.input = new UnitInput { move = to.magnitude > 3 ? to.normalized : Vector3.zero, aimPoint = u.Eye + u.transform.forward * 30 };
+                Vector3 gm = to.magnitude > 3 ? to.normalized : Vector3.zero;
+                // duos: a bot following its leader keeps beside the leader's chute all the way down
+                var lead = r.Follower(u.part) ? r.LeaderOf(u.part).unit : null;
+                if (lead && lead.Alive && lead.gliding) gm = Royale.FollowMove(u, lead, r.FollowSpot(lead));
+                u.input = new UnitInput { move = gm, aimPoint = u.Eye + u.transform.forward * 30 };
                 return;
             }
             if (u.knocked)

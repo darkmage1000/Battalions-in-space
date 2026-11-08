@@ -27,6 +27,7 @@ namespace BIS.Net
                 .B(r.bossSpawned).B(r.bossDead).V(r.bossLair).Str(r.bossPlace ?? "");
             w.U16(b.people.Count);
             foreach (var p in b.people) w.U8(p.placement).B(p.dropped);
+            w.V(r.dropPickPos).B(r.playerPicked);            // the host's landing pick (it leads a Wi-Fi duo)
             Session.link.Send(w);
         }
 

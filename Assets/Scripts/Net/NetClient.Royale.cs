@@ -47,6 +47,7 @@ namespace BIS.Net
                             int pl = r.U8(); bool dr = r.B();
                             if (i < b.people.Count) { b.people[i].placement = pl; b.people[i].dropped = dr; }
                         }
+                        ry.leaderPick = r.V(); ry.leaderPicked = r.B();
                         break;
                     }
             }

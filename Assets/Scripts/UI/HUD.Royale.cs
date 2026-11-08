@@ -87,6 +87,8 @@ namespace BIS
                 UI.Bar(new Rect(ub.x + 12, ub.y + 30, ub.width - 24, 8), 1 - me.useT / me.useDur, me.useKind == LootKind.Medkit ? UI.Good : ArmorCol);
             }
             DuoOverlay(pc, me);
+            if (me.gliding && r.Duos && !r.playerSplit && r.Follower(b.player))
+                UI.Text(new Rect(0, 190, w, 30), $"Gliding with {r.LeaderOf(b.player).name} - move to split off", 22, new Color(0.6f, 0.85f, 1f), TextAnchor.MiddleCenter);
             // a marker over the boss when it is close
             if (r.boss != null && r.boss.Alive)
             {
@@ -214,16 +216,32 @@ namespace BIS
             float side = Mathf.Min(h - 150, 900);
             Rect mr = new Rect(w / 2 - side / 2 - 220, 70, side, side);
             UI.Box(new Rect(mr.x - 8, mr.y - 8, mr.width + 16, mr.height + 16));
-            DrawRoyaleMap(mr, true);
+            bool follow = ry.Follower(b.player);
+            var leader = ry.LeaderOf(b.player); var mate = ry.MateOf(b.player);
+            DrawRoyaleMap(mr, !follow);
+            if (follow)
+            {
+                // where our leader means to land (the host's pick over Wi-Fi; a bot never leads a person)
+                Vector3 lp = Net.Session.IsClient ? ry.leaderPick : leader.dropAt;
+                bool known = Net.Session.IsClient ? ry.leaderPicked : leader.dropAt != Vector3.zero;
+                var land = b.land;
+                if (known)
+                {
+                    Vector2 q = new Vector2(mr.x + (lp.x + land.half) / land.size * mr.width, mr.y + (1 - (lp.z + land.half) / land.size) * mr.height);
+                    UI.Frame(new Rect(q.x - 14, q.y - 14, 28, 28), UI.Gold, 3);
+                    UI.Text(new Rect(q.x - 140, q.y + 16, 280, 22), $"{leader.name.ToUpper()} LANDS HERE", 16, UI.Gold, TextAnchor.UpperCenter);
+                }
+            }
             Rect info = new Rect(mr.xMax + 30, 70, 420, side);
             UI.Box(info);
             float y = info.y + 18, x = info.x + 22;
             UI.Text(new Rect(x, y, 380, 40), "BATTLE ROYALE", 32, UI.Gold); y += 46;
             UI.Text(new Rect(x, y, 380, 60), $"JUMP IN {Mathf.CeilToInt(Mathf.Max(0, ry.dropT))}", 44, Color.white); y += 64;
             UI.Text(new Rect(x, y, 380, 30), ry.Duos ? $"{ry.TotalPlayers} players in pairs - last team standing" : $"{ry.TotalPlayers} players - last one standing wins", 19, UI.Dim); y += 40;
-            UI.Text(new Rect(x, y, 380, 150),
-                "Tap the map to pick where you land, then JUMP (or wait for the countdown).\n\nYou glide down under a grav-chute: steer with the move stick.",
-                18, Color.white, TextAnchor.UpperLeft, true); y += 160;
+            string how = follow ? $"{leader.name} leads your jump: they pick where you land and you jump with them.\n\nIn the air your chute keeps beside theirs - move the stick to split off on your own."
+                       : mate != null ? $"You lead your team's jump: tap the map to pick where you land, then JUMP. {mate.name} jumps with you.\n\nYou glide down under a grav-chute: steer with the move stick."
+                       : "Tap the map to pick where you land, then JUMP (or wait for the countdown).\n\nYou glide down under a grav-chute: steer with the move stick.";
+            UI.Text(new Rect(x, y, 380, 150), how, 18, Color.white, TextAnchor.UpperLeft, true); y += 160;
             var f = Factions.Get(b.player.faction >= 0 ? b.player.faction : 0);
             string cls = b.cfg.royaleClasses ? f.classes[Mathf.Clamp(b.player.royaleClass, 0, 4)].name : "Survivor (classes off)";
             UI.Text(new Rect(x, y, 380, 26), $"{f.name}", 20, f.bolt); y += 28;
@@ -231,7 +249,8 @@ namespace BIS
             UI.Text(new Rect(x, y, 380, 150),
                 "Loot: weapons (grey, green, blue, purple, gold - better the rarer), medkits, shield cells, ammo.\nBlue chests hold better loot. The zone shrinks: stay inside. A boss lands later. Vaults need a key.",
                 16, UI.Dim, TextAnchor.UpperLeft, true);
-            if (UI.Button(new Rect(info.x + 22, info.yMax - 90, info.width - 44, 70), ry.playerWantsJump ? "JUMPING..." : "JUMP NOW", false, !ry.playerWantsJump, 30, new Color(0.2f, 0.6f, 0.3f)))
+            if (follow) UI.Text(new Rect(info.x + 22, info.yMax - 90, info.width - 44, 70), $"WAITING FOR {leader.name.ToUpper()}", 26, UI.Gold, TextAnchor.MiddleCenter);
+            else if (UI.Button(new Rect(info.x + 22, info.yMax - 90, info.width - 44, 70), ry.playerWantsJump ? "JUMPING..." : "JUMP NOW", false, !ry.playerWantsJump, 30, new Color(0.2f, 0.6f, 0.3f)))
                 ry.playerWantsJump = true;
         }
 

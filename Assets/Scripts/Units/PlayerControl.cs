@@ -146,6 +146,7 @@ namespace BIS
                     if (deadT > 3.5f) { mode = Mode.Spawn; }
                     break;
                 case Mode.Drop:
+                    if (b.royale.Follower(b.player)) break;          // duos: the leader picks and jumps for both
                     if (Ctl.Confirm || Ctl.JumpDown) b.royale.playerWantsJump = true;
                     if (Net.Session.IsClient && (b.royale.playerPicked || b.royale.playerWantsJump)) Net.NetClient.RequestJump(b.royale.dropPickPos, b.royale.playerWantsJump);
                     break;
@@ -220,6 +221,7 @@ namespace BIS
             inp.aimPoint = aimPoint;
             if (testMove.sqrMagnitude > 0) inp.move = Vector3.ClampMagnitude(inp.move + testMove, 1);
             if (testFire) { inp.fire = true; inp.fireDown = Time.frameCount % 10 == 0; }
+            if (b.royale) FollowLeader(me, ref inp);
             if (AutoFireOk(wd)) { inp.fire = true; inp.fireDown = true; }
             // the player's own shots are tighter than the bots', tighter still on touch and when assist has a target
             me.spreadMul = (Settings.Current == Settings.InputDevice.Touch ? 0.45f : Settings.Current == Settings.InputDevice.Gamepad ? 0.55f : 0.7f) * (assistOnTarget ? 0.6f : 1f);
@@ -626,6 +628,25 @@ namespace BIS
                 royalePromptCol = why != null ? UI.Dim : Tiers.Of(item.tier);
                 if (Ctl.Use && why == null) { r.usedUse = true; if (Net.Session.IsClient) Net.NetClient.RequestLoot(0, item.id); else r.Take(me, item); }
             }
+        }
+
+        /// <summary>Duos, following the jump leader: the chute keeps beside the leader's until you move the stick (that
+        /// splits you off for good) or you land.</summary>
+        void FollowLeader(Unit me, ref UnitInput inp)
+        {
+            var r = b.royale;
+            if (r.playerSplit || !r.Duos) return;
+            if (!me.gliding) { r.playerSplit = true; return; }        // down (or dropped back in at a station): on your own
+            if (!r.Follower(b.player)) { r.playerSplit = true; return; }
+            var lead = r.LeaderOf(b.player).unit;
+            if (Ctl.Move.sqrMagnitude > 0.2f || testMove.sqrMagnitude > 0.2f)
+            {
+                r.playerSplit = true;
+                HUD.Message(lead ? $"You split off from {lead.displayName}" : "You split off", new Color(0.6f, 0.85f, 1f), 3);
+                return;
+            }
+            if (!lead || !lead.Alive) return;
+            inp.move = Royale.FollowMove(me, lead, lead.gliding ? r.FollowSpot(lead) : lead.transform.position);
         }
 
         /// <summary>Duos: revive a downed mate beside you, or call a fallen one in at a revive station with their tag.

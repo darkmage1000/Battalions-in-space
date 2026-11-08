@@ -38,6 +38,35 @@ namespace BIS
             return null;
         }
 
+        // ── the jump leader ──────────────────────────────────────────────
+        // In duos one player leads the drop: they pick the spot and jump; their mate jumps the moment they do, beside them,
+        // and their chute keeps alongside until (a person) they steer away. The leader is the team's first person in the
+        // roster (the host over Wi-Fi), else its first bot - the same answer on both devices.
+        public bool playerSplit;                 // the local player (a follower) has steered off on their own
+        public Vector3 leaderPick; public bool leaderPicked;   // Wi-Fi guest: where the host (our leader) means to land
+
+        public Participant LeaderOf(Participant p)
+        {
+            if (p == null || !Duos) return null;
+            Participant best = null;
+            foreach (var o in b.people)
+                if (o.team == p.team && !o.boss && (best == null || (o.Human && !best.Human))) best = o;
+            return best;
+        }
+        public bool Follower(Participant p) => Duos && LeaderOf(p) is Participant l && l != p;
+
+        /// <summary>Where a follower's chute aims: a few metres off the leader on a fixed side (not their facing, which
+        /// swings as they look around).</summary>
+        public Vector3 FollowSpot(Unit leader) => leader.transform.position + new Vector3(4.5f, 0, -2.5f);
+
+        /// <summary>The horizontal stick a follower's chute needs this frame to keep beside the gliding leader.</summary>
+        public static Vector3 FollowMove(Unit me, Unit leader, Vector3 spot)
+        {
+            Vector3 lv = leader.velocity; lv.y = 0;
+            Vector3 gap = spot - me.transform.position; gap.y = 0;
+            return Vector3.ClampMagnitude((lv + gap * 1.2f) / 17f, 1f);
+        }
+
         static bool Standing(Participant p) => p != null && p.unit && p.unit.Alive && !p.unit.knocked;
 
         public bool CanKnock(Unit u) => Duos && !u.gliding && !u.part.boss && !u.IsHero && Standing(MateOf(u.part));

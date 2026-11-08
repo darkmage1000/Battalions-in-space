@@ -140,8 +140,16 @@ namespace BIS
             Game.I.StartBattle(cfg, r => Game.I.ShowMenu());
             yield return new WaitForSeconds(1);
             var b = Battle.I; var ry = b.royale; var rp = b.RemoteHuman;
-            Line($"duos built: duos {ry.Duos}, guest team {rp.team} mine {b.player.team}, stations {ry.stations.Count}");
-            ry.dropPickPos = new Vector3(30, b.land.Top(30, 30), 30); ry.playerPicked = true; ry.playerWantsJump = true;
+            Line($"duos built: duos {ry.Duos}, guest team {rp.team} mine {b.player.team}, stations {ry.stations.Count}, I lead {ry.LeaderOf(b.player) == b.player}, guest follows {ry.Follower(rp)}");
+            ry.dropPickPos = new Vector3(30, b.land.Top(30, 30), 30); ry.playerPicked = true;
+            yield return new WaitForSeconds(4);
+            Line($"before I jump: guest dropped {rp.dropped}");
+            ry.playerWantsJump = true;
+            yield return new WaitForSeconds(0.3f);
+            Line($"I jumped: guest dropped {rp.dropped}, gap {(rp.unit && b.player.unit ? (rp.unit.transform.position - b.player.unit.transform.position).magnitude : -1):0.0} m");
+            PlayerControl.testMove = Vector3.left;       // the leader steers away in the air: the guest's chute should keep up
+            yield return new WaitForSeconds(3);
+            PlayerControl.testMove = Vector3.zero;
             t0 = Time.realtimeSinceStartup;
             bool safe = true;
             while (Time.realtimeSinceStartup - t0 < 60 && !(b.player.unit && rp.unit && !b.player.unit.gliding && !rp.unit.gliding && rp.unit.Alive)) { Keep(b, rp, safe); yield return null; }
@@ -206,18 +214,28 @@ namespace BIS
             var ry = b.royale;
             yield return new WaitForSeconds(1);
             var mate = ry.MateOf(b.player);
-            Line($"guest: duos {ry.Duos}, mate {mate?.name}, stations {ry.stations.Count}");
-            ry.dropPickPos = new Vector3(30, b.land.Top(30, 30), 30); ry.playerPicked = true; ry.playerWantsJump = true;
-            Unit last = null; bool wasDown = false, asked = false; float logT = 0; int spawns = 0;
+            Line($"guest: duos {ry.Duos}, mate {mate?.name}, I follow {ry.Follower(b.player)}, leader {ry.LeaderOf(b.player)?.name}");
+            Unit last = null; bool wasDown = false, asked = false; float logT = 0; int spawns = 0; float glideT = -1; bool splitLogged = false;
             t0 = Time.realtimeSinceStartup;
             while (Time.realtimeSinceStartup - t0 < 150 && Battle.I == b && !b.over)
             {
                 var me = b.player.unit;
-                if (me != last && me) { spawns++; Line($"our soldier #{spawns}: gliding {me.gliding} at {me.transform.position:F0}, mode {b.control.mode}"); last = me; }
+                if (me != last && me) { spawns++; Line($"our soldier #{spawns}: gliding {me.gliding} at {me.transform.position:F0}, mode {b.control.mode}, leader picked {ry.leaderPicked} at {ry.leaderPick:F0}"); last = me; }
+                if (me && me.gliding && spawns == 1)
+                {
+                    if (glideT < 0) glideT = Time.realtimeSinceStartup;
+                    float gt = Time.realtimeSinceStartup - glideT;
+                    var lu = mate?.unit;
+                    if (Time.realtimeSinceStartup - logT > 1 && lu) { logT = Time.realtimeSinceStartup; Line($"  glide {gt:0.0} s: gap to leader {(lu.transform.position - me.transform.position).magnitude:0.0} m, split {ry.playerSplit}, alt {me.transform.position.y:0}"); }
+                    PlayerControl.testMove = gt > 6 ? Vector3.back : Vector3.zero;     // after 6 s: steer away = split
+                    if (ry.playerSplit && !splitLogged) { splitLogged = true; Line($"  split off at {gt:0.0} s"); }
+                }
+                else if (spawns == 1 && glideT > 0 && PlayerControl.testMove == Vector3.back) { PlayerControl.testMove = Vector3.zero; Line($"landed {(mate?.unit ? (mate.unit.transform.position - me.transform.position).magnitude : -1):0} m from the leader"); }
                 if (me && me.Alive)
                 {
                     if (me.knocked != wasDown) { wasDown = me.knocked; Line($"we are {(me.knocked ? "DOWN" : "UP")}: hp {me.hp:0}, capsule {me.cc.height:0.0}, height {me.Height:0.00}"); }
-                    PlayerControl.testMove = me.knocked && !me.BeingRevived && me.ReviveProgress < 0 ? Vector3.forward : Vector3.zero;
+                    if (me.knocked) PlayerControl.testMove = !me.BeingRevived && me.ReviveProgress < 0 ? Vector3.forward : Vector3.zero;
+                    else if (!me.gliding) PlayerControl.testMove = Vector3.zero;
                     if (me.knocked && Time.realtimeSinceStartup - logT > 1) { logT = Time.realtimeSinceStartup; Line($"  down: hp {me.hp:0} speed {new Vector3(me.velocity.x, 0, me.velocity.z).magnitude:0.0} m/s revive {me.ReviveProgress:0.00} fire button shown {TouchInput.Get("fire")?.visible}"); }
                     var mu = mate?.unit;
                     if (mu && mu.Alive && mu.knocked && !asked && (mu.transform.position - me.transform.position).magnitude < Unit.ReviveRange)
