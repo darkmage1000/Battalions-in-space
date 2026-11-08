@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace BIS
 {
-    public enum LootKind : byte { Weapon, Medkit, Shield, Ammo, Gear, Key }
+    public enum LootKind : byte { Weapon, Medkit, Shield, Ammo, Gear, Key, Tag, Revive, Station }   // Tag = a fallen duo mate's ID tag; Revive / Station are channels, never on the ground
 
     /// <summary>Loot rarity: colour, name and how much better a weapon of that tier is.</summary>
     public static class Tiers
@@ -44,6 +44,7 @@ namespace BIS
                     case LootKind.Shield: return count > 1 ? $"{count} Shield Cells" : "Shield Cell";
                     case LootKind.Ammo: return "Ammo Pack";
                     case LootKind.Gear: return "Equipment Pack";
+                    case LootKind.Tag: return "ID Tag";
                     default: return "Vault Key";
                 }
             }
@@ -168,6 +169,7 @@ namespace BIS
 
         public static Mesh For(LootItem it)
         {
+            if (it.kind == LootKind.Tag) return Tag();
             string k = it.kind == LootKind.Weapon ? $"w{it.weapon.kind}_{it.tier}" : $"{it.kind}_{it.tier}";
             if (cache.TryGetValue(k, out var m) && m) return m;
             var kit = new MeshKit();
@@ -218,6 +220,47 @@ namespace BIS
             kit.Box(new Vector3(0, bh / 2, 0), new Vector3(0.05f, bh, 0.05f), MeshKit.Glow(tc * 0.55f));
             m = kit.Build("loot_" + k);
             cache[k] = m;
+            return m;
+        }
+
+        static Mesh tag;
+        /// <summary>A fallen duo mate's ID tag: two glowing plates on a chain, under a green beam.</summary>
+        static Mesh Tag()
+        {
+            if (tag) return tag;
+            var k = new MeshKit();
+            Color g = MeshKit.Glow(new Color(0.4f, 1f, 0.55f)), plate = new Color(0.78f, 0.8f, 0.82f);
+            k.Box(new Vector3(-0.08f, 0.32f, 0), new Vector3(0.3f, 0.42f, 0.03f), plate);
+            k.Box(new Vector3(0.1f, 0.3f, 0.05f), new Vector3(0.3f, 0.42f, 0.03f), plate);
+            k.Box(new Vector3(-0.08f, 0.32f, -0.02f), new Vector3(0.18f, 0.06f, 0.02f), g);
+            k.Box(new Vector3(0.1f, 0.3f, 0.07f), new Vector3(0.18f, 0.06f, 0.02f), g);
+            k.Ring(new Vector3(0, 0.03f, 0), 0.6f, 0.75f, g, 16);
+            k.Box(new Vector3(0, 2.2f, 0), new Vector3(0.07f, 4.4f, 0.07f), MeshKit.Glow(new Color(0.4f, 1f, 0.55f) * 0.6f));
+            tag = k.Build("loot_tag");
+            return tag;
+        }
+
+        static Mesh station, stationUsed;
+        /// <summary>A revive station: a round pad, a pylon at the back with a glowing emitter and a green cross, and (while
+        /// unused) a tall beam that shows from far away. Used: dark, no beam.</summary>
+        public static Mesh Station(bool used)
+        {
+            if (used ? stationUsed : station) return used ? stationUsed : station;
+            var k = new MeshKit();
+            Color metal = new Color(0.26f, 0.28f, 0.3f), light = new Color(0.62f, 0.66f, 0.7f);
+            Color g = used ? new Color(0.16f, 0.2f, 0.18f) : MeshKit.Glow(new Color(0.35f, 1f, 0.5f));
+            k.Cyl(new Vector3(0, 0.12f, 0), 1.7f, 0.24f, Quaternion.identity, metal, 16);
+            k.Ring(new Vector3(0, 0.25f, 0), 1.2f, 1.45f, g, 20);
+            k.Cyl(new Vector3(0, 0.26f, 0), 0.5f, 0.04f, Quaternion.identity, g, 12);
+            k.Box(new Vector3(0, 1.3f, -1.05f), new Vector3(0.6f, 2.6f, 0.4f), metal);
+            k.Box(new Vector3(0, 2.7f, -1.05f), new Vector3(0.9f, 0.22f, 0.55f), light);
+            k.Box(new Vector3(0, 1.75f, -0.83f), new Vector3(0.42f, 0.12f, 0.04f), g);
+            k.Box(new Vector3(0, 1.75f, -0.83f), new Vector3(0.12f, 0.42f, 0.04f), g);
+            k.Box(new Vector3(0, 2.45f, -0.6f), new Vector3(0.3f, 0.14f, 0.5f), metal);
+            k.Sphere(new Vector3(0, 2.4f, -0.32f), Vector3.one * 0.22f, Quaternion.identity, g, 8, 5);
+            if (!used) k.Box(new Vector3(0, 18f, 0), new Vector3(0.08f, 36f, 0.08f), MeshKit.Glow(new Color(0.35f, 1f, 0.5f) * 0.5f));
+            var m = k.Build(used ? "station_used" : "station");
+            if (used) stationUsed = m; else station = m;
             return m;
         }
 

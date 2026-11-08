@@ -52,6 +52,7 @@ namespace BIS
         public int royaleClass;                // the player's class when classes are on
         public int royaleFaction;              // the player's race
         public bool royaleDuo;                 // Wi-Fi: the guest drops on the host's team
+        public bool royaleDuos;                // teams of two (bots in pairs, a bot partner for anyone without one)
         public int[] rosterFactions;           // guest: everyone's race (royale)
         public int[] rosterClasses;            // guest: everyone's class (royale)
         public bool[] rosterBoss;              // guest: which of them is the boss (royale)

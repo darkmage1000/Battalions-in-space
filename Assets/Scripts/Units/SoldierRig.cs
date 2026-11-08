@@ -635,11 +635,55 @@ namespace BIS
             gun.localRotation = Quaternion.Euler(aimP - swing * 60, -swing * 50, 0);
         }
 
+        // ── royale duos: down (crawling) and kneeling over a downed mate ──
+        float downW, armsW = 1;
+        bool downChecked, hasDown;
+        Vector3 rootBase; bool rootBaseSet;
+        public const float DownDrop = -0.55f;          // the swim pose floats at swimming depth: put it on the ground
+        const float CrawlFull = 1.4f;                  // crawl speed at which the stroke plays at full rate
+
+        public void SetDown(bool down, bool reviving, float speed, float dt)
+        {
+            downW = Mathf.MoveTowards(downW, down ? 1 : 0, dt * 4);
+            if (anim)
+            {
+                if (deadT >= 0) return;
+                if (!downChecked) { downChecked = true; foreach (var p in anim.parameters) if (p.name == "Knocked") hasDown = true; }
+                if (!hasDown) return;
+                anim.SetBool("Knocked", down);
+                anim.SetBool("Revive", reviving && !down);
+                anim.SetFloat("CrawlRate", Mathf.Lerp(0.08f, 1f, Mathf.Clamp01(speed / CrawlFull)));
+                armsW = Mathf.MoveTowards(armsW, down || reviving ? 0 : 1, dt * 6);
+                anim.SetLayerWeight(1, armsW);
+                if (down) pitchNow = 0;
+                if (bodyRoot)
+                {
+                    if (!rootBaseSet) { rootBaseSet = true; rootBase = bodyRoot.localPosition; }
+                    bodyRoot.localPosition = rootBase + Vector3.up * DownDrop * downW;
+                }
+                return;
+            }
+            if (deadT >= 0) return;
+            // the code-built body: tip it forward onto the ground, centred over where the soldier is
+            if (downW <= 0) { if (transform.localRotation != Quaternion.identity) { transform.localRotation = Quaternion.identity; transform.localPosition = Vector3.zero; } return; }
+            float k = Mathf.SmoothStep(0, 1, downW);
+            transform.localRotation = Quaternion.Euler(84 * k, 0, 0);
+            transform.localPosition = new Vector3(0, 0.12f * k, -height * 0.5f * k);
+            if (down && speed > 0.2f)
+            {
+                float s = Mathf.Sin(Time.time * 6) * 30;
+                armR.localRotation = Quaternion.Euler(-150 + s, 0, 0); armL.localRotation = Quaternion.Euler(-150 - s, 0, 0);
+                legL.localRotation = Quaternion.Euler(s * 0.5f, 0, 0); legR.localRotation = Quaternion.Euler(-s * 0.5f, 0, 0);
+            }
+        }
+
         public void Die(Vector3 dir)
         {
             if (deadT >= 0) return;
             deadT = 0;
+            if (anim && hasDown) { anim.SetBool("Knocked", false); anim.SetBool("Revive", false); anim.SetLayerWeight(1, 1); }
             if (anim) { anim.SetTrigger("Die"); return; }
+            if (downW > 0) { transform.localRotation = Quaternion.identity; transform.localPosition = Vector3.zero; }
             Vector3 local = transform.parent ? transform.parent.InverseTransformDirection(dir) : dir;
             local.y = 0;
             if (local.sqrMagnitude < 0.01f) local = Vector3.back;

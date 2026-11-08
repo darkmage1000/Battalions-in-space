@@ -41,7 +41,7 @@ namespace BIS
     }
 
     /// <summary>A soldier or hero on foot. Driven by UnitInput from PlayerControl or BotBrain.</summary>
-    public class Unit : MonoBehaviour, IDamageable
+    public partial class Unit : MonoBehaviour, IDamageable
     {
         public Battle battle;
         public Participant part;
@@ -112,7 +112,7 @@ namespace BIS
         public bool IsVehicle => false;
         public bool IsHero => hero != null;
         public bool InVehicle => vehicle != null;
-        public float Height => rig ? rig.height * (crouching ? 0.68f : 1f) : 1.8f;
+        public float Height => rig ? rig.height * (knocked ? 0.36f : crouching ? 0.68f : 1f) : 1.8f;
         public Vector3 AimPoint => transform.position + Vector3.up * Height * 0.62f;
         public Vector3 Eye => transform.position + Vector3.up * Height * 0.9f;
         public WeaponState Weapon => weapons[cur] ?? weapons[0];
@@ -163,7 +163,7 @@ namespace BIS
             float amt = d.amount;
             if (hero != null && d.type == DmgType.Explosive) amt *= 0.7f;
             // royale armour soaks hits first (the zone goes straight through it)
-            if (armor > 0 && d.type != DmgType.Environment) { float a = Mathf.Min(armor, amt); armor -= a; amt -= a; }
+            if (armor > 0 && d.type != DmgType.Environment && !knocked) { float a = Mathf.Min(armor, amt); armor -= a; amt -= a; }
             hp -= amt;
             lastHurt = Time.time;
             if (d.attacker) lastAttacker = d.attacker;
@@ -171,7 +171,11 @@ namespace BIS
             if (part.isPlayer) HUD.Hurt(d.point);
             else if (part.remote) Net.NetHost.Hurt(d.point);
             if (Cloaked) cloakUntil = Time.time + 0.4f;
-            if (hp <= 0) Die(d.attacker, d.dir, d.weapon);
+            if (hp <= 0)
+            {
+                if (TryKnock(d)) return;                                          // duos: down, not out
+                Die(d.attacker ? d.attacker : knocked ? knockedBy : null, d.dir, d.weapon);
+            }
         }
 
         public void Heal(float amt)
@@ -215,9 +219,10 @@ namespace BIS
             // using a medkit or shield cell: firing or swapping weapons cancels it
             if (useT > 0 && net != NetMode.GuestLocal)
             {
-                if (input.fire || input.swap) useT = 0;
+                if (input.fire || input.swap || knocked) useT = 0;
                 else { useT -= dt; if (useT <= 0) FinishUse(); }
             }
+            if (net != NetMode.GuestLocal) { DownTick(dt); if (dead) return; }
 
             // hero health slowly drains (kills restore it)
             if (hero != null && net != NetMode.GuestLocal && !part.boss)
@@ -236,13 +241,14 @@ namespace BIS
             transform.rotation = Quaternion.Euler(0, yaw, 0);
 
             if (net == NetMode.HostRemote) NetFollow(dt); else Move(dt);
-            if (net != NetMode.GuestLocal) Actions(dt);
+            if (net != NetMode.GuestLocal && !knocked) Actions(dt);
             else if (Weapon.def.kind == WKind.Beam) BeamVisual((netFlags & 64) != 0, (input.aimPoint - MuzzlePos).normalized);
 
             // rig + cloak
             Vector3 hv = new Vector3(velocity.x, 0, velocity.z);
             bool bladeSwing = swingTimer > 0 || (net == NetMode.GuestLocal && (netFlags & 64) != 0 && Weapon.def.kind == WKind.Blade);
             rig.Animate(hv.magnitude, grounded, crouching, pitch, dt, bladeSwing);
+            rig.SetDown(knocked, Reviving, hv.magnitude, dt);
             swingTimer = 0;
             rig.SetCloak(Cloaked);
             if (!part.isPlayer) { input.swap = input.equip = input.ability = input.jumpDown = input.reload = input.use = false; }
@@ -255,6 +261,8 @@ namespace BIS
             crouching = input.crouch && grounded && hero == null;
             bool aimingSlow = input.aim && (Weapon.def.zoomFov > 0);
             float spd = Speed * (input.sprint && !crouching && !input.fire ? 1.45f : 1f) * (crouching ? 0.5f : 1f) * (aimingSlow ? 0.5f : 1f) * (Using ? 0.45f : 1f);
+            if (knocked) spd = CrawlSpeed;                       // down: a crawl
+            else if (Reviving || CallingIn) spd = 0;             // kneeling over a mate / at a revive station
             if (InSpaceZeroG()) spd *= 0.8f;
             // wading slows you down; lava burns
             if (battle.land != null && battle.land.LiquidAt(transform.position.x, transform.position.z, out float liq, out bool lava) && transform.position.y < liq - 0.15f)
@@ -277,11 +285,11 @@ namespace BIS
 
             if (grounded) { airTime = 0; lastFooting = transform.position; if (velocity.y < 0) velocity.y = -3f; }
             else airTime += dt;
-            if (input.jumpDown && grounded) { velocity.y = hero != null && hero.kind == HeroKind.Blade ? 9.5f : 7.2f; grounded = false; }
+            if (input.jumpDown && grounded && !knocked) { velocity.y = hero != null && hero.kind == HeroKind.Blade ? 9.5f : 7.2f; grounded = false; }
             // vault: running into something waist-high (crate, cover wall, rock) hops over it
             vaultCd -= dt;
             Vector3 wishFlat = new Vector3(wish.x, 0, wish.z);
-            if (grounded && vaultCd <= 0 && wishFlat.sqrMagnitude > 1f && Time.time >= dashUntil)
+            if (grounded && vaultCd <= 0 && wishFlat.sqrMagnitude > 1f && Time.time >= dashUntil && !knocked)
             {
                 Vector3 d = wishFlat.normalized, basePos = transform.position;
                 const int vmask = (1 << Layers.Default) | (1 << Layers.Hull) | (1 << Layers.Vehicle);
@@ -298,7 +306,7 @@ namespace BIS
             bool jetting = false;
             if (cls != null && cls.special == Special.Jetpack)
             {
-                if (!grounded && input.jump && jetFuel > 0 && airTime > 0.15f)
+                if (!grounded && input.jump && jetFuel > 0 && airTime > 0.15f && !knocked)
                 {
                     jetting = true;
                     velocity.y = Mathf.MoveTowards(velocity.y, 7f, 30 * dt);
@@ -366,11 +374,14 @@ namespace BIS
             pitch = Mathf.Lerp(pitch, netPitch, 1 - Mathf.Exp(-16 * dt));
             transform.rotation = Quaternion.Euler(0, yaw, 0);
             velocity = netVel; grounded = netGrounded; crouching = (netFlags & 1) != 0;
+            bool down = (netFlags2 & 1) != 0;
+            if (down != knocked) { knocked = down; DownShape(down); }
             NetGlideCheck();
             int want = (netFlags & 32) != 0 && weapons[1] != null ? 1 : 0;
             if (want != cur) { cur = want; rig.SetWeapon(Weapon.def); }
             bool firing = (netFlags & 64) != 0;
             rig.Animate(new Vector3(velocity.x, 0, velocity.z).magnitude, grounded, crouching, pitch, dt, firing && Weapon.def.kind == WKind.Blade);
+            rig.SetDown(knocked, (netFlags2 & 2) != 0, new Vector3(velocity.x, 0, velocity.z).magnitude, dt);
             rig.SetCloak(Cloaked);
             if (Weapon.def.kind == WKind.Beam) BeamVisual(firing, Quaternion.Euler(pitch, yaw, 0) * Vector3.forward);
             if (cls != null && cls.special == Special.Jetpack && !grounded && velocity.y > 1 && Random.value < 0.6f)
@@ -789,7 +800,7 @@ namespace BIS
         /// <summary>Start a medkit (if hurt) or a shield cell (if the armour isn't full). Returns false if there is nothing to use.</summary>
         public bool UseBest()
         {
-            if (Using || !Alive || InVehicle) return false;
+            if (Using || !Alive || InVehicle || knocked) return false;
             if (medkits > 0 && hp < maxHp - 1) { useKind = LootKind.Medkit; useT = useDur = MedkitTime; }
             else if (shields > 0 && armor < MaxArmor - 1) { useKind = LootKind.Shield; useT = useDur = ShieldTime; }
             else return false;
@@ -801,6 +812,7 @@ namespace BIS
         {
             if (useKind == LootKind.Medkit && medkits > 0) { medkits--; Heal(maxHp * 0.65f); Fx.Burst(AimPoint, new Color(0.4f, 1f, 0.5f), 12, 2, 0.25f, 0.6f); }
             else if (useKind == LootKind.Shield && shields > 0) { shields--; armor = Mathf.Min(MaxArmor, armor + 75); Fx.Burst(AimPoint, new Color(0.4f, 0.75f, 1f), 12, 2, 0.25f, 0.6f); }
+            else FinishDownUse();
             if (part.isPlayer) Sfx.Play2D("ui2", 0.6f);
         }
 

@@ -10,7 +10,7 @@ namespace BIS
     /// </summary>
     public partial class BotBrain
     {
-        enum RGoal { None, Loot, Chest, Vault, Zone, Roam, Boss, High }
+        enum RGoal { None, Loot, Chest, Vault, Zone, Roam, Boss, High, Mate, Station }
         RGoal rGoal;
         LootItem rItem;
         LootChest rChest;
@@ -75,6 +75,12 @@ namespace BIS
                 u.input = new UnitInput { move = to.magnitude > 3 ? to.normalized : Vector3.zero, aimPoint = u.Eye + u.transform.forward * 30 };
                 return;
             }
+            if (u.knocked)
+            {
+                if (think <= 0) { think = 0.4f; var kt = FindTarget(u.Eye, 40, false); if (kt != null) target = kt; }
+                KnockedThink(pos);
+                return;
+            }
 
             if (think <= 0)
             {
@@ -93,6 +99,7 @@ namespace BIS
                 else if (seeT <= 0) target = null;
             }
             if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
+            DuoTargetCheck(pos);
 
             Vector3 move = Vector3.zero;
             bool fire = false, aim = false, crouch = false, sprint = false;
@@ -131,6 +138,7 @@ namespace BIS
                 }
                 else if (rGoal == RGoal.Chest && rChest != null && d < 2.3f) { r.OpenChest(u, rChest); rChest = null; rGoalT = 0.5f; rScanT = 0; }
                 else if (rGoal == RGoal.Vault && rVault != null && d < 3f) { r.TryOpenVault(u, rVault); rVault = null; rGoalT = 0; }
+                else if (DuoArrive(d, yd)) { }
                 else if (d > 1.2f || (rGoal != RGoal.High && Mathf.Abs(yd) > 2.2f)) { move = ClimbToward(pos, goal); sprint = d > 18 || rGoal == RGoal.Zone; }
                 // stuck on the way to an item (a wall, a roof): give it up
                 if (rGoal == RGoal.Loot || rGoal == RGoal.Chest) { if (stuckT > 0.8f) rStuckT += dt; if (rStuckT > 4) { if (rItem != null) rSkip.Add(rItem.id); rItem = null; rChest = null; rGoalT = 0; rStuckT = 0; } }
@@ -236,6 +244,7 @@ namespace BIS
                 case RGoal.Boss: return b.royale.boss == null || !b.royale.boss.Alive || !Strong;
                 case RGoal.Roam: { Vector3 d = rRoam - pos; d.y = 0; return d.magnitude < 4; }
                 case RGoal.High: return HighDone(pos);
+                case RGoal.Mate: case RGoal.Station: return DuoGoalDone(pos);
                 default: return true;
             }
         }
@@ -248,6 +257,7 @@ namespace BIS
                 case RGoal.Chest: return rChest != null ? rChest.pos + rChest.rot * Vector3.forward * 1.2f : pos;
                 case RGoal.Vault: return rVault != null ? rVault.lockPoint : pos;
                 case RGoal.Boss: return b.royale.boss != null && b.royale.boss.Alive ? b.royale.boss.unit.transform.position : pos;
+                case RGoal.Mate: case RGoal.Station: return DuoGoalPos(pos);
                 default: return rRoam;
             }
         }
@@ -262,8 +272,10 @@ namespace BIS
             rItem = null; rChest = null; rVault = null;
             if (rHigh != null && rHigh.holder == u) rHigh.holder = null;
             rHigh = null;
-            // 1. the zone
             bool late = LateForZone(pos);
+            // 0. duos: revive the mate, carry their tag to a station, fetch their tag, keep together
+            if (PickDuoGoal(pos, late)) return;
+            // 1. the zone
             if (r.OutsideZone(pos) || (late && r.OutsideNext(pos)))
             {
                 rGoal = RGoal.Zone;

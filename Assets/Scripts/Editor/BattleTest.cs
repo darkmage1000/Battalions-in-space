@@ -221,11 +221,11 @@ namespace BIS.EditorTools
 
         /// <summary>Builds a land map and saves Previews/Maps/&lt;name&gt;.png: the minimap beside the bot walk grid (grey walk, dark blocked, tan walk-only, blue wade).</summary>
         /// <summary>Starts a battle royale (players = you + bots; classes on / off).</summary>
-        public static string StartRoyale(int players = 100, bool classes = true, int faction = 0, int cls = 0)
+        public static string StartRoyale(int players = 100, bool classes = true, int faction = 0, int cls = 0, bool duos = false)
         {
             Step(0.06f);
             if (Battle.I) Battle.I.Finish(true);
-            var cfg = new BattleConfig { land = Maps.Royale, royale = true, royalePlayers = players, royaleClasses = classes, royaleFaction = faction, royaleClass = cls, factions = new[] { faction, (faction + 1) % 4 }, difficulty = 1, tickets = 1 };
+            var cfg = new BattleConfig { land = Maps.Royale, royale = true, royalePlayers = players, royaleClasses = classes, royaleFaction = faction, royaleClass = cls, factions = new[] { faction, (faction + 1) % 4 }, difficulty = 1, tickets = 1, royaleDuos = duos };
             var sw = System.Diagnostics.Stopwatch.StartNew();
             Game.I.StartBattle(cfg, r => Game.I.ShowMenu());
             var b = Battle.I;
@@ -249,6 +249,15 @@ namespace BIS.EditorTools
                 if (u.bot != null) { string g = gf.GetValue(u.bot).ToString(); goals[g] = goals.TryGetValue(g, out int c) ? c + 1 : 1; }
             }
             foreach (var p in b.people) kills += p.kills;
+            if (r.Duos)
+            {
+                int down = 0, tags = 0, carrying = 0, reviving = 0, calling = 0, used = 0;
+                foreach (var u in b.units) if (u && u.Alive) { if (u.knocked) down++; if (u.tagOf >= 0) carrying++; if (u.Reviving) reviving++; if (u.CallingIn) calling++; }
+                foreach (var it in r.loot) if (it.kind == LootKind.Tag) tags++;
+                foreach (var s in r.stations) if (s.used) used++;
+                goals["DUOS down"] = down; goals["tags on ground"] = tags; goals["carrying"] = carrying; goals["reviving"] = reviving; goals["calling in"] = calling; goals["stations used"] = used; goals["stations"] = r.stations.Count;
+                goals["revives"] = Royale.Revives; goals["respawns"] = Royale.Respawns; goals["knocks"] = Royale.Knocks;
+            }
             int opened = 0; foreach (var c in r.chests) if (c.opened) opened++;
             var sb = new StringBuilder();
             sb.Append($"t={b.time:0} phase {r.phase} drop {r.dropT:0} alive {r.AlivePlayers} teams {r.AliveTeams} kills {kills} over {b.over} {b.result?.reason}\n");

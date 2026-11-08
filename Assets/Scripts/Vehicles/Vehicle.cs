@@ -134,7 +134,7 @@ namespace BIS
             return -1;
         }
 
-        public bool CanEnter(Unit u) => Alive && FreeSeat() >= 0 && (IsEmpty || Team == u.team) && u.hero == null;
+        public bool CanEnter(Unit u) => Alive && FreeSeat() >= 0 && (IsEmpty || Team == u.team) && u.hero == null && !u.knocked;
 
         public int Enter(Unit u)
         {

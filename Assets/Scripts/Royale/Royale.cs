@@ -10,7 +10,7 @@ namespace BIS
     /// a boss lands a few minutes in and drops legendary loot, and vaults open only with a key (10% of legendary finds come with
     /// one). Last team standing wins.
     /// </summary>
-    public class Royale : MonoBehaviour
+    public partial class Royale : MonoBehaviour
     {
         public Battle b;
         public enum Phase { Drop, Play }
@@ -90,11 +90,13 @@ namespace BIS
             foreach (var p in b.people) if (!p.boss) TotalPlayers++;
             AlivePlayers = TotalPlayers; AliveTeams = TotalPlayers;
             BuildWall();
+            InitDuos();
             boss = null;
             foreach (var p in b.people) if (p.boss) boss = p;
             if (client) return;
             SpawnLoot();
             SpawnChests();
+            if (Duos) SpawnStations();
             SpawnVehicles();
             // bots pick where to land: most go for buildings, some for the edges; they jump at different moments
             foreach (var p in b.people)
@@ -103,6 +105,16 @@ namespace BIS
                 p.dropAt = BotDropSpot();
                 jumpAt[p] = Random.Range(1.5f, DropTime - 0.5f);
             }
+            // duos: two bots on a team land together
+            if (Duos)
+                foreach (var p in b.people)
+                {
+                    if (p.Human || p.boss) continue;
+                    var m = MateOf(p);
+                    if (m == null || m.Human || b.people.IndexOf(m) > b.people.IndexOf(p)) continue;
+                    p.dropAt = m.dropAt + new Vector3(Random.Range(-6f, 6f), 0, Random.Range(-6f, 6f));
+                    if (jumpAt.TryGetValue(m, out float mt)) jumpAt[p] = mt;
+                }
         }
 
         // ── spawning loot, chests and vehicles ───────────────────────────
@@ -368,6 +380,7 @@ namespace BIS
                 bool go;
                 if (p.isPlayer) go = playerWantsJump || dropT <= 0;
                 else if (p.remote) go = p.dropAt != Vector3.zero && (remoteJump || dropT <= 0);
+                else if (Duos && MateOf(p) is Participant hm && hm.Human) { go = hm.dropped; if (go) p.dropAt = hm.dropAt + new Vector3(Random.Range(-6f, 6f), 0, Random.Range(-6f, 6f)); }   // a person's bot partner jumps with them
                 else go = jumpAt.TryGetValue(p, out float at) && gone >= at;
                 if (!go) continue;
                 if (p.isPlayer) p.dropAt = playerPicked ? dropPickPos : RandomGround(b.land.PlayHalf * 0.6f);
@@ -387,7 +400,7 @@ namespace BIS
             Vector3 at = p.dropAt;
             at.x = Mathf.Clamp(at.x, -land.PlayHalf + 20, land.PlayHalf - 20); at.z = Mathf.Clamp(at.z, -land.PlayHalf + 20, land.PlayHalf - 20);
             float gy = land.Top(at.x, at.z);
-            Vector2 off = Random.insideUnitCircle * (p.Human ? 0 : 30);
+            Vector2 off = Random.insideUnitCircle * (p.Human ? 0 : Duos ? 5 : 30);
             Vector3 pos = new Vector3(at.x - 40 + off.x, gy + DropAlt, at.z - 40 + off.y);
             var cls = ClassFor(p);
             var u = b.SpawnUnit(p, cls, null, pos, 45);
@@ -495,12 +508,16 @@ namespace BIS
             var vp = victim.part;
             if (vp.boss) { BossKilled(victim, killer); return; }
             SpillInventory(victim);
+            DuoDeath(victim);
             CountAlive();
             // the whole team is out: they finish behind everyone still standing
             bool teamAlive = false;
             foreach (var p in b.people) if (p.team == vp.team && !p.boss && p.Alive) teamAlive = true;
             if (!teamAlive)
+            {
                 foreach (var p in b.people) if (p.team == vp.team && !p.boss && p.placement == 0) p.placement = AliveTeams + 1;
+                if (Duos && !client) ClearTeamTags(vp.team);       // nobody left to bring them back
+            }
             if (killer && killer.part.isPlayer && killer != victim) HUD.Message($"{AlivePlayers} left", UI.Dim, 2);
         }
 
@@ -516,7 +533,8 @@ namespace BIS
             if (u.medkits > 0) Drop(LootKind.Medkit, 1, null, u.medkits, Spot(), false);
             if (u.shields > 0) Drop(LootKind.Shield, 1, null, u.shields, Spot(), false);
             for (int i = 0; i < u.keys; i++) Drop(LootKind.Key, 4, null, 1, Spot(), false);
-            u.medkits = u.shields = u.keys = 0;
+            if (u.tagOf >= 0) Drop(LootKind.Tag, 0, null, u.tagOf, TagSpot(Spot()), false);     // a mate's ID tag they carried
+            u.medkits = u.shields = u.keys = 0; u.tagOf = -1;
         }
 
         // ── picking things up ────────────────────────────────────────────
@@ -589,6 +607,12 @@ namespace BIS
                     foreach (var w in u.weapons) if (w != null && !w.def.UsesHeat && w.def.clip > 0 && w.ammo < w.def.ammo) return null;
                     return "No weapon needs ammo";
                 case LootKind.Gear: return u.cls == null || u.cls.equip == Equip.None ? "No equipment to refill" : u.equipLeft >= 6 ? "Equipment full" : null;
+                case LootKind.Tag:
+                    {
+                        var o = TagOwner(it);
+                        if (o == null || o.team != u.team || o == u.part) return "Not your mate's tag";
+                        return u.tagOf >= 0 ? "Already carrying a tag" : u.knocked ? "You are down" : null;
+                    }
                 default: return null;
             }
         }
@@ -596,7 +620,7 @@ namespace BIS
         /// <summary>Take an item: weapons fill the empty slot or swap with the one in hand (which drops), the rest goes in the pockets.</summary>
         public bool Take(Unit u, LootItem it, int intoSlot = -1)
         {
-            if (it == null || it.taken || u == null || !u.Alive || u.InVehicle) return false;
+            if (it == null || it.taken || u == null || !u.Alive || u.InVehicle || u.knocked) return false;
             if (CantTake(u, it) != null) return false;
             switch (it.kind)
             {
@@ -614,14 +638,16 @@ namespace BIS
                 case LootKind.Ammo: foreach (var w in u.weapons) if (w != null && w.def.clip > 0) { w.ammo = w.def.ammo; if (w.clip == 0) w.StartReload(); } break;
                 case LootKind.Gear: u.equipLeft = Mathf.Min(6, u.equipLeft + 2); break;
                 case LootKind.Key: u.keys++; break;
+                case LootKind.Tag: u.tagOf = it.count; break;
             }
             Remove(it);
             if (u.part.isPlayer)
             {
                 Sfx.Play2D(it.kind == LootKind.Key ? "award" : "ui2", 0.6f);
-                HUD.Message((it.kind == LootKind.Weapon ? Tiers.Names[it.tier] + " " : "") + it.Name + (it.kind == LootKind.Key ? " - open a vault with it" : ""), Tiers.Of(it.tier), 2);
+                if (it.kind == LootKind.Tag) HUD.Message($"Got {ItemName(it)} - take it to a REVIVE STATION (green on the map)", new Color(0.5f, 1f, 0.6f), 4);
+                else HUD.Message((it.kind == LootKind.Weapon ? Tiers.Names[it.tier] + " " : "") + it.Name + (it.kind == LootKind.Key ? " - open a vault with it" : ""), Tiers.Of(it.tier), 2);
             }
-            else if (u.part.remote) Net.NetHost.Text((it.kind == LootKind.Weapon ? Tiers.Names[it.tier] + " " : "") + it.Name, Tiers.Of(it.tier), 2, "ui2");
+            else if (u.part.remote) Net.NetHost.Text(it.kind == LootKind.Tag ? $"Got {ItemName(it)} - take it to a REVIVE STATION (green on the map)" : (it.kind == LootKind.Weapon ? Tiers.Names[it.tier] + " " : "") + it.Name, it.kind == LootKind.Tag ? new Color(0.5f, 1f, 0.6f) : Tiers.Of(it.tier), it.kind == LootKind.Tag ? 4 : 2, "ui2");
             return true;
         }
 
@@ -695,7 +721,7 @@ namespace BIS
         {
             foreach (var p in b.people)
             {
-                if (!p.Human || !p.Alive || p.unit.InVehicle) continue;
+                if (!p.Human || !p.Alive || p.unit.InVehicle || p.unit.knocked) continue;
                 var it = NearestLoot(p.unit.transform.position, 1.5f, false, true);
                 if (it != null && it.kind != LootKind.Weapon && CantTake(p.unit, it) == null) Take(p.unit, it);
             }

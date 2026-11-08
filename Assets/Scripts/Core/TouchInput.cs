@@ -74,6 +74,7 @@ namespace BIS
             Show("pause"); Show("score");
             if (Battle.I != null && Battle.I.land != null) Show("map");
             if (me == null) { zoomOn = false; return; }
+            if (!me.InVehicle && me.knocked) { zoomOn = false; return; }      // down: crawl with the stick, nothing else
             if (!me.InVehicle)
             {
                 Show("fire", "FIRE"); Show("fire2"); Show("jump"); Show("equip", "GEAR");
@@ -94,7 +95,7 @@ namespace BIS
                 {
                     if (me.medkits + me.shields > 0) Show("hero", me.Using ? "..." : "HEAL");
                     string rp = pc.royalePrompt;
-                    if (rp != null && rp.StartsWith("[E]")) Show("use", rp.Contains("VAULT") || rp.Contains("CHEST") ? "OPEN" : "TAKE");
+                    if (rp != null && rp.StartsWith("[E]")) Show("use", rp.Contains("REVIVE") ? "REVIVE" : rp.Contains("RESPAWN") ? "RESPAWN" : rp.Contains("VAULT") || rp.Contains("CHEST") ? "OPEN" : "TAKE");
                 }
                 return;
             }

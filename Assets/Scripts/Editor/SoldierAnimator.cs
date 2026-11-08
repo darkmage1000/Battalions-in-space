@@ -31,6 +31,9 @@ namespace BIS.EditorTools
             ctl.AddParameter("Crouch", AnimatorControllerParameterType.Bool);
             ctl.AddParameter("Grounded", AnimatorControllerParameterType.Bool);
             ctl.AddParameter("Die", AnimatorControllerParameterType.Trigger);
+            ctl.AddParameter("Knocked", AnimatorControllerParameterType.Bool);   // royale duos: down and crawling
+            ctl.AddParameter("Revive", AnimatorControllerParameterType.Bool);    // kneeling over a downed mate
+            ctl.AddParameter("CrawlRate", AnimatorControllerParameterType.Float); // how fast the crawl stroke plays (nearly still when not moving)
             foreach (var p in ctl.parameters) if (p.name == "Grounded") p.defaultBool = true;
             var ps = ctl.parameters; foreach (var p in ps) if (p.name == "Grounded") p.defaultBool = true; ctl.parameters = ps;
 
@@ -46,6 +49,10 @@ namespace BIS.EditorTools
             var crouch = sm.AddState("Crouch"); crouch.motion = Tree("CrouchTree", ("Crouch_Idle_Loop", 0), ("Crouch_Fwd_Loop", 2.5f));
             var air = sm.AddState("Air"); air.motion = C("Jump_Loop");
             var dead = sm.AddState("Dead"); dead.motion = C("Death01");
+            // the forward swim stroke laid on the ground = a crawl (the idle swim clip treads water upright, so it isn't used);
+            // standing still it plays very slowly
+            var down = sm.AddState("Down"); down.motion = C("Swim_Fwd_Loop"); down.speedParameterActive = true; down.speedParameter = "CrawlRate";
+            var revive = sm.AddState("Revive"); revive.motion = C("Fixing_Kneeling");
             sm.defaultState = move;
 
             AnimatorStateTransition T(AnimatorState a, AnimatorState b, float dur)
@@ -57,6 +64,12 @@ namespace BIS.EditorTools
             T(move, air, 0.12f).AddCondition(AnimatorConditionMode.IfNot, 0, "Grounded");
             T(crouch, air, 0.12f).AddCondition(AnimatorConditionMode.IfNot, 0, "Grounded");
             T(air, move, 0.1f).AddCondition(AnimatorConditionMode.If, 0, "Grounded");
+            var toDown = sm.AddAnyStateTransition(down); toDown.hasExitTime = false; toDown.duration = 0.2f; toDown.canTransitionToSelf = false;
+            toDown.AddCondition(AnimatorConditionMode.If, 0, "Knocked");
+            T(down, move, 0.3f).AddCondition(AnimatorConditionMode.IfNot, 0, "Knocked");
+            T(move, revive, 0.2f).AddCondition(AnimatorConditionMode.If, 0, "Revive");
+            T(crouch, revive, 0.2f).AddCondition(AnimatorConditionMode.If, 0, "Revive");
+            T(revive, move, 0.2f).AddCondition(AnimatorConditionMode.IfNot, 0, "Revive");
             var toDead = sm.AddAnyStateTransition(dead); toDead.hasExitTime = false; toDead.duration = 0.1f; toDead.canTransitionToSelf = false;
             toDead.AddCondition(AnimatorConditionMode.If, 0, "Die");
 

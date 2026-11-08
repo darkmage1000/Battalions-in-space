@@ -618,6 +618,7 @@ namespace BIS
                     }
                 }
                 if (b.royale.boss != null && b.royale.boss.Alive) UI.Dot(Map(b.royale.boss.unit.transform.position), 5, new Color(1f, 0.45f, 0.2f));
+                DuoRadar(me, Map, mp);
                 foreach (var v in b.land.vaults) if (!v.open) { var q = Map(v.lockPoint); UI.Fill(new Rect(q.x - 3, q.y - 3, 6, 6), UI.Gold); }
             }
             UI.Fill(new Rect(c.x - 3, c.y - 3, 6, 6), Color.white);

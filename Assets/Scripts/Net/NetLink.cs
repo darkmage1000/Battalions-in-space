@@ -19,6 +19,7 @@ namespace BIS.Net
         Warp = 60, Push, SelfDmg, Award, Evade,
         // battle royale
         RLoot = 70, RLootAdd, RLootGone, RChests, RChest, RVault, RState, RJump, RHeal, RTake,
+        RStations = 80, RStationUsed,
         Dmg = 90
     }
 

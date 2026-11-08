@@ -16,7 +16,7 @@ namespace BIS
         readonly StringBuilder log = new StringBuilder();
         bool host;
         string joinIp;
-        bool space, against, royale;
+        bool space, against, royale, duos;
         string File => Path.Combine(Application.persistentDataPath, host ? "autotest_net_host.txt" : "autotest_net_guest.txt");
 
         public static void MaybeStart(System.Collections.Generic.List<string> args)
@@ -29,6 +29,7 @@ namespace BIS
             t.space = args.Contains("-space");
             t.against = args.Contains("-against");
             t.royale = args.Contains("-royale");
+            t.duos = args.Contains("-duos");
         }
 
         void Line(string s) { log.AppendLine($"{Time.realtimeSinceStartup:0.0} {s}"); Debug.Log("[nettest] " + s); System.IO.File.WriteAllText(File, log.ToString()); }
@@ -39,7 +40,8 @@ namespace BIS
             Invoke(nameof(Bail), 240);
             Application.logMessageReceived += (c, st, t) => { if (t == LogType.Error || t == LogType.Exception) Line("ERROR " + c + " " + st.Split('\n')[0]); };
             yield return new WaitForSeconds(1);
-            if (royale) { if (host) yield return RoyaleHost(); else yield return RoyaleGuest(); }
+            if (royale && duos) { if (host) yield return DuoHost(); else yield return DuoGuest(); }
+            else if (royale) { if (host) yield return RoyaleHost(); else yield return RoyaleGuest(); }
             else if (host) yield return Host(); else yield return Guest();
             yield return new WaitForSeconds(2);
             Application.Quit();
@@ -121,6 +123,115 @@ namespace BIS
             Line("host ends the battle");
             if (!ended) { b.End(b.player.team, "self-test over"); yield return new WaitForSeconds(2); b.Finish(false); }
             yield return new WaitForSeconds(2);
+            Session.Shutdown();
+        }
+
+        // ── duos over Wi-Fi: knock the guest, revive it from the host; knock the host, the guest revives it;
+        //    finish the guest, the host carries its ID tag to a revive station and the guest drops back in ──
+        static void Put(Unit u, Vector3 p) { var c = u.GetComponent<CharacterController>(); c.enabled = false; p.y = Battle.I.land.Top(p.x, p.z) + 0.1f; u.transform.position = p; c.enabled = true; Physics.SyncTransforms(); }
+
+        IEnumerator DuoHost()
+        {
+            Session.HostLobby(() => "self-test duos");
+            float t0 = Time.realtimeSinceStartup;
+            while (Session.peerName == null && Time.realtimeSinceStartup - t0 < 90) { Session.HostLobbyUpdate(); yield return null; }
+            if (Session.peerName == null) { Line("nobody joined"); yield break; }
+            var cfg = new BattleConfig { land = Maps.Royale, royale = true, royalePlayers = 12, royaleClasses = false, factions = new[] { 0, 1 }, difficulty = 0, tickets = 1, netHost = true, royaleDuo = true, royaleDuos = true, remoteName = Session.peerName };
+            Game.I.StartBattle(cfg, r => Game.I.ShowMenu());
+            yield return new WaitForSeconds(1);
+            var b = Battle.I; var ry = b.royale; var rp = b.RemoteHuman;
+            Line($"duos built: duos {ry.Duos}, guest team {rp.team} mine {b.player.team}, stations {ry.stations.Count}");
+            ry.dropPickPos = new Vector3(30, b.land.Top(30, 30), 30); ry.playerPicked = true; ry.playerWantsJump = true;
+            t0 = Time.realtimeSinceStartup;
+            bool safe = true;
+            while (Time.realtimeSinceStartup - t0 < 60 && !(b.player.unit && rp.unit && !b.player.unit.gliding && !rp.unit.gliding && rp.unit.Alive)) { Keep(b, rp, safe); yield return null; }
+            var me = b.player.unit; var g = rp.unit;
+            if (!g || !g.Alive) { Line("guest never landed"); yield break; }
+            Line($"both landed: guest {(g.transform.position - me.transform.position).magnitude:0} m away");
+            Unit enemy = null; foreach (var u in b.units) if (u && u.Alive && u.team != me.team && !u.part.boss) { enemy = u; break; }
+            var hit = new DamageInfo { amount = 9999, attacker = enemy, team = enemy.team, type = DmgType.Bolt, dir = Vector3.forward };
+            // 1. knock the guest, revive it
+            g.invulnUntil = 0; g.armor = 0; hit.point = g.AimPoint; g.TakeDamage(hit);
+            Line($"1. knocked the guest: knocked {g.knocked} alive {g.Alive} hp {g.hp:0}");
+            yield return Wait(3, b, rp, safe);
+            Line($"   3 s later the guest is down {g.knocked}, hp {g.hp:0}");
+            Put(me, g.transform.position + Vector3.right * 1.3f);
+            yield return Wait(0.3f, b, rp, safe);
+            Line($"   host starts revive: {me.StartRevive(g)}");
+            yield return Wait(5.6f, b, rp, safe);
+            Line($"   after 5.6 s guest knocked {g.knocked} hp {g.hp:0}/{g.maxHp:0}");
+            // 2. knock the host; the guest revives (it asks by itself when it sees us down beside it)
+            Put(me, g.transform.position + Vector3.right * 1.3f);
+            me.invulnUntil = 0; me.armor = 0; hit.point = me.AimPoint; me.TakeDamage(hit);
+            Line($"2. knocked the host: knocked {me.knocked}");
+            float tr = Time.realtimeSinceStartup;
+            while (me.knocked && me.Alive && Time.realtimeSinceStartup - tr < 15) { Keep(b, rp, true); yield return null; }
+            Line($"   host back up {(!me.knocked && me.Alive)} after {Time.realtimeSinceStartup - tr:0.0} s");
+            if (!me.Alive || !g || !g.Alive) { Line("someone died - stopping"); b.End(b.player.team, "self-test over"); yield return new WaitForSeconds(2); b.Finish(false); Session.Shutdown(); yield break; }
+            safe = true;
+            // 3. finish the guest; carry its tag to a station
+            g.invulnUntil = 0; g.armor = 0; hit.point = g.AimPoint; g.TakeDamage(hit); g.TakeDamage(hit);
+            var tag = ry.TagOnGround(rp);
+            Line($"3. guest finished: alive {rp.Alive}, tag on the ground {tag != null}");
+            yield return Wait(1, b, rp, safe);
+            if (tag != null) { Put(me, tag.pos + Vector3.right); yield return Wait(0.3f, b, rp, safe); Line($"   host takes it: {ry.Take(me, tag)} carrying {me.tagOf}"); }
+            int si = ry.NearestStation(me.transform.position, 99999);
+            Put(me, ry.stations[si].pos + ry.stations[si].rot * Vector3.forward * 1.5f);
+            yield return Wait(0.3f, b, rp, safe);
+            Line($"   station {si}: start {me.StartStation(si)}");
+            yield return Wait(4.6f, b, rp, safe);
+            Line($"   station used {ry.stations[si].used}; guest alive {rp.Alive} gliding {(rp.unit && rp.unit.gliding)}");
+            yield return Wait(6, b, rp, safe);
+            Line("host ends the battle");
+            b.End(b.player.team, "self-test over"); yield return new WaitForSeconds(2); b.Finish(false);
+            yield return new WaitForSeconds(2);
+            Session.Shutdown();
+        }
+
+        static void Keep(Battle b, Participant rp, bool safe)
+        {
+            if (!safe) return;
+            if (b.player.unit) b.player.unit.invulnUntil = Time.time + 1;      // bots can't spoil the test (bleeding still runs)
+            if (rp.unit) rp.unit.invulnUntil = Time.time + 1;
+        }
+        IEnumerator Wait(float s, Battle b, Participant rp, bool safe) { float t = Time.realtimeSinceStartup; while (Time.realtimeSinceStartup - t < s) { Keep(b, rp, safe); yield return null; } }
+
+        IEnumerator DuoGuest()
+        {
+            float t0 = Time.realtimeSinceStartup;
+            while (!Session.Join(joinIp == "auto" ? "127.0.0.1" : joinIp)) { if (Time.realtimeSinceStartup - t0 > 60) { Line("could not connect"); yield break; } yield return new WaitForSeconds(1); }
+            t0 = Time.realtimeSinceStartup;
+            while ((Battle.I == null || !Battle.I.cfg.netClient) && Time.realtimeSinceStartup - t0 < 90) { Session.ClientLobbyUpdate(); yield return null; }
+            var b = Battle.I; if (b == null || b.royale == null) { Line("no royale started"); yield break; }
+            var ry = b.royale;
+            yield return new WaitForSeconds(1);
+            var mate = ry.MateOf(b.player);
+            Line($"guest: duos {ry.Duos}, mate {mate?.name}, stations {ry.stations.Count}");
+            ry.dropPickPos = new Vector3(30, b.land.Top(30, 30), 30); ry.playerPicked = true; ry.playerWantsJump = true;
+            Unit last = null; bool wasDown = false, asked = false; float logT = 0; int spawns = 0;
+            t0 = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - t0 < 150 && Battle.I == b && !b.over)
+            {
+                var me = b.player.unit;
+                if (me != last && me) { spawns++; Line($"our soldier #{spawns}: gliding {me.gliding} at {me.transform.position:F0}, mode {b.control.mode}"); last = me; }
+                if (me && me.Alive)
+                {
+                    if (me.knocked != wasDown) { wasDown = me.knocked; Line($"we are {(me.knocked ? "DOWN" : "UP")}: hp {me.hp:0}, capsule {me.cc.height:0.0}, height {me.Height:0.00}"); }
+                    PlayerControl.testMove = me.knocked && !me.BeingRevived && me.ReviveProgress < 0 ? Vector3.forward : Vector3.zero;
+                    if (me.knocked && Time.realtimeSinceStartup - logT > 1) { logT = Time.realtimeSinceStartup; Line($"  down: hp {me.hp:0} speed {new Vector3(me.velocity.x, 0, me.velocity.z).magnitude:0.0} m/s revive {me.ReviveProgress:0.00} fire button shown {TouchInput.Get("fire")?.visible}"); }
+                    var mu = mate?.unit;
+                    if (mu && mu.Alive && mu.knocked && !asked && (mu.transform.position - me.transform.position).magnitude < Unit.ReviveRange)
+                    { asked = true; NetClient.RequestLoot(3, b.people.IndexOf(mate)); Line("asked to revive the host"); }
+                    if (asked && me.Using && me.useKind == LootKind.Revive && Time.frameCount % 60 == 0) Line($"  reviving the host: {1 - me.useT / me.useDur:0.00}, our speed {new Vector3(me.velocity.x, 0, me.velocity.z).magnitude:0.0}");
+                    if (mu && !mu.knocked) asked = false;
+                }
+                else if (me && !me.Alive && Time.frameCount % 120 == 0) Line($"we are out: mode {b.control.mode}, stations used {ry.stations.FindAll(s => s.used).Count}");
+                yield return null;
+            }
+            PlayerControl.testMove = Vector3.zero;
+            Line($"guest done: soldiers we had {spawns}, stations used {ry.stations.FindAll(s => s.used).Count}");
+            if (Battle.I != null) Battle.I.Finish(false);
+            yield return new WaitForSeconds(1);
             Session.Shutdown();
         }
 

@@ -16,7 +16,7 @@ namespace BIS.Net
             Session.link?.Send(new W(Msg.RJump).V(at).B(now));
         }
         public static void RequestHeal() => Session.link?.Send(new W(Msg.RHeal));
-        /// <summary>what: 0 an item (id), 1 a chest (index), 2 a vault (index).</summary>
+        /// <summary>what: 0 an item (id), 1 a chest (index), 2 a vault (index), 3 revive a mate (person index), 4 a revive station (index).</summary>
         public static void RequestLoot(int what, int id) { Session.link?.Send(new W(Msg.RTake).U8(what).I32(id)); }
 
         static void HandleRoyale(R r)
@@ -31,6 +31,8 @@ namespace BIS.Net
                 case Msg.RChests: { int n = r.U16(); for (int i = 0; i < n; i++) { Vector3 p = r.V(); Quaternion q = r.Q(); bool o = r.B(); ry.ClientChest(p, q, o); } break; }
                 case Msg.RChest: ry.ClientChestOpened(r.U16()); break;
                 case Msg.RVault: { int i = r.U8(); if (i < b.land.vaults.Count) b.land.OpenVault(b.land.vaults[i]); break; }
+                case Msg.RStations: { int n = r.U8(); for (int i = 0; i < n; i++) { Vector3 p = r.V(); Quaternion q = r.Q(); bool u = r.B(); if (i >= ry.stations.Count) ry.ClientStation(p, q, u); else if (u) ry.ClientStationUsed(i); } break; }
+                case Msg.RStationUsed: ry.ClientStationUsed(r.U8()); break;
                 case Msg.RState:
                     {
                         ry.phase = (Royale.Phase)r.U8(); ry.dropT = r.F();
@@ -66,7 +68,10 @@ namespace BIS.Net
             float armor = r.F(); int med = r.U8(), sh = r.U8(), keys = r.U8(); float useT = r.F(), useDur = r.F(); var useKind = (LootKind)r.U8();
             var slots = new (int gun, int fac, int tier)[2];
             for (int s = 0; s < 2; s++) slots[s] = (r.S8(), r.U8(), r.S8());
+            bool down = r.B(); int tag = r.S8(); float rev = r.F(); int useTgt = r.I16();
             if (!me || me.dead) return;
+            me.SetKnockedLocal(down); me.tagOf = tag; me.reviveShown = rev;
+            me.useTarget = UnitOf(useTgt);
             me.armor = armor; me.medkits = med; me.shields = sh; me.keys = keys; me.useT = useT; me.useDur = useDur; me.useKind = useKind;
             for (int s = 0; s < 2; s++)
             {

@@ -229,7 +229,7 @@ namespace BIS
             else if (wd.zoomFov > 0 && ws.clip == 0 && ws.ammo == 0) Say("Out of rifle rounds - find ammo or a supply crate", 0.3f);
 
             if (b.royale) { RoyaleFoot(me); if (b.royale.usedUse) return; }
-            if (Ctl.Use)
+            if (Ctl.Use && !me.knocked)
             {
                 Vehicle best = null; float bd = 36;
                 foreach (var v in b.vehicles)
@@ -586,6 +586,8 @@ namespace BIS
             r.usedUse = false;
             royalePrompt = null; royalePromptCol = Color.white;
             Vector3 p = me.transform.position;
+            if (me.knocked) return;                    // down: nothing to use, open or pick up
+            if (DuoPrompts(me, r, p)) return;
             if (Ctl.Hero)
             {
                 if (Net.Session.IsClient) Net.NetClient.RequestHeal();
@@ -614,7 +616,7 @@ namespace BIS
             else if (item != null)
             {
                 string why = r.CantTake(me, item);
-                string what = (item.kind == LootKind.Weapon ? Tiers.Names[item.tier] + " " : "") + item.Name;
+                string what = (item.kind == LootKind.Weapon ? Tiers.Names[item.tier] + " " : "") + r.ItemName(item);
                 if (item.kind == LootKind.Weapon)
                 {
                     var hand = me.weapons[1] == null ? null : me.Weapon;
@@ -626,11 +628,52 @@ namespace BIS
             }
         }
 
+        /// <summary>Duos: revive a downed mate beside you, or call a fallen one in at a revive station with their tag.
+        /// Returns true when E went to one of those.</summary>
+        bool DuoPrompts(Unit me, Royale r, Vector3 p)
+        {
+            if (!r.Duos) return false;
+            var mate = r.MateOf(b.player);
+            var mu = mate != null ? mate.unit : null;
+            if (me.Reviving) { royalePrompt = $"REVIVING {me.useTarget?.displayName}..."; royalePromptCol = UI.Good; return true; }
+            if (me.CallingIn) { royalePrompt = "CALLING YOUR MATE BACK IN..."; royalePromptCol = UI.Good; return true; }
+            if (mu && mu.Alive && mu.knocked && (mu.transform.position - p).magnitude < Unit.ReviveRange)
+            {
+                royalePrompt = $"[E] REVIVE {mu.displayName}"; royalePromptCol = UI.Good;
+                if (Ctl.Use)
+                {
+                    r.usedUse = true;
+                    if (Net.Session.IsClient) Net.NetClient.RequestLoot(3, b.people.IndexOf(mate)); else me.StartRevive(mu);
+                }
+                return true;
+            }
+            if (me.tagOf >= 0)
+            {
+                int si = r.NearestStation(p, Unit.StationRange);
+                if (si >= 0)
+                {
+                    string who = me.tagOf < b.people.Count ? b.people[me.tagOf].name : "your mate";
+                    royalePrompt = $"[E] RESPAWN {who} HERE"; royalePromptCol = UI.Good;
+                    if (Ctl.Use)
+                    {
+                        r.usedUse = true;
+                        if (Net.Session.IsClient) Net.NetClient.RequestLoot(4, si); else me.StartStation(si);
+                    }
+                    return true;
+                }
+                if (r.NearestStation(p, Unit.StationRange, false) >= 0) { royalePrompt = "This revive station has been used"; royalePromptCol = UI.Dim; }
+            }
+            return false;
+        }
+
         void SpectateTick(float dt)
         {
             spectateT -= dt;
             if (spectate && spectate.Alive && spectateT > 0) return;
             spectateT = 6;
+            // duos: watch your mate while they can still bring you back
+            var mate = b.royale.MateOf(b.player);
+            if (mate != null && mate.unit && mate.unit.Alive && deadT > 3) { spectate = mate.unit; return; }
             if (killer && killer.Alive && deadT < 8) { spectate = killer; return; }
             Unit best = null; float bd = float.MaxValue;
             Vector3 from = Cam ? Cam.transform.position : Vector3.zero;

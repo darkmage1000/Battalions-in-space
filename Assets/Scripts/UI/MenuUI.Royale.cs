@@ -10,6 +10,7 @@ namespace BIS
         int brPlayers = 100;
         public bool brHost;              // hosting a Wi-Fi battle royale
         bool brDuo = true;
+        bool brDuos;                     // teams of two
 
         void RoyaleSetup()
         {
@@ -28,7 +29,13 @@ namespace BIS
             brPlayers = Mathf.RoundToInt(UI.Slider(new Rect(x, y, 500, 40), "Players", brPlayers, 20, 100, brPlayers.ToString()) / 5f) * 5; y += 50;
             int d = Mathf.RoundToInt(UI.Slider(new Rect(x, y, 500, 40), "Bot skill", Settings.Difficulty, 0, 2, Settings.DifficultyNames[Settings.Difficulty]));
             if (d != Settings.Difficulty) { Settings.Difficulty = d; Settings.Save(); }
-            y += 60;
+            y += 52;
+            bool wifiDuo = brHost && brDuo;
+            if (UI.Button(new Rect(x, y, 245, 46), "SOLOS", !brDuos && !wifiDuo, !wifiDuo, 20)) brDuos = false;
+            if (UI.Button(new Rect(x + 255, y, 245, 46), "DUOS", brDuos || wifiDuo, true, 20)) brDuos = true;
+            y += 50;
+            UI.Text(new Rect(x, y, 500, 46), brDuos || wifiDuo ? "Teams of two. Down, not out: your mate can revive you, or take your ID tag to a revive station." : "Everyone for themselves.", 15, UI.Dim, TextAnchor.UpperLeft, true);
+            y += 44;
             if (Application.isMobilePlatform && brPlayers > 70) UI.Text(new Rect(x, y, 500, 50), "On a phone, fewer players runs smoother.", 16, UI.Dim, TextAnchor.UpperLeft, true);
 
             // race
@@ -80,6 +87,7 @@ namespace BIS
                 {
                     land = Maps.Royale, royale = true, royalePlayers = brPlayers, royaleClasses = brClasses, royaleClass = brClass, royaleFaction = brFaction,
                     factions = new[] { brFaction, (brFaction + 1) % 4 }, difficulty = Settings.Difficulty, tickets = 1, botsPerTeam = 1,
+                    royaleDuos = brDuos,
                 };
                 bool hosted = brHost;
                 if (hosted) RoyaleHostConfig(cfg);

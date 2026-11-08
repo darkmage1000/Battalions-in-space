@@ -40,6 +40,7 @@ namespace BIS.Net
         public static void LootGone(int id) { if (Live) Session.link.Send(new W(Msg.RLootGone).U16(id)); }
         public static void ChestOpened(int index) { if (Live && index >= 0) Session.link.Send(new W(Msg.RChest).U16(index)); }
         public static void VaultOpened(int index) { if (Live && index >= 0) Session.link.Send(new W(Msg.RVault).U8(index)); }
+        public static void StationUsed(int index) { if (Live && index >= 0) Session.link.Send(new W(Msg.RStationUsed).U8(index)); }
 
         /// <summary>Everything royale that exists now, for a guest that has just built the map.</summary>
         static void SendRoyaleFull()
@@ -56,6 +57,9 @@ namespace BIS.Net
                 Session.link.Send(lw);
             }
             for (int i = 0; i < b.land.vaults.Count; i++) if (b.land.vaults[i].open) VaultOpened(i);
+            var sw = new W(Msg.RStations).U8(r.stations.Count);
+            foreach (var s in r.stations) sw.V(s.pos).Q(s.rot).B(s.used);
+            Session.link.Send(sw);
             SendRoyaleState();
         }
 
@@ -71,6 +75,8 @@ namespace BIS.Net
                 if (ws == null) { w.S8(-2).U8(0).S8(0); continue; }
                 w.S8(ws.def.tier >= 0 ? ws.def.lootGun : -1).U8(ws.def.lootFaction).S8(ws.def.tier);
             }
+            // duos: down or not, whose tag we carry, and how far a mate's revive on us is
+            w.B(u.knocked).S8(u.tagOf).F(u.ReviveProgress).I16(u.useTarget ? Pid(u.useTarget) : -1);
         }
 
         static void HandleRoyale(R r)
@@ -107,6 +113,16 @@ namespace BIS.Net
                         else if (what == 1)
                         {
                             if (id >= 0 && id < ry.chests.Count && (ry.chests[id].pos - at).magnitude < 4.5f) ry.OpenChest(u, ry.chests[id]);
+                        }
+                        else if (what == 3)
+                        {
+                            // revive a downed mate
+                            var m = id >= 0 && id < b.people.Count ? b.people[id].unit : null;
+                            if (m && !u.StartRevive(m)) Session.link?.Send(new W(Msg.Say).Str("Can't revive from here"));
+                        }
+                        else if (what == 4)
+                        {
+                            if (!u.StartStation(id)) Session.link?.Send(new W(Msg.Say).Str("Can't use the station now"));
                         }
                         else if (what == 2 && id >= 0 && id < b.land.vaults.Count)
                         {

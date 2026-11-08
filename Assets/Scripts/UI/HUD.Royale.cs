@@ -79,13 +79,14 @@ namespace BIS
                 DrawArrowTo(new Vector3(r.nextC.x, p.y, r.nextC.y), new Color(1f, 0.85f, 0.6f));
             }
             // using a medkit / shield cell
-            if (me.Using)
+            if (me.Using && (me.useKind == LootKind.Medkit || me.useKind == LootKind.Shield))
             {
                 Rect ub = new Rect(w / 2 - 160, h / 2 + 110, 320, 46);
                 UI.Box(ub);
                 UI.Text(new Rect(ub.x, ub.y + 2, ub.width, 24), me.useKind == LootKind.Medkit ? "USING MEDKIT" : "CHARGING SHIELD", 18, me.useKind == LootKind.Medkit ? UI.Good : ArmorCol, TextAnchor.MiddleCenter);
                 UI.Bar(new Rect(ub.x + 12, ub.y + 30, ub.width - 24, 8), 1 - me.useT / me.useDur, me.useKind == LootKind.Medkit ? UI.Good : ArmorCol);
             }
+            DuoOverlay(pc, me);
             // a marker over the boss when it is close
             if (r.boss != null && r.boss.Alive)
             {
@@ -146,6 +147,7 @@ namespace BIS
                 UI.Fill(new Rect(q.x - 5, q.y - 5, 10, 10), v.open ? UI.Dim : UI.Gold);
                 UI.Text(new Rect(q.x - 60, q.y + 6, 120, 18), v.open ? "vault (open)" : "VAULT", 12, UI.Gold, TextAnchor.UpperCenter);
             }
+            DuoMap(M);
             if (ry.boss != null && ry.boss.Alive)
             {
                 var q = M(ry.boss.unit.transform.position);
@@ -218,7 +220,7 @@ namespace BIS
             float y = info.y + 18, x = info.x + 22;
             UI.Text(new Rect(x, y, 380, 40), "BATTLE ROYALE", 32, UI.Gold); y += 46;
             UI.Text(new Rect(x, y, 380, 60), $"JUMP IN {Mathf.CeilToInt(Mathf.Max(0, ry.dropT))}", 44, Color.white); y += 64;
-            UI.Text(new Rect(x, y, 380, 30), $"{ry.TotalPlayers} players - last one standing wins", 19, UI.Dim); y += 40;
+            UI.Text(new Rect(x, y, 380, 30), ry.Duos ? $"{ry.TotalPlayers} players in pairs - last team standing" : $"{ry.TotalPlayers} players - last one standing wins", 19, UI.Dim); y += 40;
             UI.Text(new Rect(x, y, 380, 150),
                 "Tap the map to pick where you land, then JUMP (or wait for the countdown).\n\nYou glide down under a grav-chute: steer with the move stick.",
                 18, Color.white, TextAnchor.UpperLeft, true); y += 160;
@@ -246,6 +248,8 @@ namespace BIS
             string by = k ? $"by {(k.part.boss ? "the Dreadnought Warlord" : k.displayName)}" : "by the zone";
             UI.Text(new Rect(r.x, r.y + 64, r.width, 30), $"{by}   -   {b.player.kills} kills", 22, Color.white, TextAnchor.MiddleCenter);
             if (pc.spectate && pc.spectate.Alive) UI.Text(new Rect(r.x, r.y + 98, r.width, 26), $"Watching {pc.spectate.displayName}   ({b.royale.AlivePlayers} left)", 18, UI.Dim, TextAnchor.MiddleCenter);
+            string duo = DuoDeadLine();
+            if (duo != null) UI.Text(new Rect(r.x, r.y - 44, r.width, 40), duo, 20, DuoGreen, TextAnchor.MiddleCenter, true);
             if (UI.Button(new Rect(r.center.x - 170, r.yMax - 84, 340, 64), "LEAVE THE MATCH", false, true, 24, new Color(0.6f, 0.25f, 0.2f)))
             {
                 if (b.result == null) b.result = new BattleResult { winner = -1, reason = $"Finished #{place}" };

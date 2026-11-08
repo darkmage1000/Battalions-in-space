@@ -205,9 +205,10 @@ namespace BIS.Net
             int nu = r.U16();
             for (int i = 0; i < nu; i++)
             {
-                int pid = r.U16(), f = r.U8(); Vector3 pos = r.V(), vel = r.V(); float yaw = r.I16() / 10f, pitch = r.S8(); int hp = r.U16();
+                int pid = r.U16(), f = r.U8(); Vector3 pos = r.V(), vel = r.V(); float yaw = r.I16() / 10f, pitch = r.S8(); int hp = r.U16(); int f2 = r.U8();
                 var u = UnitOf(pid);
                 if (!u || u.dead) continue;
+                u.netFlags2 = f2;
                 if (u.part.isPlayer) DebugHostSeesMe = pos;
                 u.hp = hp;
                 u.netFlags = f;

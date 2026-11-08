@@ -242,6 +242,7 @@ namespace BIS.Net
                 int f = (u.crouching ? 1 : 0) | (u.grounded ? 2 : 0) | (u.Cloaked ? 4 : 0) | (u.Blocking ? 8 : 0) | (u.InVehicle ? 16 : 0) | (u.cur == 1 ? 32 : 0)
                       | (Time.time - u.lastFire < 0.15f ? 64 : 0);
                 w.U16(Pid(u)).U8(f).V(u.transform.position).V(u.velocity).I16(Mathf.RoundToInt(Mathf.Repeat(u.yaw, 360) * 10)).S8(Mathf.RoundToInt(u.pitch)).U16(Mathf.CeilToInt(u.hp));
+                w.U8((u.knocked ? 1 : 0) | (u.Reviving ? 2 : 0));
             }
             var vs = new List<Vehicle>();
             foreach (var v in b.vehicles) if (v && v.Alive) vs.Add(v);

@@ -36,10 +36,15 @@ namespace BIS
                 player = new Participant { name = Profiles.Name, team = 0, isPlayer = true, aimSkill = 1, faction = cfg.royaleFaction, royaleClass = cfg.royaleClass };
                 people.Add(player);
                 nextTeam = 1;
+                // duos: teams still waiting for their second player (a bot fills them)
+                bool duos = cfg.royaleDuos || (cfg.netHost && cfg.royaleDuo);
+                var open = new List<int>();
+                if (duos && !(cfg.netHost && cfg.royaleDuo)) open.Add(0);
                 if (cfg.netHost)
                 {
                     var g = new Participant { name = cfg.remoteName, team = cfg.royaleDuo ? 0 : nextTeam++, remote = true, aimSkill = 1, respawn = 999, faction = Random.Range(0, 4), royaleClass = Random.Range(0, 5) };
                     people.Add(g);
+                    if (duos && !cfg.royaleDuo) open.Add(g.team);
                 }
                 // bots: names from all four races, numbered when a name comes round again
                 var used = new Dictionary<string, int>();
@@ -51,7 +56,10 @@ namespace BIS
                     string nm = f.names[Random.Range(0, f.names.Length)];
                     if (used.TryGetValue(nm, out int k)) { used[nm] = k + 1; nm += " " + (k + 1); } else used[nm] = 1;
                     float skill = Mathf.Clamp01(0.2f + cfg.difficulty * 0.28f + Random.Range(-0.2f, 0.2f));
-                    people.Add(new Participant { name = nm, team = nextTeam++, aimSkill = skill, faction = fi, royaleClass = Random.Range(0, 5), respawn = 999 });
+                    int team;
+                    if (open.Count > 0) { team = open[0]; open.RemoveAt(0); }
+                    else { team = nextTeam++; if (duos) open.Add(team); }
+                    people.Add(new Participant { name = nm, team = team, aimSkill = skill, faction = fi, royaleClass = Random.Range(0, 5), respawn = 999 });
                 }
                 people.Add(new Participant { name = "Dreadnought Warlord", team = nextTeam, boss = true, aimSkill = 0.75f, faction = 2, respawn = 999 });
             }

@@ -131,7 +131,7 @@ namespace BIS
                 {
                     if (!e || !e.Alive || e.team == u.team || e.InVehicle || e.Cloaked) continue;
                     float d2 = (e.transform.position - eye).sqrMagnitude;
-                    if (d2 < bd) cand.Add((e, d2 * (preferVehicles ? 2.5f : 1f) * (e.part.Human ? 0.8f : 1f)));
+                    if (d2 < bd) cand.Add((e, d2 * (preferVehicles ? 2.5f : 1f) * (e.part.Human ? 0.8f : 1f) * (e.knocked ? 8f : 1f)));   // someone standing (who shoots back) first, the downed after
                 }
             foreach (var v in b.vehicles)
             {
