@@ -929,9 +929,21 @@ namespace BIS
             Sfx.Play(w.sound, m, Driver && Driver.part.isPlayer ? 0.6f : 0.45f, w.pitch);
         }
 
+        /// <summary>Nothing solid (ground, buildings, rocks, a capital ship's hull) between from and the vehicle.</summary>
+        public static bool ClearLine(Vector3 from, Vehicle v)
+        {
+            Vector3 to = v.AimPoint - from;
+            float d = to.magnitude;
+            if (d < 1) return true;
+            var hits = Physics.RaycastAll(from, to / d, d - 1f, Layers.SightMask, QueryTriggerInteraction.Ignore);
+            foreach (var h in hits) if (!h.collider.transform.IsChildOf(v.transform)) return false;
+            return true;
+        }
+
         void UpdateLock(float dt, WeaponDef w)
         {
             Transform best = null; float bestA = 14f;
+            bool bot = Driver == null || !Driver.part.Human;
             if (forcedLock && Vector3.Angle(transform.forward, forcedLock.position - transform.position) < 35 && (forcedLock.position - transform.position).magnitude < w.range)
             {
                 var fv = forcedLock.GetComponent<Vehicle>();
@@ -947,14 +959,15 @@ namespace BIS
                 if (!v || v == this || !v.Alive || v.Team == Team || v.IsEmpty || v.Jammed) continue;
                 if (def.IsShip && !v.def.IsShip) continue;
                 Vector3 to = v.transform.position - transform.position;
-                if (to.magnitude > w.range) continue;
+                if (to.magnitude > (bot && !def.IsShip ? Mathf.Min(w.range, 240) : w.range)) continue;
                 float a = Vector3.Angle(transform.forward, to);
                 if (a < bestA) { bestA = a; best = v.transform; }
             }
+            if (best && !def.IsShip && !ClearLine(transform.position + transform.forward * (radius + 1), best.GetComponent<Vehicle>())) best = null;
             if (best != lockTarget) { lockTarget = best; lockTime = 0; }
             else if (best)
             {
-                float before = lockTime; lockTime += dt;
+                float before = lockTime; lockTime += dt * (bot && !def.IsShip ? 0.6f : 1f);
                 if (Driver && Driver.part.isPlayer && before < 1f && lockTime >= 1f) Sfx.Play2D("lock", 0.8f);
             }
         }

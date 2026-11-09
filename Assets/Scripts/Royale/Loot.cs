@@ -31,6 +31,7 @@ namespace BIS
         public bool taken;
         public long cell;
         public Unit claimedBy;            // a bot on its way to pick it up
+        public Unit droppedBy; public float dropLock;   // duos: dropped for a mate - the dropper doesn't auto-pick it up again for a while
         public float claimUntil;
 
         public string Name

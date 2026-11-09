@@ -400,6 +400,7 @@ namespace BIS
             else { ws = me.Weapon; wname = ws.def.name + (me.weapons[1] != null ? $"   [Q] {me.weapons[1 - me.cur]?.def.name}" : ""); }
             Color wcol = !me.InVehicle && ws != null && ws.def.tier >= 0 ? Tiers.Of(ws.def.tier) : Color.white;
             UI.Text(new Rect(wb.x + 14, wb.y + 8, 400, 28), wname, 20, wcol);
+            if (!me.InVehicle && ws != null) UI.Text(new Rect(wb.x + 14, wb.y + 29, 400, 18), $"{ws.def.TypeName} - {ws.def.RangeWord} range", 14, UI.Dim);
             if (ws != null)
             {
                 if (ws.def.UsesHeat) UI.Bar(new Rect(wb.x + 14, wb.y + 44, 392, 14), ws.heat, ws.overheated ? UI.Bad : Color.Lerp(UI.Gold, UI.Bad, ws.heat));
@@ -440,6 +441,7 @@ namespace BIS
             if (b.royale && !me.InVehicle && pc.royalePrompt != null) { prompt = pc.royalePrompt; promptCol = pc.royalePromptCol; }
             if (prompt != null && TouchInput.Active) prompt = prompt.Replace("[E] ", "");
             if (prompt != null) UI.Text(new Rect(0, h / 2 + 70, w, 30), prompt, 22, promptCol, TextAnchor.MiddleCenter);
+            if (prompt != null && b.royale && pc.royaleInfo != null) UI.Text(new Rect(0, h / 2 + 98, w, 26), pc.royaleInfo, 18, new Color(1, 1, 1, 0.85f), TextAnchor.MiddleCenter);
             if (pc.outOfBounds > 0) UI.Text(new Rect(0, h / 2 - 140, w, 40), $"RETURN TO THE BATTLEFIELD  {Mathf.CeilToInt(10 - pc.outOfBounds)}", 30, UI.Bad, TextAnchor.MiddleCenter);
             if (b.space) SpaceStatus(me);
         }

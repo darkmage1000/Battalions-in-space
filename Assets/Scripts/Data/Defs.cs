@@ -61,6 +61,39 @@ namespace BIS
             }
         }
         public bool UsesHeat => heatPerShot > 0;
+
+        /// <summary>What kind of gun this is, in plain words (shown on pickups and in the weapon panel).</summary>
+        public string TypeName
+        {
+            get
+            {
+                switch (kind)
+                {
+                    case WKind.Rifle: return "Assault rifle";
+                    case WKind.Repeater: return splash > 0 ? "Heavy repeater" : "Carbine";
+                    case WKind.Pistol: return "Pistol";
+                    case WKind.Shotgun: return "Shotgun";
+                    case WKind.Sniper: return "Sniper rifle";
+                    case WKind.Rocket: return guided ? "Guided launcher" : "Rocket launcher";
+                    case WKind.Beam: return "Beam projector";
+                    case WKind.Blade: return "Blade";
+                    case WKind.Repair: return "Repair tool";
+                    case WKind.Grenade: return "Grenade";
+                    default: return kind.ToString();
+                }
+            }
+        }
+        public string RangeWord { get { float r = EffectiveRange; return r <= 25 ? "close" : r <= 65 ? "short" : r <= 110 ? "medium" : r <= 200 ? "long" : "very long"; } }
+        /// <summary>"Assault rifle - medium range - 26 dmg - 5 shots/s"</summary>
+        public string InfoLine
+        {
+            get
+            {
+                string dmg = pellets > 1 ? $"{damage:0} x{pellets} pellets" : $"{damage:0} dmg";
+                string r = rate >= 1.5f ? $"{rate:0.#} shots/s" : $"a shot every {1f / Mathf.Max(0.01f, rate):0.#} s";
+                return kind == WKind.Repair ? "Repair tool - fixes vehicles" : $"{TypeName} - {RangeWord} range - {dmg} - {r}" + (splash > 0 ? " - blast" : "");
+            }
+        }
         /// <summary>Hand-held guns hit instantly along the aim line (a tracer is drawn); rockets, grenades and vehicle weapons fly.</summary>
         public bool Hitscan => kind == WKind.Rifle || kind == WKind.Repeater || kind == WKind.Pistol || kind == WKind.Shotgun || kind == WKind.Sniper;
         public float Dps => damage * pellets * rate;

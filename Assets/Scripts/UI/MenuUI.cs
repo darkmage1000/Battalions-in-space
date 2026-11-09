@@ -174,7 +174,7 @@ namespace BIS
                 if (UI.Button(new Rect(x + 190 + d * 142, y + 4, 136, 40), Settings.DeviceNames[d], (int)Settings.Device == d, true, 15)) Settings.Device = (Settings.InputDevice)d;
             y += 52;
             UI.Text(new Rect(x, y, rw, 24), "Now tuned for: " + Settings.DeviceNames[(int)Settings.Current] + (Settings.Device == Settings.InputDevice.Auto ? " (auto)" : ""), 17, UI.Dim); y += 30;
-            Settings.AimAssist = Mathf.RoundToInt(UI.Slider(new Rect(x, y, rw, 44), "Aim assist", Settings.AimAssist, 0, 3, AimAssist.Names[Settings.AimAssist])); y += 54;
+            Settings.AimAssist = Mathf.RoundToInt(UI.Slider(new Rect(x, y, rw, 44), "Aim assist", Settings.AimAssist, 0, AimAssist.MaxLevel, AimAssist.Names[Mathf.Clamp(Settings.AimAssist, 0, AimAssist.MaxLevel)])); y += 54;
             if (Settings.Current == Settings.InputDevice.Touch)
             {
                 Settings.TouchSens = UI.Slider(new Rect(x, y, rw, 44), "Touch look speed", Settings.TouchSens, 0.3f, 3f, Settings.TouchSens.ToString("0.0")); y += 54;

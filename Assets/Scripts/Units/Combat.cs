@@ -374,7 +374,15 @@ namespace BIS
             }
 
             // a Bladesworn hero blocking deflects bolts back
-            if (target is Unit u && u.Blocking && w.kind != WKind.Rocket && w.kind != WKind.Missile && w.kind != WKind.Torpedo && !s.grenade && u.team != s.team)
+            bool guardable = w.kind != WKind.Rocket && w.kind != WKind.Missile && w.kind != WKind.Torpedo && !s.grenade;
+            if (target is Unit gu && guardable && gu.team != s.team && !gu.Blocking && Vector3.Dot(s.vel.normalized, gu.transform.forward) < -0.2f && gu.AutoGuard())
+            {
+                // turned aside by the blade: no damage, a flash and a ring
+                Fx.Sparks(p, -s.vel.normalized, gu.hero.glow, 8);
+                Sfx.Play("blade", p, 0.35f, 1.8f);
+                return;
+            }
+            if (target is Unit u && u.Blocking && guardable && u.team != s.team)
             {
                 Vector3 inDir = s.vel.normalized;
                 if (Vector3.Dot(inDir, u.transform.forward) < -0.2f)

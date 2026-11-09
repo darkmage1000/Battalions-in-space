@@ -120,7 +120,7 @@ namespace BIS
         public Battle battle;
         public int team;
         public FactionDef faction;
-        public float hull, maxHull = 30000;
+        public float hull, maxHull = 21000;            // 2026-11-08: was 30000 (systems below about -30% too)
         public bool destroyed, crippled;
         public readonly List<Subsystem> systems = new List<Subsystem>();
         public Hangar hangar;
@@ -442,7 +442,7 @@ namespace BIS
             shieldBeams = new LineRenderer[2];
             for (int i = 0; i < 2; i++)
             {
-                var s = Make(SysKind.Shield, i == 0 ? "Shield Projector (fore)" : "Shield Projector (aft)", at + new Vector3(i == 0 ? 30 : -20, 8, 0), 9000, false, false);
+                var s = Make(SysKind.Shield, i == 0 ? "Shield Projector (fore)" : "Shield Projector (aft)", at + new Vector3(i == 0 ? 30 : -20, 8, 0), 6000, false, false);
                 var pk = new MeshKit();
                 pk.Cyl(new Vector3(0, 1.5f, 0), 5, 3, Quaternion.identity, hd, 12);
                 pk.Sphere(new Vector3(0, 5, 0), new Vector3(9, 7, 9), Quaternion.identity, new Color(0.72f, 0.74f, 0.78f), 12, 6);
@@ -467,7 +467,7 @@ namespace BIS
 
         void AddBridge(Vector3 p)
         {
-            var s = Make(SysKind.Bridge, "Command Bridge", p, 7000, true, false);
+            var s = Make(SysKind.Bridge, "Command Bridge", p, 4800, true, false);
             var k = new MeshKit();
             Color hc = Hull(faction), hd = HullDark(faction);
             k.Box(new Vector3(0, 4, 0), new Vector3(16, 8, 12), hd);
@@ -481,7 +481,7 @@ namespace BIS
 
         void AddSensors(Vector3 p)
         {
-            var s = Make(SysKind.Sensors, "Sensor Array", p, 3500, false, false);
+            var s = Make(SysKind.Sensors, "Sensor Array", p, 2400, false, false);
             var k = new MeshKit();
             k.Cyl(new Vector3(0, 3, 0), 1.2f, 6, Quaternion.identity, HullDark(faction), 8);
             k.Cone(new Vector3(0, 8, 0), 7, 2.4f, Quaternion.Euler(160, 0, 0), new Color(0.82f, 0.84f, 0.88f), 16);
@@ -492,7 +492,7 @@ namespace BIS
 
         void AddEngine(Vector3 p)
         {
-            var s = Make(SysKind.Engine, "Engine", p, 8000, true, false);
+            var s = Make(SysKind.Engine, "Engine", p, 5500, true, false);
             var k = new MeshKit();
             k.Cyl(Vector3.zero, 11, 16, Quaternion.Euler(0, 0, 90), HullDark(faction), 12);
             k.Cyl(new Vector3(-8.2f, 0, 0), 9, 0.6f, Quaternion.Euler(0, 0, 90), MeshKit.Glow(faction.body == Body.Slender ? new Color(0.5f, 1f, 0.85f) : faction.body == Body.Machine ? new Color(1f, 0.75f, 0.3f) : new Color(0.55f, 0.75f, 1f)), 12);
@@ -502,7 +502,7 @@ namespace BIS
 
         void AddTurret(Vector3 p, Vector3 up)
         {
-            var s = Make(SysKind.Turret, "Turret", p, 2200, false, false);
+            var s = Make(SysKind.Turret, "Turret", p, 1500, false, false);
             s.transform.localRotation = Quaternion.FromToRotation(Vector3.up, up);
             var k = new MeshKit();
             k.Cyl(new Vector3(0, 1, 0), 3.5f, 2, Quaternion.identity, HullDark(faction), 10);
@@ -522,7 +522,7 @@ namespace BIS
 
         void AddHangarControl(Vector3 p)
         {
-            var s = Make(SysKind.Hangar, "Hangar Control", p, 5000, false, false);
+            var s = Make(SysKind.Hangar, "Hangar Control", p, 3500, false, false);
             var k = new MeshKit();
             k.Box(Vector3.zero, new Vector3(10, 3, 4), new Color(0.35f, 0.35f, 0.38f));
             k.Box(new Vector3(0, -0.6f, 2.05f), new Vector3(8, 1, 0.1f), MeshKit.Glow(new Color(1f, 0.8f, 0.3f)));
@@ -532,7 +532,7 @@ namespace BIS
 
         void AddLifeSupport(Vector3 p)
         {
-            var s = Make(SysKind.LifeSupport, "Life Support", p, 4000, true, true);
+            var s = Make(SysKind.LifeSupport, "Life Support", p, 1500, true, true);
             var k = new MeshKit();
             for (int i = 0; i < 3; i++)
             {
@@ -547,7 +547,7 @@ namespace BIS
 
         void AddReactor(Vector3 p)
         {
-            var s = Make(SysKind.Reactor, "Reactor Core", p, 4500, true, true);
+            var s = Make(SysKind.Reactor, "Reactor Core", p, 1700, true, true);
             var k = new MeshKit();
             k.Cyl(new Vector3(0, 0.5f, 0), 4, 1, Quaternion.identity, new Color(0.3f, 0.3f, 0.32f), 12);
             k.Cyl(new Vector3(0, 3.8f, 0), 2.2f, 5.6f, Quaternion.identity, MeshKit.Glow(new Color(1f, 0.55f, 0.2f)), 12);
@@ -616,7 +616,7 @@ namespace BIS
 
         public static float HullShare(SysKind k)
         {
-            switch (k) { case SysKind.Turret: return 0.04f; case SysKind.Shield: return 0.06f; case SysKind.Engine: return 0.1f; case SysKind.Hangar: return 0.08f; case SysKind.Sensors: return 0.05f; case SysKind.Bridge: return 0.12f; default: return 0.12f; }
+            switch (k) { case SysKind.Turret: return 0.04f; case SysKind.Shield: return 0.06f; case SysKind.Engine: return 0.1f; case SysKind.Hangar: return 0.08f; case SysKind.Sensors: return 0.05f; case SysKind.Bridge: return 0.12f; case SysKind.LifeSupport: return 0.22f; case SysKind.Reactor: return 0.3f; default: return 0.12f; }
         }
 
         public Vector3 Node(int i) => transform.TransformPoint(nodes[i]);

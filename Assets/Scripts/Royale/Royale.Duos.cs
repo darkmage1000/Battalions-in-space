@@ -166,6 +166,48 @@ namespace BIS
             return null;
         }
 
+        // ── giving things to your mate ───────────────────────────────────
+        /// <summary>Why u can't drop this now (what: 0 a medkit, 1 a shield cell, 2 the gun in hand), or null.</summary>
+        public string CantDrop(Unit u, int what)
+        {
+            if (u == null || !u.Alive || u.knocked || u.InVehicle || u.Using) return "Not now";
+            switch (what)
+            {
+                case 0: return u.medkits > 0 ? null : "No medkits";
+                case 1: return u.shields > 0 ? null : "No shield cells";
+                default:
+                    var w = u.Weapon;
+                    if (w == null || w.def.tier < 0) return "You can't drop your sidearm";
+                    return null;
+            }
+        }
+
+        /// <summary>Put a medkit, a shield cell or the gun in hand on the ground in front of u (for a mate to take).
+        /// The one who dropped it won't auto-pick it up again for a few seconds.</summary>
+        public bool DropFromPockets(Unit u, int what)
+        {
+            if (client || CantDrop(u, what) != null) return false;
+            Vector3 p = u.transform.position + u.transform.forward * 1.6f;
+            p.y = b.GroundY(p + Vector3.up * 0.6f) + 0.04f;
+            if (Mathf.Abs(p.y - u.transform.position.y) > 1.2f) p = u.transform.position + Vector3.up * 0.04f;
+            LootItem it;
+            if (what == 0) { u.medkits--; it = Drop(LootKind.Medkit, 1, null, 1, p, false); }
+            else if (what == 1) { u.shields--; it = Drop(LootKind.Shield, 1, null, 1, p, false); }
+            else
+            {
+                var w = u.Weapon;
+                it = Drop(LootKind.Weapon, w.def.tier, w.def, 1, p, false);
+                // the other gun goes in hand; with none left the race's sidearm comes back
+                int other = 1 - u.cur;
+                if (u.weapons[other] != null) { u.weapons[u.cur] = null; if (u.cur == 0) { u.weapons[0] = u.weapons[1]; u.weapons[1] = null; } u.cur = 0; }
+                else u.weapons[u.cur] = new WeaponState(LootTable.Secondary(u.faction));
+                u.rig.SetWeapon(u.Weapon.def);
+            }
+            it.droppedBy = u; it.dropLock = Time.time + 6;
+            Sfx.Play("ui2", p, 0.5f);
+            return true;
+        }
+
         // ── revive stations ──────────────────────────────────────────────
         public bool StationFree(int i) => i >= 0 && i < stations.Count && !stations[i].used;
 

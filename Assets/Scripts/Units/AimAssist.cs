@@ -11,16 +11,19 @@ namespace BIS
     /// </summary>
     public static class AimAssist
     {
-        public static readonly string[] Names = { "Off", "Low", "Medium", "High" };
-        static readonly float[] magnet = { 0, 2.5f, 4.5f, 7f };     // degrees: shots bend to a target inside this cone
-        static readonly float[] pull = { 0, 6f, 10f, 15f };         // degrees: the view drifts toward targets inside this cone
-        static readonly float[] pullRate = { 0, 8f, 18f, 32f };     // degrees per second
-        static readonly float[] friction = { 1, 0.8f, 0.62f, 0.45f }; // look speed while on target
+        // 2026-11-08: toned down (on a phone Medium bent shots inside 7 degrees and turned the view 29 degrees a second -
+        // "the game plays itself"); STRONG is about the old High for anyone who wants it
+        public static readonly string[] Names = { "Off", "Low", "Medium", "High", "Strong" };
+        static readonly float[] magnet = { 0, 1.2f, 2.4f, 3.8f, 6.5f };      // degrees: shots bend to a target inside this cone
+        static readonly float[] pull = { 0, 3.5f, 6f, 9f, 14f };             // degrees: the view drifts toward targets inside this cone
+        static readonly float[] pullRate = { 0, 4f, 8f, 14f, 30f };          // degrees per second
+        static readonly float[] friction = { 1, 0.88f, 0.76f, 0.64f, 0.48f }; // look speed while on target
 
-        static int Level => Mathf.Clamp(Settings.AimAssist, 0, 3);
+        public static int MaxLevel => Names.Length - 1;
+        static int Level => Mathf.Clamp(Settings.AimAssist, 0, MaxLevel);
         public static bool On => Level > 0 && (Settings.Current != Settings.InputDevice.KeyboardMouse || Settings.MouseAssist);
         // touch screens get wider cones and a stronger pull than a gamepad; the mouse (if enabled) the gentlest
-        static float DeviceMul => Settings.Current == Settings.InputDevice.Touch ? 1.6f : Settings.Current == Settings.InputDevice.Gamepad ? 1f : 0.6f;
+        static float DeviceMul => Settings.Current == Settings.InputDevice.Touch ? 1.25f : Settings.Current == Settings.InputDevice.Gamepad ? 1f : 0.6f;
         public static float MagnetCone => magnet[Level] * DeviceMul;
         public static float PullCone => pull[Level] * DeviceMul;
         public static float PullRate => pullRate[Level] * DeviceMul;

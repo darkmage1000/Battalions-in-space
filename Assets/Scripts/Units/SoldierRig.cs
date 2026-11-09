@@ -588,8 +588,14 @@ namespace BIS
                 anim.SetBool("Crouch", crouch);
                 anim.SetBool("Grounded", grounded);
                 pitchNow = Mathf.Clamp(pitch, -60, 60);
-                if (swingBlade) { swing = 1; anim.Play("Swing", 1, 0); }
+                if (swingBlade)
+                {
+                    swing = 1;
+                    anim.Play(swingKind == 1 && hasCombo ? "Swing2" : swingKind == 2 && hasCombo ? "Spin" : "Swing", 1, 0);
+                    if (swingKind == 2) spinT = SpinTime;
+                }
                 swing = Mathf.MoveTowards(swing, 0, dt * 3f);
+                TickSpin(dt);
                 return;
             }
             if (deadT >= 0)
@@ -626,13 +632,34 @@ namespace BIS
             float lean = crouch ? 18 : sp * 6;
             torso.localRotation = Quaternion.Euler(lean + pitch * 0.25f, 0, 0);
             head.localRotation = Quaternion.Euler(pitch * 0.5f, 0, 0);
-            if (swingBlade) swing = 1;
+            if (swingBlade) { swing = 1; if (swingKind == 2) spinT = SpinTime; }
             swing = Mathf.MoveTowards(swing, 0, dt * 3f);
+            TickSpin(dt);
             float aimP = pitch * 0.75f;
             // arms hold the weapon forward along the aim
             armR.localRotation = Quaternion.Euler(-80 + aimP - swing * 70, 0, swing * 40);
             armL.localRotation = Quaternion.Euler(-70 + aimP, 30, 0);
             gun.localRotation = Quaternion.Euler(aimP - swing * 60, -swing * 50, 0);
+        }
+
+        // ── Bladesworn combo: which swing (0 cut, 1 mirrored cut, 2 spin) and the spin itself ──
+        public int swingKind;
+        float spinT;
+        const float SpinTime = 0.42f;
+        bool comboChecked, hasCombo;
+
+        void TickSpin(float dt)
+        {
+            if (anim && !comboChecked) { comboChecked = true; hasCombo = anim.HasState(1, Animator.StringToHash("Spin")); }
+            Transform t = anim ? bodyRoot : transform;
+            if (t == null || downW > 0) return;
+            if (spinT > 0)
+            {
+                spinT -= dt;
+                float k = Mathf.SmoothStep(0, 1, 1 - Mathf.Clamp01(spinT / SpinTime));
+                t.localRotation = Quaternion.Euler(0, 360f * k, 0);
+            }
+            else if (t.localRotation != Quaternion.identity) t.localRotation = Quaternion.identity;
         }
 
         // ── royale duos: down (crawling) and kneeling over a downed mate ──
@@ -665,7 +692,7 @@ namespace BIS
             }
             if (deadT >= 0) return;
             // the code-built body: tip it forward onto the ground, centred over where the soldier is
-            if (downW <= 0) { if (transform.localRotation != Quaternion.identity) { transform.localRotation = Quaternion.identity; transform.localPosition = Vector3.zero; } return; }
+            if (downW <= 0) { if (spinT <= 0 && transform.localRotation != Quaternion.identity) { transform.localRotation = Quaternion.identity; transform.localPosition = Vector3.zero; } return; }
             float k = Mathf.SmoothStep(0, 1, downW);
             transform.localRotation = Quaternion.Euler(84 * k, 0, 0);
             transform.localPosition = new Vector3(0, 0.12f * k, -height * 0.5f * k);

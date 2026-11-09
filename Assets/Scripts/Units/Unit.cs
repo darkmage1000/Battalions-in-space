@@ -82,6 +82,7 @@ namespace BIS
         public const float SniperSettle = 2.2f, SniperSettleTime = 0.55f;   // a fresh scope wanders this much, steady after this long
         public const float SniperMoveSpread = 1.4f;                         // and moving while scoped wanders this much
         float scopedSince = -1;
+        public bool ScopeSteady => scopedSince >= 0 && Time.time - scopedSince >= SniperSettleTime;
 
         // -- battle royale: armour, supplies, keys, the grav-chute --
         public const int MaxMedkits = 5, MaxShields = 5;
@@ -491,21 +492,27 @@ namespace BIS
             if (input.ability && abilityCd <= 0) UseAbility();
         }
 
+        public const float BotLockRange = 120f, BotLockRate = 0.5f;      // bots lock launchers from closer and twice as slowly (1.8 s)
         void UpdateLock(float dt, WeaponDef w)
         {
             Transform best = null; float bestA = 7f;
             Vector3 dir = (input.aimPoint - Eye).normalized;
+            bool bot = !part.Human;
+            float maxR = bot ? Mathf.Min(w.range, BotLockRange) : w.range;
+            Vehicle bv = null;
             foreach (var v in battle.vehicles)
             {
                 if (!v || !v.Alive || v.Team == team || v.IsEmpty) continue;
                 Vector3 to = v.AimPoint - Eye;
                 float d = to.magnitude;
-                if (d > w.range) continue;
+                if (d > maxR) continue;
                 float a = Vector3.Angle(dir, to);
-                if (a < bestA) { bestA = a; best = v.transform; }
+                if (a < bestA) { bestA = a; best = v.transform; bv = v; }
             }
+            // no locks through walls, hills or buildings
+            if (bv && !Vehicle.ClearLine(Eye, bv)) { best = null; bv = null; }
             if (best != lockTarget) { lockTarget = best; lockTime = 0; }
-            else if (best) { float before = lockTime; lockTime += dt; if (part.isPlayer && before < 0.9f && lockTime >= 0.9f) Sfx.Play2D("lock", 0.8f); }
+            else if (best) { float before = lockTime; lockTime += dt * (bot ? BotLockRate : 1f); if (part.isPlayer && before < 0.9f && lockTime >= 0.9f) Sfx.Play2D("lock", 0.8f); }
         }
 
         public Vector3 MuzzlePos => rig && rig.muzzle ? rig.muzzle.position : Eye + transform.forward * 0.5f;
@@ -535,22 +542,37 @@ namespace BIS
             Sfx.Play(w.sound, from, part.isPlayer ? 0.7f : 0.45f, w.pitch);
         }
 
+        // Bladesworn: swings chain into a combo - a cut, a mirrored cut, then a spin that hits all round, harder
+        int swingCombo; float lastSwing = -9;
+        public const float ComboWindow = 0.95f, SpinMul = 1.35f, BladeGuard = 0.45f;
+
         void Swing(WeaponDef w)
         {
             swingTimer = 1;
-            Sfx.Play("blade", transform.position, 0.6f, Random.Range(0.9f, 1.15f));
-            Vector3 c = transform.position + transform.forward * 1.6f + Vector3.up * 1f;
-            var cols = Physics.OverlapSphere(c, w.range * 0.7f, Layers.DamageMask, QueryTriggerInteraction.Ignore);
+            swingCombo = Time.time - lastSwing < ComboWindow ? (swingCombo + 1) % 3 : 0;
+            lastSwing = Time.time;
+            bool spin = swingCombo == 2;
+            rig.swingKind = swingCombo;
+            Sfx.Play("blade", transform.position, spin ? 0.8f : 0.6f, spin ? 0.75f : Random.Range(0.9f, 1.15f));
+            Vector3 c = spin ? transform.position + Vector3.up * 1f : transform.position + transform.forward * 1.6f + Vector3.up * 1f;
+            var cols = Physics.OverlapSphere(c, spin ? w.range * 1.05f : w.range * 0.85f, Layers.DamageMask, QueryTriggerInteraction.Ignore);
             var set = new HashSet<IDamageable>();
             foreach (var col in cols)
             {
                 var d = col.GetComponentInParent<IDamageable>();
                 if (d == null || d == (IDamageable)this || !d.Alive || d.Team == team || !set.Add(d)) continue;
-                Shots.Deal(d, w.damage, w, this, team, d.AimPoint, transform.forward, DmgType.Melee);
-                Fx.Sparks(d.AimPoint, -transform.forward, hero != null ? hero.glow : Color.white, 10);
-                if (d is Unit u) u.Push(transform.forward * 6 + Vector3.up * 2);
+                Vector3 away = d.AimPoint - transform.position; away.y = 0; away = away.sqrMagnitude > 0.01f ? away.normalized : transform.forward;
+                Vector3 hitDir = spin ? away : transform.forward;
+                Shots.Deal(d, w.damage * (spin ? SpinMul : 1f), w, this, team, d.AimPoint, hitDir, DmgType.Melee);
+                Fx.Sparks(d.AimPoint, -hitDir, hero != null ? hero.glow : Color.white, spin ? 16 : 10);
+                if (d is Unit u) u.Push(hitDir * (spin ? 9 : 6) + Vector3.up * (spin ? 3 : 2));
             }
         }
+
+        /// <summary>A Bladesworn who isn't swinging or dashing turns aside some bolts from the front without holding
+        /// block (holding block still stops them all and sends them back).</summary>
+        public bool AutoGuard() => hero != null && hero.kind == HeroKind.Blade && Alive && !InVehicle && !Blocking
+                                   && Time.time - lastSwing > 0.3f && Time.time >= dashUntil && Random.value < BladeGuard;
 
         void DashDamage()
         {
@@ -559,7 +581,7 @@ namespace BIS
             {
                 var d = col.GetComponentInParent<IDamageable>();
                 if (d == null || d == (IDamageable)this || !d.Alive || d.Team == team || !dashHit.Add(d)) continue;
-                Shots.Deal(d, 180, weapons[0].def, this, team, d.AimPoint, dashDir, DmgType.Melee);
+                Shots.Deal(d, 230, weapons[0].def, this, team, d.AimPoint, dashDir, DmgType.Melee);
                 Fx.Sparks(d.AimPoint, -dashDir, hero.glow, 14);
                 if (d is Unit u) u.Push(dashDir * 10 + Vector3.up * 5);
             }

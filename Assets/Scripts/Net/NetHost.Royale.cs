@@ -121,6 +121,12 @@ namespace BIS.Net
                             var m = id >= 0 && id < b.people.Count ? b.people[id].unit : null;
                             if (m && !u.StartRevive(m)) Session.link?.Send(new W(Msg.Say).Str("Can't revive from here"));
                         }
+                        else if (what == 5)
+                        {
+                            // drop a medkit (0), shield cell (1) or the gun in hand (2) for the mate
+                            string why = ry.CantDrop(u, id);
+                            if (why != null) Session.link?.Send(new W(Msg.Say).Str(why)); else ry.DropFromPockets(u, id);
+                        }
                         else if (what == 4)
                         {
                             if (!u.StartStation(id)) Session.link?.Send(new W(Msg.Say).Str("Can't use the station now"));

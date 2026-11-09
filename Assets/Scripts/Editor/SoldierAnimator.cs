@@ -90,10 +90,14 @@ namespace BIS.EditorTools
             var rifle = am.AddState("Rifle"); rifle.motion = C("Pistol_Idle_Loop");
             var sword = am.AddState("Sword"); sword.motion = C("Sword_Idle");
             var swing = am.AddState("Swing"); swing.motion = C("Sword_Attack"); swing.speed = 1.6f;
+            var swing2 = am.AddState("Swing2"); swing2.motion = C("Sword_Attack"); swing2.speed = 1.75f; swing2.mirror = true;   // the combo's second cut, the other way
+            var spinS = am.AddState("Spin"); spinS.motion = C("Sword_Attack"); spinS.speed = 2.1f;                              // the third: the body turns a full circle in code
             var spell = am.AddState("Spell"); spell.motion = C("Spell_Simple_Idle_Loop");
             var cast = am.AddState("Cast"); cast.motion = C("Spell_Simple_Shoot");
             am.defaultState = rifle;
             var back = swing.AddTransition(sword); back.hasExitTime = true; back.exitTime = 0.85f; back.duration = 0.1f;
+            var back3 = swing2.AddTransition(sword); back3.hasExitTime = true; back3.exitTime = 0.85f; back3.duration = 0.1f;
+            var back4 = spinS.AddTransition(sword); back4.hasExitTime = true; back4.exitTime = 0.85f; back4.duration = 0.1f;
             var back2 = cast.AddTransition(spell); back2.hasExitTime = true; back2.exitTime = 0.85f; back2.duration = 0.1f;
             AssetDatabase.SaveAssets();
             Debug.Log("Soldier animator built: " + Out);

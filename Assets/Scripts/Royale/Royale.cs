@@ -387,7 +387,7 @@ namespace BIS
                 }
                 else if (p.isPlayer) go = playerWantsJump || dropT <= 0;
                 else if (p.remote) go = p.dropAt != Vector3.zero && (remoteJump || dropT <= 0);
-                else go = jumpAt.TryGetValue(p, out float at) && gone >= at;
+                else go = b.player.dropped || dropT <= 0;          // every bot leaves the dropship with the player: no early or late landers
                 if (!go) continue;
                 if (p.isPlayer && !Follower(p)) p.dropAt = playerPicked ? dropPickPos : RandomGround(b.land.PlayHalf * 0.6f);
                 if (p.dropAt == Vector3.zero) p.dropAt = p.Human ? RandomGround(b.land.PlayHalf * 0.6f) : BotDropSpot();
@@ -733,6 +733,7 @@ namespace BIS
             {
                 if (!p.Human || !p.Alive || p.unit.InVehicle || p.unit.knocked) continue;
                 var it = NearestLoot(p.unit.transform.position, 1.5f, false, true);
+                if (it != null && it.droppedBy == p.unit && Time.time < it.dropLock) continue;
                 if (it != null && it.kind != LootKind.Weapon && CantTake(p.unit, it) == null) Take(p.unit, it);
             }
         }

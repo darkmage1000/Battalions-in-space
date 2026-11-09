@@ -17,7 +17,7 @@ namespace BIS
         public static WeaponDef RepeaterAward(string n) { var w = Repeater(n); w.damage = 19; w.splash = 1.6f; w.splashDmg = 14; w.heatPerShot = 0.028f; return w; }
         public static WeaponDef Pistol(string n) => new WeaponDef { name = n, kind = WKind.Pistol, damage = 42, rate = 3.2f, spread = 0.6f, speed = 150, heatPerShot = 0.11f, range = 120, sound = "pistol", auto = false };
         public static WeaponDef Repair(string n) => new WeaponDef { name = n, kind = WKind.Repair, damage = 70, rate = 5, range = 6, heatPerShot = 0, sound = "repair" };
-        public static WeaponDef Blade(string n) => new WeaponDef { name = n, kind = WKind.Blade, damage = 105, rate = 2.4f, range = 3.4f, heatPerShot = 0, sound = "blade", vsVehicle = 0.6f };
+        public static WeaponDef Blade(string n) => new WeaponDef { name = n, kind = WKind.Blade, damage = 150, rate = 2.4f, range = 3.8f, heatPerShot = 0, sound = "blade", vsVehicle = 0.6f };
         public static WeaponDef TwinGuns(string n) => new WeaponDef { name = n, kind = WKind.Pistol, damage = 50, rate = 6.5f, spread = 0.5f, speed = 190, heatPerShot = 0.03f, range = 160, sound = "pistol", pitch = 0.9f, vsVehicle = 0.3f };
         public static WeaponDef HeavyGun(string n) => new WeaponDef { name = n, kind = WKind.Repeater, damage = 32, rate = 9, spread = 1.6f, speed = 160, heatPerShot = 0.022f, splash = 1.5f, splashDmg = 22, range = 170, sound = "heavy", boltWidth = 0.22f, vsVehicle = 0.4f };
         public static WeaponDef Beam(string n) => new WeaponDef { name = n, kind = WKind.Beam, damage = 190, rate = 10, range = 18, heatPerShot = 0.012f, sound = "zap", vsVehicle = 0.5f };
@@ -27,8 +27,8 @@ namespace BIS
         public static WeaponDef Mg(string n) => new WeaponDef { name = n, kind = WKind.Repeater, damage = 26, rate = 8, spread = 1.4f, speed = 170, heatPerShot = 0.035f, vsVehicle = 0.3f, range = 200, sound = "repeater" };
         public static WeaponDef TwinBlaster(string n) => new WeaponDef { name = n, kind = WKind.Rifle, damage = 38, rate = 5.5f, spread = 0.8f, speed = 170, heatPerShot = 0.045f, vsVehicle = 0.45f, range = 220, sound = "blaster2", boltWidth = 0.2f };
         public static WeaponDef RocketPod(string n) => new WeaponDef { name = n, kind = WKind.Rocket, damage = 190, rate = 1.2f, spread = 0.8f, speed = 75, heatPerShot = 0.24f, splash = 4, splashDmg = 140, vsVehicle = 1, range = 250, sound = "rocket", boltLen = 1.2f, boltWidth = 0.3f };
-        public static WeaponDef AirLaser(string n) => new WeaponDef { name = n, kind = WKind.ShipLaser, damage = 42, rate = 7, spread = 0.6f, speed = 260, heatPerShot = 0.032f, vsVehicle = 0.6f, range = 350, sound = "laser", boltLen = 4, boltWidth = 0.2f };
-        public static WeaponDef AirMissile(string n) => new WeaponDef { name = n, kind = WKind.Missile, damage = 300, rate = 0.8f, spread = 0, speed = 90, heatPerShot = 0.38f, splash = 5, splashDmg = 200, vsVehicle = 1, lockOn = true, range = 400, sound = "rocket", boltLen = 1.4f, boltWidth = 0.35f };
+        public static WeaponDef AirLaser(string n) => new WeaponDef { name = n, kind = WKind.ShipLaser, damage = 42, rate = 7, spread = 0.6f, speed = 260, heatPerShot = 0.032f, vsVehicle = 0.6f, vsInfantry = 0.55f, range = 350, sound = "laser", boltLen = 4, boltWidth = 0.2f };
+        public static WeaponDef AirMissile(string n) => new WeaponDef { name = n, kind = WKind.Missile, damage = 300, vsInfantry = 0.6f, rate = 0.8f, spread = 0, speed = 90, heatPerShot = 0.38f, splash = 5, splashDmg = 200, vsVehicle = 1, lockOn = true, range = 400, sound = "rocket", boltLen = 1.4f, boltWidth = 0.35f };
 
         // ships
         public static WeaponDef ShipLaser(string n, float dmg = 45, float rate = 6) => new WeaponDef { name = n, kind = WKind.ShipLaser, damage = dmg, rate = rate, spread = 0.35f, speed = 320, heatPerShot = 0.03f, vsVehicle = 1, vsInfantry = 1, range = 650, sound = "laser", boltLen = 6, boltWidth = 0.28f };

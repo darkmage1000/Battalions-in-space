@@ -126,6 +126,22 @@ namespace BIS
             UI.Text(new Rect(r.x + 170, r.y + 6, 180, 26), $"Shield cells  {me.shields}", 19, me.shields > 0 ? ArmorCol : UI.Dim);
             UI.Text(new Rect(r.x + 360, r.y + 6, 130, 26), me.keys > 0 ? $"VAULT KEY x{me.keys}" : "no key", 19, me.keys > 0 ? UI.Gold : UI.Dim, TextAnchor.UpperRight);
             UI.Text(new Rect(r.x + 14, r.y + 30, 470, 24), $"[{heal}] use a medkit when hurt, else a shield cell", 15, UI.Dim);
+            // duos: hand things to your mate
+            var ry = battle.royale;
+            if (ry.Duos && !me.InVehicle && !me.knocked)
+            {
+                string[] what = { "DROP MEDKIT", "DROP SHIELD", "DROP GUN" };
+                for (int i = 0; i < 3; i++)
+                {
+                    Rect bt = new Rect(r.x + i * 170, r.y - 50, 160, 42);
+                    bool ok = ry.CantDrop(me, i) == null;
+                    if (UI.Button(bt, what[i], false, ok, 16))
+                    {
+                        if (Net.Session.IsClient) Net.NetClient.RequestLoot(5, i);
+                        else ry.DropFromPockets(me, i);
+                    }
+                }
+            }
         }
 
         // ── the map ──────────────────────────────────────────────────────

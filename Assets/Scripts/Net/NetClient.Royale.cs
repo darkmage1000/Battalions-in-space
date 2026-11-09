@@ -16,7 +16,7 @@ namespace BIS.Net
             Session.link?.Send(new W(Msg.RJump).V(at).B(now));
         }
         public static void RequestHeal() => Session.link?.Send(new W(Msg.RHeal));
-        /// <summary>what: 0 an item (id), 1 a chest (index), 2 a vault (index), 3 revive a mate (person index), 4 a revive station (index).</summary>
+        /// <summary>what: 0 an item (id), 1 a chest (index), 2 a vault (index), 3 revive a mate (person index), 4 a revive station (index), 5 drop for the mate (0 medkit, 1 shield, 2 gun).</summary>
         public static void RequestLoot(int what, int id) { Session.link?.Send(new W(Msg.RTake).U8(what).I32(id)); }
 
         static void HandleRoyale(R r)

@@ -555,6 +555,14 @@ namespace BIS
                 MapFeature.Tower(0.58f, -0.88f, 22),
                 MapFeature.Boulders(0.98f, -0.46f, 0.09f, 8),
                 MapFeature.Wadi(18, 4, 0.42f, -0.42f, 0.5f, -0.5f, 0.46f, -0.62f),
+
+                // more vaults (2026-11-08): one in each of the other regions
+                MapFeature.Vault(-0.9f, 0.58f, 15),      // Frostfall
+                MapFeature.Vault(0.22f, 0.74f, -20),     // Highwood
+                MapFeature.Vault(0.62f, 0.52f, 50),      // Harrak Mines
+                MapFeature.Vault(-0.88f, -0.36f, 0),     // Briar Hollow
+                MapFeature.Vault(0.7f, -0.08f, 80),      // Cinder Foundry
+                MapFeature.Vault(0.08f, -0.84f, 10),     // Greenreach Farms
             };
             return new LandMapDef
             {

@@ -163,14 +163,15 @@ namespace BIS
             return p + VelOf(t) * tt * 0.85f;
         }
 
-        Vector3 AimWithError(Vector3 from, Vector3 point, float dt)
+        Vector3 AimWithError(Vector3 from, Vector3 point, float dt, float mul = 1f)
         {
             noiseT -= dt;
             float dist = (point - from).magnitude;
             if (noiseT <= 0)
             {
                 noiseT = Random.Range(0.25f, 0.5f);
-                float errDeg = Mathf.Lerp(7.5f, 1.4f, skill) * Mathf.Lerp(1.6f, 0.6f, Mathf.Clamp01(trackTime / 3f));
+                // 2026-11-08: about 30% wider than before (the player's own aim help was cut at the same time)
+                float errDeg = Mathf.Lerp(9.5f, 1.9f, skill) * Mathf.Lerp(1.6f, 0.6f, Mathf.Clamp01(trackTime / 3f)) * mul;
                 // battle royale: bots are full strength against people but shakier against each other, so the
                 // field doesn't wipe itself out before the zone and the players get a say
                 if (b.royale != null && !u.part.boss && target is Unit tu && !tu.part.Human) errDeg *= 1.6f;
@@ -629,6 +630,7 @@ namespace BIS
         }
 
         // ── planetary gunship ────────────────────────────────────────────
+        const float GunshipInfantryRange = 160f;
         void FlyGunship(Vehicle v, float dt)
         {
             think -= dt; objT -= dt;
@@ -638,6 +640,8 @@ namespace BIS
             {
                 think = 0.5f;
                 var t = FindTarget(pos, 260, true);
+                // soldiers only from fairly close (a gunship used to find people 260 m off and cut them down at once)
+                if (t is Unit && (t.AimPoint - pos).magnitude > GunshipInfantryRange) t = null;
                 target = t;
             }
             if (target != null && (target is Object to0 && !to0 || !target.Alive)) target = null;
@@ -656,12 +660,15 @@ namespace BIS
                 else
                 {
                     point = Lead(pos, target, v.prim.def.speed);
+                    bool soldier = target is Unit;
                     if (d < 45) { run = RunPhase.Break; Vector3 away = (pos - tp); away.y = 0; runPoint = pos + away.normalized * 180 + Random.insideUnitSphere * 40; runPoint.y = b.GroundY(runPoint) + 55; }
                     float ang = Vector3.Angle(v.transform.forward, point - pos);
-                    inp.fire = ang < 8 && d < 220 && v.prim.heat < 0.8f;
+                    burst -= dt; if (burst < -1.1f) burst = Random.Range(0.8f, 1.4f);
+                    inp.fire = ang < 8 && d < (soldier ? GunshipInfantryRange - 20 : 220) && v.prim.heat < 0.8f && (!soldier || burst > 0);
                     inp.alt = ang < 10 && d < 260 && target is Vehicle && v.lockTime >= 1f;
                 }
-                inp.aimPoint = point;
+                // the guns aim with a bot's error (much wider against a soldier); the nose still points at the lead
+                inp.aimPoint = run == RunPhase.Break ? point : AimWithError(pos, point, dt, target is Unit ? 1.6f : 1.15f);
             }
             else
             {

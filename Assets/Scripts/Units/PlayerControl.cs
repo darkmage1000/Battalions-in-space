@@ -224,7 +224,7 @@ namespace BIS
             if (b.royale) FollowLeader(me, ref inp);
             if (AutoFireOk(wd)) { inp.fire = true; inp.fireDown = true; }
             // the player's own shots are tighter than the bots', tighter still on touch and when assist has a target
-            me.spreadMul = (Settings.Current == Settings.InputDevice.Touch ? 0.45f : Settings.Current == Settings.InputDevice.Gamepad ? 0.55f : 0.7f) * (assistOnTarget ? 0.6f : 1f);
+            me.spreadMul = (Settings.Current == Settings.InputDevice.Touch ? 0.55f : Settings.Current == Settings.InputDevice.Gamepad ? 0.6f : 0.7f) * (assistOnTarget ? 0.75f : 1f);
             me.input = inp;
             var ws = me.Weapon;
             if (inp.aim && wd.zoomFov > 0 && ws.clip == 0 && ws.ammo > 0) Say("Lower the scope to reload", 0.3f);
@@ -281,11 +281,29 @@ namespace BIS
             return assistOnTarget ? assistPoint : raw;
         }
 
+        /// <summary>Sniper auto-fire: only through a settled scope, and only when the crosshair itself is on an enemy
+        /// (no assist cone - the shot goes exactly where you point).</summary>
+        bool SniperOnTarget(WeaponDef w)
+        {
+            var me = Me;
+            if (me == null || !me.input.aim || !me.ScopeSteady) return false;
+            var cam = Cam;
+            var hits = Physics.RaycastAll(cam.transform.position, cam.transform.forward, w.range, Layers.ShotMask, QueryTriggerInteraction.Ignore);
+            float best = float.MaxValue; IDamageable hitT = null;
+            foreach (var h in hits)
+            {
+                if (h.collider.transform.IsChildOf(me.transform) || h.distance < 1.2f || h.distance >= best) continue;
+                best = h.distance; hitT = h.collider.GetComponentInParent<IDamageable>();
+            }
+            return hitT != null && hitT.Alive && hitT.Team != me.team && !(hitT is Unit hu && hu.Cloaked);
+        }
+
         /// <summary>Touch auto-fire: shoot when assist is on an enemy that is within the gun's effective range.</summary>
         bool AutoFireOk(WeaponDef w)
         {
+            if (w.kind == WKind.Sniper) return TouchInput.Active && Settings.AutoFire && SniperOnTarget(w);
             if (!TouchInput.Active || !Settings.AutoFire || !AimAssist.On || !assistOnTarget || assistTarget == null) return false;
-            if (w.kind == WKind.Repair || w.kind == WKind.Sniper) return false;     // snipers take their own shots
+            if (w.kind == WKind.Repair) return false;
             if ((w.kind == WKind.Rocket || w.kind == WKind.Cannon) && assistTarget is Unit && w.lockOn) return false;
             return true;
         }
@@ -577,7 +595,7 @@ namespace BIS
 
         // ── battle royale ────────────────────────────────────────────────
         /// <summary>The thing E acts on right now (shown as the prompt): a vault, a chest, an item, or null.</summary>
-        public string royalePrompt;
+        public string royalePrompt, royaleInfo;     // royaleInfo: a second line under the prompt (what a gun is)
         public Color royalePromptCol = Color.white;
         public Unit spectate;
         float spectateT;
@@ -586,7 +604,7 @@ namespace BIS
         {
             var r = b.royale;
             r.usedUse = false;
-            royalePrompt = null; royalePromptCol = Color.white;
+            royalePrompt = null; royaleInfo = null; royalePromptCol = Color.white;
             Vector3 p = me.transform.position;
             if (me.knocked) return;                    // down: nothing to use, open or pick up
             if (DuoPrompts(me, r, p)) return;
@@ -623,6 +641,7 @@ namespace BIS
                 {
                     var hand = me.weapons[1] == null ? null : me.Weapon;
                     what += hand != null ? $"  (swap for {hand.def.name})" : "";
+                    royaleInfo = item.weapon.InfoLine;
                 }
                 royalePrompt = why != null ? $"{what} - {why}" : $"[E] TAKE {what}";
                 royalePromptCol = why != null ? UI.Dim : Tiers.Of(item.tier);
