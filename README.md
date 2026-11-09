@@ -2,6 +2,8 @@
 
 **A large-scale sci-fi team shooter for Windows and Android.** Four original factions fight over command posts on open battlefields, dogfight between capital ships and board them through the hangar, drop into a 100-player battle royale (solo or in pairs), and wage a turn-based galactic campaign. Two people can play together over Wi-Fi.
 
+**[Download v0.9](https://github.com/darkmage1000/Battalions-in-space/releases/latest)**: Android APK and Windows zip.
+
 ![Main menu](docs/images/menu.jpg)
 
 | | |
@@ -190,7 +192,11 @@ Each faction has 5 classes (plus a pilot and a marine for space), 4 heroes, its 
 
 ## Getting the game
 
-Built games aren't stored in this repository (`Builds/` is ignored), so build them from the project:
+**Download** the latest build from [Releases](https://github.com/darkmage1000/Battalions-in-space/releases/latest):
+- **Android:** `BattalionsInSpace-v0.9-Android.apk`. Open it on the phone and allow installing from this source when asked.
+- **Windows:** `BattalionsInSpace-v0.9-Windows.zip`. Unzip anywhere and run `BattalionsInSpace/BattalionsInSpace.exe`.
+
+**Or build it yourself** (`Builds/` isn't stored in the repository):
 
 1. Install **Unity 6000.0.62f1** with the **Windows** and **Android** build support modules.
 2. Open this folder in Unity Hub and open `Assets/Scenes/Main.unity`.
