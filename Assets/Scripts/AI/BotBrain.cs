@@ -121,8 +121,33 @@ namespace BIS
             return true;
         }
 
+        // who is being shot at by how many bots (refreshed a couple of times a second): the next bot looking for a target
+        // counts a soldier that already has several bots on it as further away, so a side spreads its fire instead of
+        // everyone in view turning on the same person (measured: 9 of 11 enemies in view on the player at once)
+        static readonly Dictionary<IDamageable, int> focus = new Dictionary<IDamageable, int>();
+        static float focusAt = -9;
+        static void RefreshFocus(Battle b)
+        {
+            if (Time.time - focusAt < 0.4f && Time.time >= focusAt) return;
+            focusAt = Time.time; focus.Clear();
+            foreach (var o in b.units)
+            {
+                if (!o || !o.Alive || o.bot == null) continue;
+                var t = o.bot.target;
+                if (t == null || (t is Object to && !to) || !t.Alive) continue;
+                focus.TryGetValue(t, out int n); focus[t] = n + 1;
+            }
+        }
+        float FocusMul(IDamageable e)
+        {
+            if (!focus.TryGetValue(e, out int n)) return 1;
+            if (target == e) n--;
+            return n <= 0 ? 1 : 1 + 0.4f * n * n;      // 1 other: x1.4, 2: x2.6, 3: x4.6, 4: x7.4 (on distance squared)
+        }
+
         IDamageable FindTarget(Vector3 eye, float range, bool preferVehicles, bool shipsOnly = false)
         {
+            RefreshFocus(b);
             IDamageable best = null; float bd = range * range;
             int checks = 0;
             var cand = new List<(IDamageable, float)>(16);
@@ -131,7 +156,8 @@ namespace BIS
                 {
                     if (!e || !e.Alive || e.team == u.team || e.InVehicle || e.Cloaked) continue;
                     float d2 = (e.transform.position - eye).sqrMagnitude;
-                    if (d2 < bd) cand.Add((e, d2 * (preferVehicles ? 2.5f : 1f) * (e.part.Human ? 0.8f : 1f) * (e.knocked ? 8f : 1f)));   // someone standing (who shoots back) first, the downed after
+                    // the royale's bots are drawn to people; in a battle a person is one soldier among many
+                    if (d2 < bd) cand.Add((e, d2 * (preferVehicles ? 2.5f : 1f) * (e.part.Human && b.royale != null ? 0.8f : 1f) * (e.knocked ? 8f : 1f) * (e.part.boss ? 1f : FocusMul(e))));   // someone standing (who shoots back) first, the downed after
                 }
             foreach (var v in b.vehicles)
             {
@@ -273,7 +299,7 @@ namespace BIS
                 // squads on the move only stop for close threats (or whoever is shooting them); defenders and marksmen engage at full range
                 bool onTheMove = squad != null && squad.order != SquadOrder.Defend && !squad.gathering && objective && (objective.Pos - pos).magnitude > objective.radius * 1.5f
                                  && u.RoleOf != Role.Marksman && Time.time - u.lastHurt > 2.5f;
-                var t = FindTarget(u.Eye, onTheMove ? Mathf.Min(Range, 45) : Range, u.RoleOf == Role.Heavy && !u.IsHero);
+                var t = FindTarget(u.Eye, onTheMove ? Mathf.Min(Range, 60) : Range, u.RoleOf == Role.Heavy && !u.IsHero);
                 if (t != null) { if (t != target) trackTime = 0; target = t; seeT = 1.2f; }
                 else if (seeT <= 0) target = null;
                 // grab a vehicle near spawn now and then
@@ -319,7 +345,8 @@ namespace BIS
                 {
                     // snipers in an attacking squad keep up with it and only settle in near the objective
                     move = Toward(pos, flanking ? squad.via : objective.Pos) * 0.85f + side * 0.25f;
-                    aim = false;
+                    aim = d > 30 && burst > -0.2f;          // stops to scope for the shot (an unscoped sniper shot wanders 4 degrees)
+                    if (aim) { move *= 0.15f; crouch = d > 50; }
                 }
                 else if (u.RoleOf == Role.Marksman && !u.IsHero) { crouch = d > 30; move = d < 20 ? -dir : Vector3.zero; aim = true; }
                 else
@@ -347,7 +374,12 @@ namespace BIS
                 burst -= dt;
                 if (burst < -0.5f) burst = Random.Range(0.6f, 1.5f);
                 bool heatOk = !w.def.UsesHeat || w.heat < 0.82f;
-                fire = burst > 0 && heatOk && d < Range;
+                // no spraying from beyond the gun's useful range (carbines 60 m, pistols 55 m): close in instead
+                float fireRange = Mathf.Min(Range, Mathf.Max(30, w.def.EffectiveRange));
+                fire = burst > 0 && heatOk && d < fireRange;
+                // at distance a soldier plants their feet (and kneels) for the burst, then moves again between bursts:
+                // a moving shooter's shots spread x1.3, a crouched one's x0.6
+                if (fire && d > 30 && u.RoleOf != Role.Marksman && !u.IsHero && w.def.kind != WKind.Rocket && Time.time - u.lastHurt > 0.6f) { move = Vector3.zero; crouch = d > 42; }   // (zero, not slow: a slow walk trips the stuck check)
                 if (w.def.kind == WKind.Rocket && !(target is Vehicle) && d > 40) fire = false;
                 if (w.def.kind == WKind.Blade) fire = d < 3.5f;
                 if (w.def.kind == WKind.Beam) fire = d < w.def.range;

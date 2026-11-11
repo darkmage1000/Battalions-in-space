@@ -33,6 +33,7 @@ namespace BIS
         readonly float[] replan = { 1f, 1.5f };
         readonly Dictionary<CommandPost, float>[] lostAt = { new Dictionary<CommandPost, float>(), new Dictionary<CommandPost, float>() };
         public const int SquadSize = 4;
+        public const float GatherMax = 12f;      // the longest an attack wave waits at its staging point
         readonly CommandPost[] lastPrimary = new CommandPost[2];
         readonly float[] primarySince = new float[2];
         readonly int[] rotate = new int[2];
@@ -86,11 +87,14 @@ namespace BIS
                 if ((p - s.target.Pos).sqrMagnitude < 55 * 55) atTarget++;
             }
             float since = Time.time - s.phaseSince;
+            // 2026-11-11: squads used to be sent back to regroup whenever nobody had reached the post within 25 s, then wait
+            // up to 28 s - measured, attackers spent 41% of their time at staging points and 6% on their objective. Now a
+            // wave gathers once (half the squad, or 12 s) and goes; it only regroups when it is all but wiped out.
             if (s.gathering)
             {
-                if ((alive > 0 && staged >= Mathf.Max(2, Mathf.CeilToInt(alive * 0.6f))) || since > 28) { s.gathering = false; s.phaseSince = Time.time; s.version++; }
+                if ((alive > 0 && staged >= Mathf.Max(2, Mathf.CeilToInt(alive * 0.5f))) || since > GatherMax) { s.gathering = false; s.phaseSince = Time.time; s.version++; }
             }
-            else if (atTarget == 0 && since > 25 && s.order != SquadOrder.Counter) { s.gathering = true; s.phaseSince = Time.time; s.version++; }
+            else if (alive <= 1 && atTarget == 0 && since > 20 && s.order != SquadOrder.Counter) { s.gathering = true; s.phaseSince = Time.time; s.version++; }
         }
 
         Vector3 Front(int t)

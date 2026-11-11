@@ -221,6 +221,84 @@ namespace BIS.EditorTools
 
         /// <summary>Builds a land map and saves Previews/Maps/&lt;name&gt;.png: the minimap beside the bot walk grid (grey walk, dark blocked, tan walk-only, blue wade).</summary>
         /// <summary>Starts a battle royale (players = you + bots; classes on / off).</summary>
+        /// <summary>Watch every bot on foot for a while and say how they spend their time: fighting, moving, standing about,
+        /// stuck, blind to an enemy in plain view - plus shots, hits and kills. Works in land battles and the royale.</summary>
+        public static string BotSample(float seconds, float step = 0.5f)
+        {
+            var b = Battle.I; if (!b) return "no battle";
+            var BF = BindingFlags.NonPublic | BindingFlags.Instance;
+            var bt = typeof(BotBrain);
+            FieldInfo fTarget = bt.GetField("target", BF), fStuck = bt.GetField("stuckT", BF), fGoal = bt.GetField("moveGoal", BF), fSquad = bt.GetField("squad", BF), fObj = bt.GetField("objective", BF);
+            int n = 0, withTarget = 0, firing = 0, moving = 0, still = 0, stuck = 0, blind = 0, hurtNoTarget = 0, gathering = 0, inVeh = 0, aimingSniper = 0, sniperFiring = 0, sniperScoped = 0;
+            float tdSum = 0; int tdN = 0; int far = 0;
+            int shots = 0, unitHits = 0, allHits = 0;
+            var lastFire = new System.Collections.Generic.Dictionary<Unit, float>();
+            Shots.DebugImpact = (p, c, w, o) => { if (o && o.bot != null) { allHits++; if (c && c.GetComponentInParent<Unit>() is Unit hu && hu.team != o.team) unitHits++; } };
+            int kills0 = 0; foreach (var p in b.people) kills0 += p.kills;
+            int steps = Mathf.CeilToInt(seconds / step);
+            int flips = 0, attackers = 0, onObjective = 0, sameHuman = 0, humanSamples = 0;
+            var owners = new int[b.posts.Count]; for (int i = 0; i < owners.Length; i++) owners[i] = b.posts[i].owner;
+            float tick0 = b.teams.Length >= 2 ? b.teams[0].tickets + b.teams[1].tickets : 0;
+            for (int s = 0; s < steps; s++)
+            {
+                Step(step);
+                for (int i = 0; i < owners.Length; i++) if (b.posts[i].owner != owners[i]) { owners[i] = b.posts[i].owner; flips++; }
+                // how many bots are on one person at once
+                foreach (var hp in b.people)
+                {
+                    if (!hp.Human || !hp.unit || !hp.unit.Alive) continue;
+                    humanSamples++;
+                    foreach (var u in b.units) if (u && u.Alive && u.bot != null && u.team != hp.team && fTarget.GetValue(u.bot) == (object)hp.unit) sameHuman++;
+                }
+                foreach (var u in b.units)
+                {
+                    if (!u || !u.Alive || u.bot == null || u.part.boss) continue;
+                    if (!u.InVehicle && fSquad != null && fSquad.GetValue(u.bot) is Squad aq && aq.target != null && aq.order != SquadOrder.Defend)
+                    { attackers++; if ((u.transform.position - aq.target.Pos).magnitude < aq.target.radius * 1.2f) onObjective++; }
+                    if (u.InVehicle) { inVeh++; continue; }
+                    if (u.gliding || u.knocked) continue;
+                    n++;
+                    var tgt = fTarget.GetValue(u.bot) as IDamageable;
+                    bool has = tgt != null && tgt.Alive;
+                    float sp = new Vector3(u.velocity.x, 0, u.velocity.z).magnitude;
+                    if (lastFire.TryGetValue(u, out float lf) && u.lastFire > lf + 0.001f) shots++;
+                    lastFire[u] = u.lastFire;
+                    if (has)
+                    {
+                        withTarget++; if (u.input.fire) firing++;
+                        float d = (tgt.AimPoint - u.transform.position).magnitude; tdSum += d; tdN++; if (d > 60) far++;
+                        if (u.Weapon.def.kind == WKind.Sniper) { aimingSniper++; if (u.input.fire) { sniperFiring++; if (u.input.aim) sniperScoped++; } }
+                    }
+                    else
+                    {
+                        if (sp > 0.6f) moving++; else still++;
+                        if (Time.time - u.lastHurt < 2f) hurtNoTarget++;
+                        // an enemy in plain view within 80 m that this bot is not reacting to?
+                        Unit near = null; float bd = 80 * 80;
+                        foreach (var e in b.units) { if (!e || !e.Alive || e.team == u.team || e.InVehicle || e.Cloaked) continue; float d2 = (e.transform.position - u.transform.position).sqrMagnitude; if (d2 < bd) { bd = d2; near = e; } }
+                        if (near && !Physics.Linecast(u.Eye, near.AimPoint, Layers.SightMask, QueryTriggerInteraction.Ignore)) blind++;
+                    }
+                    if ((float)fStuck.GetValue(u.bot) > 0.5f) stuck++;
+                    var sq = fSquad != null ? fSquad.GetValue(u.bot) as Squad : null;
+                    if (sq != null && sq.gathering) gathering++;
+                }
+            }
+            Shots.DebugImpact = null;
+            int kills1 = 0; foreach (var p in b.people) kills1 += p.kills;
+            float botMin = n * step / 60f;
+            float P(int x) => n > 0 ? 100f * x / n : 0;
+            var sb = new StringBuilder();
+            sb.Append($"{seconds:0} s, {n} bot samples ({botMin:0.0} bot-minutes on foot, {inVeh * step / 60f:0.0} in vehicles)\n");
+            sb.Append($"has a target {P(withTarget):0}% (firing {(withTarget > 0 ? 100f * firing / withTarget : 0):0}% of that, avg range {(tdN > 0 ? tdSum / tdN : 0):0} m, {(tdN > 0 ? 100f * far / tdN : 0):0}% beyond 60 m)\n");
+            sb.Append($"no target: moving {P(moving):0}%, standing {P(still):0}%; of all samples: enemy in plain view within 80 m but ignored {P(blind):0}%, just been hit with no target {P(hurtNoTarget):0}%\n");
+            sb.Append($"stuck {P(stuck):0}%, squad waiting at a staging point {P(gathering):0}%\n");
+            sb.Append($"shots seen {shots} ({shots / Mathf.Max(0.01f, botMin):0.0}/bot-min), impacts {allHits}, hits on enemies {unitHits} ({(allHits > 0 ? 100f * unitHits / allHits : 0):0}% of impacts, {unitHits / Mathf.Max(0.01f, botMin):0.0}/bot-min), kills {kills1 - kills0} ({(kills1 - kills0) / Mathf.Max(0.01f, botMin):0.00}/bot-min)\n");
+            if (owners.Length > 0) sb.Append($"posts changing hands {flips} ({flips / (seconds / 60f):0.0}/min), attackers inside their target's ring {(attackers > 0 ? 100f * onObjective / attackers : 0):0}% of the time, tickets spent {tick0 - (b.teams[0].tickets + b.teams[1].tickets):0}\n");
+            if (humanSamples > 0) sb.Append($"bots targeting a person at once: {sameHuman / (float)humanSamples:0.0}\n");
+            if (aimingSniper > 0) sb.Append($"snipers: {aimingSniper} samples with a target, firing {sniperFiring}, scoped while firing {sniperScoped}\n");
+            return sb.ToString();
+        }
+
         public static string StartRoyale(int players = 100, bool classes = true, int faction = 0, int cls = 0, bool duos = false)
         {
             Step(0.06f);
