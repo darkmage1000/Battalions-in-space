@@ -145,6 +145,18 @@ namespace BIS
             return n <= 0 ? 1 : 1 + 0.4f * n * n;      // 1 other: x1.4, 2: x2.6, 3: x4.6, 4: x7.4 (on distance squared)
         }
 
+        // A bot keeps its target for a second or two after losing sight of it (and whoever hits it becomes its target at
+        // once), so it used to go on shooting at the wall its enemy had stepped behind. Firing now needs a clear line
+        // right now (checked ~7 times a second); without one the bot moves to get its view back.
+        bool losNow = true; float losT; IDamageable losOf;
+        bool SeesTarget(Vector3 eye, float dt)
+        {
+            if (target == null) return false;
+            losT -= dt;
+            if (losT <= 0 || losOf != target) { losT = 0.15f; losOf = target; losNow = Visible(eye, target); }
+            return losNow;
+        }
+
         IDamageable FindTarget(Vector3 eye, float range, bool preferVehicles, bool shipsOnly = false)
         {
             RefreshFocus(b);
@@ -386,6 +398,13 @@ namespace BIS
                 if (w.def.kind == WKind.Repair) { fire = false; if (u.weapons[0] != null && u.cur != 0) u.input.swap = true; }
                 if (w.def.kind == WKind.Shotgun) fire = d < 22;
                 if (u.Blocking) fire = false;
+                // no clear line to the target: hold fire (no grenades either) and go round for a view
+                if (w.def.kind != WKind.Blade && !SeesTarget(u.Eye, dt))
+                {
+                    fire = false; aim = false; crouch = false;
+                    grenadeT = Mathf.Max(grenadeT, 0.5f);
+                    if (!houseGoal) { move = Toward(pos, target.AimPoint); sprint = d > 25; }
+                }
                 // switch weapon for the situation
                 if (u.weapons[1] != null && !u.IsHero)
                 {
@@ -550,7 +569,7 @@ namespace BIS
                 float d = (tp - pos).magnitude;
                 var w = v.prim;
                 aimAt = AimWithError(pos, Lead(pos + Vector3.up * 2, target, w != null ? w.def.speed : 150), dt);
-                inp.fire = w != null && (!w.def.UsesHeat || w.heat < 0.75f) && d < (v.def.kind == VKind.Tank ? 160 : 110);
+                inp.fire = w != null && (!w.def.UsesHeat || w.heat < 0.75f) && d < (v.def.kind == VKind.Tank ? 160 : 110) && SeesTarget(pos + Vector3.up * 2.5f, dt);
                 if (v.def.kind == VKind.Tank) { float pref = 45; if (d < pref * 0.6f) goal = pos - (tp - pos).normalized * 20; else if (d < pref * 1.4f) goal = pos + Vector3.Cross(Vector3.up, (tp - pos).normalized) * strafe * 10; }
             }
             Vector3 to = goal - pos; to.y = 0;
@@ -597,7 +616,7 @@ namespace BIS
             if (target != null)
             {
                 inp.aimPoint = AimWithError(v.gunnerT.position, Lead(v.gunnerT.position, target, v.gunW.def.speed), dt);
-                inp.fire = !v.gunW.def.UsesHeat || v.gunW.heat < 0.8f;
+                inp.fire = (!v.gunW.def.UsesHeat || v.gunW.heat < 0.8f) && SeesTarget(v.gunnerT.position, dt);
             }
             else inp.aimPoint = v.gunnerT.position + v.transform.forward * 30;
             v.seatIn[1] = inp;
@@ -1046,7 +1065,7 @@ namespace BIS
                 aimPoint = AimWithError(u.Eye, lead, dt);
                 burst -= dt; if (burst < -0.4f) burst = Random.Range(0.6f, 1.4f);
                 var w = u.Weapon;
-                fire = burst > 0 && (!w.def.UsesHeat || w.heat < 0.82f) && w.def.kind != WKind.Repair && w.def.kind != WKind.Rocket;
+                fire = burst > 0 && (!w.def.UsesHeat || w.heat < 0.82f) && w.def.kind != WKind.Repair && w.def.kind != WKind.Rocket && SeesTarget(u.Eye, dt);
                 if (w.def.kind == WKind.Repair || (w.def.kind == WKind.Rocket && !(target is Vehicle))) u.input.swap = true;
                 Vector3 to = target.AimPoint - pos; to.y = 0;
                 strafeT -= dt; if (strafeT <= 0) { strafeT = Random.Range(0.7f, 1.8f); strafe = -strafe; }

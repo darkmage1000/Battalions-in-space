@@ -212,6 +212,13 @@ namespace BIS
             if (w.def.kind == WKind.Rocket && !tVeh && d < 10) fire = false;
             if (w.def.kind == WKind.Beam) fire = d < w.def.range;
             if (w.def.kind == WKind.Repair) { fire = false; if (u.weapons[0] != null && u.cur != 0) u.input.swap = true; }
+            // no clear line to the target: hold fire (no grenades either) and go round for a view
+            if (!SeesTarget(u.Eye, dt))
+            {
+                fire = false; aim = false; crouch = false;
+                grenadeT = Mathf.Max(grenadeT, 0.5f);
+                if (!(r.OutsideZone(pos) || (r.shrinking && r.OutsideNext(pos)))) { move = ClimbToward(pos, target.AimPoint); sprint = d > 25; }
+            }
             // grenades, abilities
             if (grenadeT <= 0 && u.cls != null && u.cls.equip == Equip.Grenade && u.equipLeft > 0 && d > 9 && d < 26 && target is Unit)
             {
