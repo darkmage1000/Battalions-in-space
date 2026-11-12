@@ -20,9 +20,11 @@
 | Outpost props: satellite dishes, stations, barrels, consoles (`Assets/Resources/Models/Kit`, from "Space Kit" 1.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/space-kit)) | CC0 1.0 |
 | Menu click / confirm / error sounds (`Assets/Resources/Audio/Ui`, from "Interface Sounds" 1.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/interface-sounds)) | CC0 1.0 |
 | Hand-held guns: 18 blasters (`Assets/Resources/Models/Guns`, from "Blaster Kit" 2.1), recoloured per faction in code | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/blaster-kit)) | CC0 1.0 |
+| Title font "Kenney Future Narrow" (`Assets/Resources/Fonts`, from "Kenney Fonts") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/kenney-fonts)) | CC0 1.0 |
+| Crosshairs: 8 pictures (`Assets/Resources/UI/Crosshairs`, from "Crosshair Pack") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/crosshair-pack)) | CC0 1.0 |
 | Menu and results music "Qazijamjam Orchestral Battle Theme" (`Assets/Resources/Audio/Music/theme_qazijamjam.wav`) | Emma_MA ([OpenGameArt](https://opengameart.org/content/qazijamjam-orchestral-battle-theme)) | CC0 1.0 |
 
-Every downloaded file is CC0 (listed above). No asset-store packs or fonts are used.
+Every downloaded file is CC0 (listed above). No asset-store packs are used.
 
 ## Inspiration
 Mechanics are inspired by the classic mid-2000s team-based "battlefront" shooters (command posts, reinforcement tickets, heroes, space battles with boarding, galactic campaign). No names, characters, designs, sounds or logos from any existing game or franchise are used.

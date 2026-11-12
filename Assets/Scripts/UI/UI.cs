@@ -14,7 +14,13 @@ namespace BIS
         public const float H = 1080;
         static readonly Dictionary<int, Texture2D> texes = new Dictionary<int, Texture2D>();
         static GUIStyle label, button, box, field;
-        static Font font;
+        static Font font, head;
+        // The game's title and the biggest headings (VICTORY, a royale placing) are set in a display face (Kenney Future
+        // Narrow, CC0). It is wider than the plain font, so it is drawn a little smaller to keep the layout. Its K and N
+        // are stylised (K reads close to H), so buttons, labels and everything small stay in the plain font.
+        public const int HeadFrom = 50;
+        const float HeadScale = 0.82f;
+        static readonly Dictionary<string, Texture2D> sprites = new Dictionary<string, Texture2D>();
         public static readonly Color Panel = new Color(0.05f, 0.07f, 0.1f, 0.82f);
         public static readonly Color PanelLight = new Color(0.12f, 0.15f, 0.2f, 0.9f);
         public static readonly Color Gold = new Color(1f, 0.82f, 0.35f);
@@ -32,6 +38,7 @@ namespace BIS
         static void Init()
         {
             font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            head = Resources.Load<Font>("Fonts/KenneyFutureNarrow");
             label = new GUIStyle { font = font, fontSize = 22, richText = true, wordWrap = false };
             label.normal.textColor = Color.white;
             button = new GUIStyle(label) { alignment = TextAnchor.MiddleCenter, fontSize = 24 };
@@ -67,9 +74,32 @@ namespace BIS
             Fill(new Rect(r.xMax - w, r.y, w, r.height), c);
         }
 
+        /// <summary>A picture from Resources/UI (cached), or null.</summary>
+        public static Texture2D Sprite(string name)
+        {
+            if (sprites.TryGetValue(name, out var t)) return t;
+            t = Resources.Load<Texture2D>("UI/" + name);
+            sprites[name] = t;
+            return t;
+        }
+
+        /// <summary>Draws a Resources/UI picture centred on a point, tinted. False if there is no such picture.</summary>
+        public static bool Icon(string name, Vector2 centre, float size, Color tint)
+        {
+            var t = Sprite(name);
+            if (!t) return false;
+            var old = GUI.color;
+            GUI.color = tint;
+            GUI.DrawTexture(new Rect(centre.x - size / 2, centre.y - size / 2, size, size), t, ScaleMode.ScaleToFit, true);
+            GUI.color = old;
+            return true;
+        }
+
         public static void Text(Rect r, string s, int size = 22, Color? col = null, TextAnchor a = TextAnchor.UpperLeft, bool wrap = false, bool shadow = true)
         {
-            label.fontSize = size; label.alignment = a; label.wordWrap = wrap;
+            bool big = head && size >= HeadFrom && !wrap;
+            label.font = big ? head : font;
+            label.fontSize = big ? Mathf.RoundToInt(size * HeadScale) : size; label.alignment = a; label.wordWrap = wrap;
             if (shadow)
             {
                 label.normal.textColor = new Color(0, 0, 0, 0.75f);
@@ -81,7 +111,7 @@ namespace BIS
 
         public static float TextHeight(string s, int size, float width)
         {
-            label.fontSize = size; label.wordWrap = true;
+            label.font = font; label.fontSize = size; label.wordWrap = true;
             return label.CalcHeight(new GUIContent(s), width);
         }
 

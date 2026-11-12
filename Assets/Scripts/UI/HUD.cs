@@ -225,6 +225,23 @@ namespace BIS
             foreach (var m in msgs) { UI.Text(new Rect(0, y + 120, w, 34), m.text, 26, m.col, TextAnchor.MiddleCenter); y += 34; }
         }
 
+        /// <summary>The crosshair picture (Resources/UI/Crosshairs) for what the player is firing: each kind of gun has
+        /// its own shape, so the crosshair alone says what is in hand.</summary>
+        static string CrosshairFor(Unit me)
+        {
+            if (me.InVehicle) return "xh_rocket";
+            switch (me.Weapon.def.kind)
+            {
+                case WKind.Repeater: return "xh_carbine";
+                case WKind.Pistol: return "xh_pistol";
+                case WKind.Shotgun: return "xh_shotgun";
+                case WKind.Sniper: return "xh_sniper";
+                case WKind.Rocket: case WKind.Cannon: case WKind.Missile: case WKind.Torpedo: return "xh_rocket";
+                case WKind.Blade: case WKind.Beam: case WKind.Repair: return "xh_melee";
+                default: return "xh_rifle";
+            }
+        }
+
         // ── playing ──────────────────────────────────────────────────────
         void PlayHUD(PlayerControl pc)
         {
@@ -253,10 +270,12 @@ namespace BIS
             bool zoom = !me.InVehicle && me.input.aim && me.Weapon.def.zoomFov > 0;
             if (zoom)
             {
-                UI.Fill(new Rect(0, h / 2 - 1, w, 2), new Color(0, 0, 0, 0.6f));
-                UI.Fill(new Rect(w / 2 - 1, 0, 2, h), new Color(0, 0, 0, 0.6f));
+                UI.Fill(new Rect(0, h / 2 - 1, w, 2), new Color(0, 0, 0, 0.45f));
+                UI.Fill(new Rect(w / 2 - 1, 0, 2, h), new Color(0, 0, 0, 0.45f));
+                UI.Icon("Crosshairs/xh_scope", c, 460, new Color(1, 1, 1, 0.85f));
                 UI.Dot(c, 3, UI.Bad);
             }
+            else if (UI.Icon("Crosshairs/" + CrosshairFor(me), c, 54 + (me.InVehicle ? 8 : Mathf.Min(20, me.Weapon.def.spread * 8)), cc)) { }
             else
             {
                 float g = 8 + (me.InVehicle ? 0 : me.Weapon.def.spread * 4);

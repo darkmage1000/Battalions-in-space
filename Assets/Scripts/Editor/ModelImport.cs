@@ -43,6 +43,15 @@ namespace BIS.EditorTools
 
         void OnPreprocessTexture()
         {
+            // HUD pictures (crosshairs, icons): crisp, see-through, never tiled
+            if (assetPath.Contains("Resources/UI/"))
+            {
+                var u = (TextureImporter)assetImporter;
+                u.textureType = TextureImporterType.Default;
+                u.alphaIsTransparency = true; u.mipmapEnabled = false; u.wrapMode = TextureWrapMode.Clamp;
+                u.npotScale = TextureImporterNPOTScale.None; u.textureCompression = TextureImporterCompression.Uncompressed;
+                return;
+            }
             if (!assetPath.Contains("Resources/Models/")) return;
             var t = (TextureImporter)assetImporter;
             t.maxTextureSize = 1024;
