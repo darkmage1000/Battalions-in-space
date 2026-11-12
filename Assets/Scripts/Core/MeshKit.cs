@@ -137,6 +137,8 @@ namespace BIS
         /// <summary>Lumpy boulder: icosahedron-ish sphere with jittered vertices.</summary>
         public void Rock(Vector3 center, Vector3 size, Quaternion rot, Color col, int seed, float jitter = 0.25f)
         {
+            // a real boulder gets a hand-made rock model (not on Low graphics); smooth lumps (snow caps, hedges, sandbags) stay as built here
+            if (jitter >= 0.2f && NatureModels.AddRock(this, center, size, rot, col, seed)) return;
             var rng = new System.Random(seed);
             const int seg = 7, rings = 5;
             var pts = new Vector3[(rings + 1) * (seg + 1)];

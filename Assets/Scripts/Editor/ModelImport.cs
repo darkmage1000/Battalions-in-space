@@ -57,6 +57,13 @@ namespace BIS.EditorTools
             t.maxTextureSize = 1024;
             t.mipmapEnabled = true;
             // palette textures whose colours are read per vertex at run time (GunModels): readable, exact colours
+            if (assetPath.Contains("/Nature/"))
+            {
+                bool bake = assetPath.Contains("/bake_");   // small colour maps read per vertex (NatureModels)
+                t.isReadable = bake; t.mipmapEnabled = !bake; t.wrapMode = bake ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
+                if (bake) t.textureCompression = TextureImporterCompression.Uncompressed;
+                else { t.maxTextureSize = 2048; t.alphaIsTransparency = true; t.mipMapsPreserveCoverage = true; t.alphaTestReferenceValue = 0.4f; }
+            }
             if (assetPath.Contains("/Guns/")) { t.isReadable = true; t.mipmapEnabled = false; t.filterMode = FilterMode.Point; t.textureCompression = TextureImporterCompression.Uncompressed; }
         }
     }

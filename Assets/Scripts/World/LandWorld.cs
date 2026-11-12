@@ -438,10 +438,37 @@ namespace BIS
                         break;
                 }
             }
+            // ground cover on forest floors (bushes, ferns, broad-leaf plants): looks only - no colliders, and from its own
+            // random stream so the map is the same with it (Medium / High graphics) and without it (Low)
+            int coverSeed = rng.Next();
+            if (NatureModels.On)
+            {
+                var cr = new System.Random(coverSeed);
+                float CR(float a, float b) => a + (b - a) * (float)cr.NextDouble();
+                int cover = Mathf.RoundToInt((Settings.Quality >= 2 ? 400 : 200) * def.props);
+                for (int n = 0; n < cover; n++)
+                {
+                    float x = CR(-lim, lim), z = CR(-lim, lim), roll = CR(0, 1), yaw = CR(0, 360), sz = CR(0, 1);
+                    if (NearPost(x, z, 10) || !Clear(x, z)) continue;
+                    var k = KitAt(x, z);
+                    if (here != Theme.Forest) continue;
+                    float y = Height(x, z);
+                    if (Normal(x, z).y < 0.78f || (def.Floating && y < VoidY + 1)) continue;
+                    Vector3 p = new Vector3(x, y - 0.05f, z);
+                    if (roll < 0.4f) NatureModels.AddCover(Trees(k).solid, Trees(k).leaves, "Bush_Common", p, yaw, Mathf.Lerp(1.6f, 3.2f, sz), new Color(0.3f, 0.5f, 0.2f));
+                    else if (roll < 0.75f) NatureModels.AddCover(Trees(k).solid, Trees(k).leaves, "Fern_1", p, yaw, Mathf.Lerp(1.4f, 2.6f, sz), new Color(0.9f, 1f, 0.85f));
+                    else NatureModels.AddCover(Trees(k).solid, Trees(k).leaves, "Plant_1_Big", p, yaw, Mathf.Lerp(0.9f, 1.6f, sz), Color.white);
+                }
+            }
             BuildLayoutProps((x, z) => KitAt(x, z));
             var root = new GameObject("props").transform;
             root.SetParent(transform, false);
-            for (int i = 0; i < kits.Length; i++) if (kits[i].Count > 0) kits[i].Make("props" + i, root, true);
+            for (int i = 0; i < kits.Length; i++)
+            {
+                if (kits[i].Count > 0) kits[i].Make("props" + i, root, true);
+                MakeTrees(kits[i], root, i);
+            }
+            treesOf.Clear();
         }
 
         void Arch(MeshKit k, Vector3 p, Quaternion q)
@@ -471,10 +498,58 @@ namespace BIS
             Col(p + Vector3.up * 1.0f, new Vector3(4.5f, 2f, 9f), tilt);
         }
 
+        // Hand-made trees are drawn in two versions per map chunk: the models (trunks in one mesh, leaves in a cut-out
+        // mesh) up close, and the simple code-built shapes from further off - an LODGroup per chunk swaps them. A forest
+        // map has hundreds of trees and the royale map about 1,500: far too many to draw as models all at once.
+        class TreeKits { public MeshKit solid = new MeshKit(), leaves = new MeshKit(), far = new MeshKit(); }
+        readonly Dictionary<MeshKit, TreeKits> treesOf = new Dictionary<MeshKit, TreeKits>();
+        TreeKits Trees(MeshKit k)
+        {
+            if (!treesOf.TryGetValue(k, out var t)) treesOf[k] = t = new TreeKits();
+            return t;
+        }
+        /// <summary>How far away the tree models (and ground cover) are drawn before the simple shapes take over, metres.</summary>
+        static float TreeModelRange => Settings.Quality >= 2 ? 380 : 240;
+
+        void MakeTrees(MeshKit k, Transform root, int i)
+        {
+            if (!treesOf.TryGetValue(k, out var t) || t.solid.Count + t.leaves.Count == 0) return;
+            var go = new GameObject("trees" + i);
+            go.transform.SetParent(root, false);
+            var near = new List<Renderer>();
+            if (t.solid.Count > 0) near.Add(t.solid.Make("trunks", go.transform, true).GetComponent<Renderer>());
+            if (t.leaves.Count > 0) near.Add(t.leaves.Make("leaves", go.transform, true, NatureModels.LeafMat).GetComponent<Renderer>());
+            var far = t.far.Count > 0 ? new Renderer[] { t.far.Make("far", go.transform, true).GetComponent<Renderer>() } : new Renderer[0];
+            var lod = go.AddComponent<LODGroup>();
+            lod.fadeMode = LODFadeMode.None;
+            lod.SetLODs(new[] { new LOD(0.5f, near.ToArray()), new LOD(0.0005f, far) });
+            lod.RecalculateBounds();
+            // the swap is wanted at a distance; an LODGroup thinks in how much of the screen's height its bounds fill
+            float fov = Game.Cam ? Game.Cam.fieldOfView : 65f;
+            float at = lod.size / (2 * TreeModelRange * Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad)) * QualitySettings.lodBias;
+            lod.SetLODs(new[] { new LOD(Mathf.Clamp(at, 0.02f, 0.9f), near.ToArray()), new LOD(0.0005f, far) });
+        }
+
         void BigTree(MeshKit k, Vector3 p)
         {
-            float hh = R(16, 28), r = R(0.9f, 1.6f);
+            // size, colours and the trunk's collider are the same at every graphics level (two devices, one map)
+            float hh = R(12, 20), yaw = R(0, 360);
+            int variant = rng.Next(1000), drawSeed = rng.Next();
+            float r = hh * NatureModels.Trunk(NatureModels.CommonTrunk, variant);
             Color bark = Color.Lerp(new Color(0.34f, 0.24f, 0.17f), new Color(0.45f, 0.36f, 0.26f), R());
+            Color tint = new Color(R(0.82f, 1f), R(0.9f, 1f), R(0.7f, 1f));
+            ColCap(p - Vector3.up, r, hh * 0.62f);
+            // the code-built shapes are drawn from their own random stream, so the map's stream is the same either way
+            var keep = rng; rng = new System.Random(drawSeed);
+            var t = NatureModels.On ? Trees(k) : null;
+            if (t != null && NatureModels.AddTree(t.solid, t.leaves, NatureModels.Tree(NatureModels.CommonTrees, variant), p - Vector3.up * 0.3f, yaw, hh, bark, tint))
+                BigTreeShapes(t.far, p, hh, Mathf.Max(0.5f, r), bark, hh / 26f);   // the far-off stand-in
+            else BigTreeShapes(k, p, hh * 1.25f, Mathf.Max(0.8f, r * 1.6f), bark, 1);   // Low graphics
+            rng = keep;
+        }
+
+        void BigTreeShapes(MeshKit k, Vector3 p, float hh, float r, Color bark, float crown)
+        {
             k.Cyl(p + Vector3.up * (hh / 2 - 1), r, hh, Quaternion.identity, bark, 8, r * 0.6f);
             for (int i = 0; i < 4; i++)
             {
@@ -485,16 +560,26 @@ namespace BIS
             int blobs = 4 + rng.Next(3);
             for (int i = 0; i < blobs; i++)
             {
-                Vector3 o = new Vector3(R(-4, 4), hh * R(0.75f, 1.05f), R(-4, 4));
-                float s = R(6, 10);
+                Vector3 o = new Vector3(R(-4, 4) * crown, hh * R(0.75f, 1.05f), R(-4, 4) * crown);
+                float s = R(6, 10) * crown;
                 k.Sphere(p + o, new Vector3(s, s * 0.7f, s), Quaternion.Euler(0, R(0, 90), 0), leaf * R(0.85f, 1.1f), 7, 4);
             }
-            ColCap(p - Vector3.up, r * 0.95f, hh);
         }
 
         void Pine(MeshKit k, Vector3 p, bool snow)
         {
-            float hh = R(9, 17), r = hh * 0.22f;
+            float hh = R(9, 17), yaw = R(0, 360);
+            int variant = rng.Next(1000);
+            ColCap(p, Mathf.Max(0.3f, hh * NatureModels.Trunk(NatureModels.PineTrunk, variant)), hh * 0.6f);
+            var t = NatureModels.On ? Trees(k) : null;
+            if (t != null && NatureModels.AddTree(t.solid, t.leaves, NatureModels.Tree(NatureModels.Pines, variant), p - Vector3.up * 0.3f, yaw, hh,
+                new Color(0.3f, 0.22f, 0.16f), snow ? new Color(0.72f, 0.95f, 1f) : new Color(1f, 1f, 0.88f)))
+                PineShapes(t.far, p, hh, hh * 0.3f, false);
+            else PineShapes(k, p, hh, hh * 0.22f, snow);
+        }
+
+        void PineShapes(MeshKit k, Vector3 p, float hh, float r, bool snow)
+        {
             k.Cyl(p + Vector3.up * hh * 0.2f, 0.4f, hh * 0.4f, Quaternion.identity, new Color(0.3f, 0.22f, 0.16f), 6);
             Color c = snow ? new Color(0.2f, 0.32f, 0.26f) : new Color(0.14f, 0.3f, 0.18f);
             for (int i = 0; i < 3; i++)
@@ -503,7 +588,6 @@ namespace BIS
                 k.Cone(p + Vector3.up * (y + hh * 0.2f), cr, hh * 0.42f, Quaternion.Euler(0, i * 30, 0), c, 7);
                 if (snow) k.Cone(p + Vector3.up * (y + hh * 0.28f), cr * 0.55f, hh * 0.27f, Quaternion.Euler(0, i * 30, 0), new Color(0.92f, 0.95f, 1f), 7);
             }
-            ColCap(p, 0.5f, hh * 0.6f);
         }
 
         // ── posts ────────────────────────────────────────────────────────
