@@ -19,6 +19,7 @@
 | Capital ship interior props (`Assets/Resources/Models/Interior`, from "Ultimate Modular Sci-Fi") | Quaternius ([OpenGameArt](https://opengameart.org/content/lowpoly-modular-sci-fi-environments)) | CC0 1.0 |
 | Outpost props: satellite dishes, stations, barrels, consoles (`Assets/Resources/Models/Kit`, from "Space Kit" 1.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/space-kit)) | CC0 1.0 |
 | Menu click / confirm / error sounds (`Assets/Resources/Audio/Ui`, from "Interface Sounds" 1.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/interface-sounds)) | CC0 1.0 |
+| Hand-held guns: 18 blasters (`Assets/Resources/Models/Guns`, from "Blaster Kit" 2.1), recoloured per faction in code | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/blaster-kit)) | CC0 1.0 |
 | Menu and results music "Qazijamjam Orchestral Battle Theme" (`Assets/Resources/Audio/Music/theme_qazijamjam.wav`) | Emma_MA ([OpenGameArt](https://opengameart.org/content/qazijamjam-orchestral-battle-theme)) | CC0 1.0 |
 
 Every downloaded file is CC0 (listed above). No asset-store packs or fonts are used.

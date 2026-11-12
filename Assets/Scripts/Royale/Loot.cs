@@ -171,7 +171,7 @@ namespace BIS
         public static Mesh For(LootItem it)
         {
             if (it.kind == LootKind.Tag) return Tag();
-            string k = it.kind == LootKind.Weapon ? $"w{it.weapon.kind}_{it.tier}" : $"{it.kind}_{it.tier}";
+            string k = it.kind == LootKind.Weapon ? $"w{it.weapon.kind}_{it.tier}_{it.weapon.lootFaction}_{(it.weapon.splash > 0 ? 1 : 0)}" : $"{it.kind}_{it.tier}";
             if (cache.TryGetValue(k, out var m) && m) return m;
             var kit = new MeshKit();
             Color tc = Tiers.Of(it.tier), glow = MeshKit.Glow(tc * 0.85f);
@@ -180,6 +180,8 @@ namespace BIS
             {
                 case LootKind.Weapon:
                     var q = Quaternion.Euler(0, 0, 90);   // lying on its side
+                    // the real gun, lying on its side at 1.4x so it reads from a distance, accent = its rarity
+                    if (GunModels.Add(kit, it.weapon, it.weapon.lootFaction, tc, new Vector3(0, 0.14f, -0.25f), Quaternion.Euler(0, 0, 80), 1.4f) > 0) break;
                     switch (it.weapon.kind)
                     {
                         case WKind.Sniper: kit.Box(new Vector3(0, 0.08f, 0), new Vector3(0.1f, 0.16f, 1.4f), metal); kit.Cyl(new Vector3(0, 0.2f, 0.1f), 0.06f, 0.5f, Quaternion.Euler(90, 0, 0), trim, 6); break;

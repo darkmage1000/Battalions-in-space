@@ -47,6 +47,8 @@ namespace BIS.EditorTools
             var t = (TextureImporter)assetImporter;
             t.maxTextureSize = 1024;
             t.mipmapEnabled = true;
+            // palette textures whose colours are read per vertex at run time (GunModels): readable, exact colours
+            if (assetPath.Contains("/Guns/")) { t.isReadable = true; t.mipmapEnabled = false; t.filterMode = FilterMode.Point; t.textureCompression = TextureImporterCompression.Uncompressed; }
         }
     }
 }

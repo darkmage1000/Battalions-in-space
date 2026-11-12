@@ -300,10 +300,11 @@ namespace BIS
             var mf = gun.GetComponent<MeshFilter>();
             if (!mf) { mf = gun.gameObject.AddComponent<MeshFilter>(); gun.gameObject.AddComponent<MeshRenderer>().sharedMaterial = Mats.Lit; }
             if (w == null) { mf.sharedMesh = null; return; }
-            string k = $"gun_{w.kind}_{f.id}_{(int)(glow.r * 9)}{(int)(glow.g * 9)}{(int)(glow.b * 9)}_{w.name}";
+            string k = $"gun_{w.kind}_{f.id}_{(int)(glow.r * 9)}{(int)(glow.g * 9)}{(int)(glow.b * 9)}_{w.name}_{w.tier}_{w.lootFaction}";
             mf.sharedMesh = Cached(k, kit => BuildGun(kit, w));
             if (!muzzle) { muzzle = new GameObject("muzzle").transform; muzzle.SetParent(gun, false); }
-            muzzle.localPosition = new Vector3(0, 0.03f, MuzzleZ(w));
+            float modelMuzzle = GunModels.MuzzleZ(w, GunFaction(w), GunScale);
+            muzzle.localPosition = new Vector3(0, 0.03f, modelMuzzle > 0 ? modelMuzzle : MuzzleZ(w));
             gun.localPosition = new Vector3(w.kind == WKind.Rocket ? 0.16f : gun.localPosition.x, gun.localPosition.y, w.kind == WKind.Blade ? 0.38f : 0.32f);
             rends = GetComponentsInChildren<Renderer>();
         }
@@ -514,8 +515,16 @@ namespace BIS
             }
         }
 
+        /// <summary>Whose gun this is: a looted gun keeps the look of the faction that made it.</summary>
+        int GunFaction(WeaponDef w) => w.tier >= 0 ? w.lootFaction : f.id;
+        float GunScale => heroDef != null ? Mathf.Max(1f, heroDef.scale * 0.9f) : 1f;
+
         float BuildGun(MeshKit k, WeaponDef w)
         {
+            // a hand-made model where the kit has one: this faction's shape for the kind, accent in the faction's colour
+            // (a looted gun: its rarity's colour)
+            float mz = GunModels.Add(k, w, GunFaction(w), w.tier >= 0 ? Tiers.Of(w.tier) : second, Vector3.zero, Quaternion.identity, GunScale);
+            if (mz > 0) return mz;
             Color metal = new Color(0.22f, 0.22f, 0.25f), trim = Dark(second, 0.8f);
             switch (w.kind)
             {
