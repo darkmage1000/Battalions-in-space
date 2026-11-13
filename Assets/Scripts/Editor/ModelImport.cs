@@ -50,6 +50,13 @@ namespace BIS.EditorTools
                 d.sRGBTexture = false; d.mipmapEnabled = true; d.wrapMode = TextureWrapMode.Repeat; d.filterMode = FilterMode.Trilinear; d.anisoLevel = 4;
                 return;
             }
+            // particle sprite sheets (Fx): see-through, smooth at a distance, never tiled
+            if (assetPath.Contains("Resources/Textures/Fx/"))
+            {
+                var f = (TextureImporter)assetImporter;
+                f.alphaIsTransparency = true; f.mipmapEnabled = true; f.wrapMode = TextureWrapMode.Clamp; f.maxTextureSize = 512;
+                return;
+            }
             // HUD pictures (crosshairs, icons): crisp, see-through, never tiled
             if (assetPath.Contains("Resources/UI/"))
             {
