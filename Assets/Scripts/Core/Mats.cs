@@ -26,6 +26,27 @@ namespace BIS
             }
         }
 
+        static Shader worldS;
+        static readonly Dictionary<string, Material> worldMats = new Dictionary<string, Material>();
+        /// <summary>BIS/LitWorld with one of the detail maps in Resources/Textures/Detail (red = ground grain, green = wall /
+        /// cliff grain), for the static land: terrain, rocks, buildings. Low graphics gets the plain material.</summary>
+        public static Material World(string detail, float topScale, float sideScale, float strength)
+        {
+            if (Settings.Quality <= 0) return Lit;
+            if (worldMats.TryGetValue(detail, out var m) && m) return m;
+            if (!worldS) worldS = Resources.Load<Shader>("Shaders/BIS_LitWorld");
+            var tex = Resources.Load<Texture2D>("Textures/Detail/detail_" + detail);
+            if (!worldS || !tex) return Lit;
+            m = new Material(worldS) { name = "BIS_World_" + detail, enableInstancing = true };
+            m.SetTexture("_Detail", tex); m.SetFloat("_TopScale", topScale); m.SetFloat("_SideScale", sideScale); m.SetFloat("_Strength", strength);
+            worldMats[detail] = m;
+            return m;
+        }
+        /// <summary>The terrain of a planet: grass, sand, snow, ash or paving grain on top, rock on its cliffs.</summary>
+        public static Material Ground(Theme t) => World(t == Theme.Desert ? "desert" : t == Theme.Snow ? "snow" : t == Theme.Volcanic ? "volcanic" : t == Theme.Urban ? "urban" : "forest", 0.16f, 0.12f, t == Theme.Urban ? 0.4f : 0.7f);
+        /// <summary>Things built or lying on the land (walls, roofs, streets, boulders, trunks): plaster on the sides, a finer grain on top.</summary>
+        public static Material Built => World("built", 0.3f, 0.45f, 0.42f);
+
         static Shader litTexS;
         static readonly Dictionary<string, Material> texMats = new Dictionary<string, Material>();
         public static Shader LitTexShader => litTexS ? litTexS : (litTexS = Resources.Load<Shader>("Shaders/BIS_LitTex"));

@@ -43,6 +43,13 @@ namespace BIS.EditorTools
 
         void OnPreprocessTexture()
         {
+            // detail maps (BIS/LitWorld): plain numbers, not colours; tiled, smooth at a distance
+            if (assetPath.Contains("Resources/Textures/Detail/"))
+            {
+                var d = (TextureImporter)assetImporter;
+                d.sRGBTexture = false; d.mipmapEnabled = true; d.wrapMode = TextureWrapMode.Repeat; d.filterMode = FilterMode.Trilinear; d.anisoLevel = 4;
+                return;
+            }
             // HUD pictures (crosshairs, icons): crisp, see-through, never tiled
             if (assetPath.Contains("Resources/UI/"))
             {

@@ -281,7 +281,7 @@ namespace BIS
                             if (!(void00 || void11 || p10.y < v)) k.Tri(p00, p11, p10, GroundColor(c2.x, c2.z, c2.y, 1 - n2.y));
                         }
                     if (k.Count == 0) continue;
-                    var go = k.Make($"chunk_{cx}_{cz}", root, false);
+                    var go = k.Make($"chunk_{cx}_{cz}", root, false, Mats.Ground(def.theme));
                     go.layer = Layers.Ground;
                     go.GetComponent<MeshRenderer>().receiveShadows = true;
                     var mc = go.AddComponent<MeshCollider>();
@@ -465,7 +465,7 @@ namespace BIS
             root.SetParent(transform, false);
             for (int i = 0; i < kits.Length; i++)
             {
-                if (kits[i].Count > 0) kits[i].Make("props" + i, root, true);
+                if (kits[i].Count > 0) kits[i].Make("props" + i, root, true, Mats.Built);
                 MakeTrees(kits[i], root, i);
             }
             treesOf.Clear();
@@ -517,7 +517,7 @@ namespace BIS
             var go = new GameObject("trees" + i);
             go.transform.SetParent(root, false);
             var near = new List<Renderer>();
-            if (t.solid.Count > 0) near.Add(t.solid.Make("trunks", go.transform, true).GetComponent<Renderer>());
+            if (t.solid.Count > 0) near.Add(t.solid.Make("trunks", go.transform, true, Mats.Built).GetComponent<Renderer>());
             if (t.leaves.Count > 0) near.Add(t.leaves.Make("leaves", go.transform, true, NatureModels.LeafMat).GetComponent<Renderer>());
             var far = t.far.Count > 0 ? new Renderer[] { t.far.Make("far", go.transform, true).GetComponent<Renderer>() } : new Renderer[0];
             var lod = go.AddComponent<LODGroup>();
@@ -701,7 +701,7 @@ namespace BIS
                 Col(tp + q * new Vector3(0, 7.1f, 0), new Vector3(3.4f, 0.3f, 3.4f), q);
                 Col(tp + q * new Vector3(0, 3.5f, 0), new Vector3(2.6f, 7, 2.6f), q);
             }
-            k.Make("outpost", parent, true).transform.position = Vector3.zero;   // vertices are in world space
+            k.Make("outpost", parent, true, Mats.Built).transform.position = Vector3.zero;   // vertices are in world space
             KitProps(parent, p, big, idx, rad);
             AtBase();
         }

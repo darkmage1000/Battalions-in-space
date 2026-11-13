@@ -19,6 +19,11 @@ namespace BIS
         // Narrow, CC0). It is wider than the plain font, so it is drawn a little smaller to keep the layout. Its K and N
         // are stylised (K reads close to H), so buttons, labels and everything small stay in the plain font.
         public const int HeadFrom = 50;
+        // All other text is Rajdhani SemiBold (SIL Open Font Licence). Its letters are narrower and a little shorter than
+        // the old plain font's at the same size, so every size is drawn BodyScale larger: same room taken, same legibility.
+        const float BodyScale = 1.14f;
+        static float body = 1f;
+        static int Body(int size) => Mathf.RoundToInt(size * body);
         const float HeadScale = 0.82f;
         static readonly Dictionary<string, Texture2D> sprites = new Dictionary<string, Texture2D>();
         public static readonly Color Panel = new Color(0.05f, 0.07f, 0.1f, 0.82f);
@@ -37,7 +42,8 @@ namespace BIS
 
         static void Init()
         {
-            font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            font = Resources.Load<Font>("Fonts/Rajdhani-SemiBold");
+            if (font) body = BodyScale; else font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             head = Resources.Load<Font>("Fonts/KenneyFutureNarrow");
             label = new GUIStyle { font = font, fontSize = 22, richText = true, wordWrap = false };
             label.normal.textColor = Color.white;
@@ -99,7 +105,7 @@ namespace BIS
         {
             bool big = head && size >= HeadFrom && !wrap;
             label.font = big ? head : font;
-            label.fontSize = big ? Mathf.RoundToInt(size * HeadScale) : size; label.alignment = a; label.wordWrap = wrap;
+            label.fontSize = big ? Mathf.RoundToInt(size * HeadScale) : Body(size); label.alignment = a; label.wordWrap = wrap;
             if (shadow)
             {
                 label.normal.textColor = new Color(0, 0, 0, 0.75f);
@@ -111,7 +117,7 @@ namespace BIS
 
         public static float TextHeight(string s, int size, float width)
         {
-            label.font = font; label.fontSize = size; label.wordWrap = true;
+            label.font = font; label.fontSize = Body(size); label.wordWrap = true;
             return label.CalcHeight(new GUIContent(s), width);
         }
 
@@ -129,7 +135,7 @@ namespace BIS
             if (tint.HasValue && enabled && !selected) bg = Color.Lerp(bg, tint.Value, hover ? 0.55f : 0.35f);
             Fill(r, bg);
             Frame(r, selected ? Gold : new Color(1, 1, 1, hover ? 0.35f : 0.12f), 1);
-            button.fontSize = size;
+            button.fontSize = Body(size);
             button.normal.textColor = enabled ? (selected ? Color.black : Color.white) : new Color(1, 1, 1, 0.35f);
             GUI.Label(r, s, button);
             if (enabled && GUI.Button(r, GUIContent.none, box))

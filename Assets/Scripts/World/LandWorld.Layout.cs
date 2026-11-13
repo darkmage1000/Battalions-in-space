@@ -524,6 +524,65 @@ namespace BIS
             for (int s = 0; s < 2; s++)
                 for (float x = -w / 2 + 1.6f; x < w / 2 - 1; x += 2.6f)
                     k.Box(p + Vector3.up * (hh * 0.6f) + rot * new Vector3(x, 0, (s == 0 ? 1 : -1) * (dp / 2 + 0.03f)), new Vector3(1.1f, 1f, 0.08f), rot, new Color(0.12f, 0.13f, 0.15f));
+            if (Settings.Quality <= 0) return;
+            // the same builder's touches as on the houses you can enter (looks only, no random numbers): frames, sills,
+            // shutters on forest worlds, corner posts and a beam under the roof
+            Color trim = TrimColor;
+            Color sc = shutterCols[Mathf.Abs(Mathf.RoundToInt(p.x * 5.3f + p.z * 9.1f)) % shutterCols.Length];
+            for (int s = 0; s < 2; s++)
+                for (float x = -w / 2 + 1.6f; x < w / 2 - 1; x += 2.6f)
+                {
+                    float sg = s == 0 ? 1 : -1;
+                    Vector3 wp = p + Vector3.up * (hh * 0.6f) + rot * new Vector3(x, 0, sg * (dp / 2 + 0.07f));
+                    k.Box(wp + Vector3.up * 0.58f, new Vector3(1.45f, 0.16f, 0.14f), rot, trim);
+                    k.Box(wp - Vector3.up * 0.57f + rot * new Vector3(0, 0, sg * 0.07f), new Vector3(1.45f, 0.12f, 0.28f), rot, trim);
+                    k.Box(wp, new Vector3(0.07f, 1f, 0.08f), rot, trim);
+                    if (here == Theme.Forest || here == Theme.Sky)
+                        for (int e = -1; e <= 1; e += 2) k.Box(wp + rot * new Vector3(e * 0.82f, 0, 0), new Vector3(0.5f, 1f, 0.07f), rot, sc);
+                }
+            for (int cx = -1; cx <= 1; cx += 2)
+                for (int cz = -1; cz <= 1; cz += 2)
+                    k.Box(p + Vector3.up * hh / 2 + rot * new Vector3(cx * (w / 2 - 0.1f), 0, cz * (dp / 2 - 0.1f)), new Vector3(0.34f, hh, 0.34f), rot, trim);
+            k.Box(top - Vector3.up * 0.16f, new Vector3(w + 0.14f, 0.3f, dp + 0.14f), rot, trim);
+        }
+
+        Color TrimColor => here == Theme.Forest ? new Color(0.27f, 0.18f, 0.12f) : here == Theme.Snow ? new Color(0.32f, 0.36f, 0.42f) : here == Theme.Volcanic ? new Color(0.13f, 0.11f, 0.11f)
+                         : here == Theme.Urban ? new Color(0.3f, 0.31f, 0.34f) : here == Theme.Sky ? new Color(0.95f, 0.96f, 1f) : new Color(0.5f, 0.38f, 0.26f);
+        static readonly Color[] shutterCols = { new Color(0.2f, 0.36f, 0.25f), new Color(0.2f, 0.3f, 0.46f), new Color(0.5f, 0.2f, 0.16f), new Color(0.6f, 0.46f, 0.2f) };
+
+        /// <summary>
+        /// What a builder adds to a bare wall with a hole in it: a frame round the opening (lintel, jambs, a sill and glazing
+        /// bars for a window; an awning over a door), corner posts and a beam under the roof - timber on forest worlds
+        /// (with painted shutters), adobe beams in the desert, steel in the cold and the cities. Looks only: no colliders
+        /// and no random numbers, so it changes nothing about the map (and Low graphics leaves it off).
+        /// </summary>
+        void WallTrim(MeshKit k, Vector3 centre, Vector3 along, Vector3 outward, Quaternion wq, float len, float hh, float t, float gap, float gapH, float gapY, bool isDoor, Vector3 housePos, int side)
+        {
+            Color trim = TrimColor;
+            Vector3 up = Vector3.up, face = centre + outward * (t / 2 + 0.05f);
+            int hsh = Mathf.Abs(Mathf.RoundToInt(housePos.x * 5.3f + housePos.z * 9.1f));
+            k.Box(face + up * (gapY + gapH + 0.1f), new Vector3(gap + 0.5f, 0.2f, 0.16f), wq, trim);                                              // lintel
+            for (int e = -1; e <= 1; e += 2) k.Box(face + along * e * (gap / 2 + 0.08f) + up * (gapY + gapH / 2), new Vector3(0.16f, gapH, 0.14f), wq, trim);   // jambs
+            if (!isDoor)
+            {
+                k.Box(face + outward * 0.08f + up * (gapY - 0.07f), new Vector3(gap + 0.5f, 0.14f, 0.32f), wq, trim);                             // sill
+                k.Box(centre + up * (gapY + gapH / 2), new Vector3(0.07f, gapH, 0.07f), wq, trim);                                                // glazing bars
+                k.Box(centre + up * (gapY + gapH / 2), new Vector3(gap, 0.07f, 0.07f), wq, trim);
+                if (here == Theme.Forest || here == Theme.Sky)
+                {
+                    Color sc = shutterCols[hsh % shutterCols.Length];
+                    for (int e = -1; e <= 1; e += 2) k.Box(face + along * e * (gap / 2 + 0.5f) + up * (gapY + gapH / 2), new Vector3(0.6f, gapH, 0.07f), wq, sc);
+                }
+            }
+            else if (gap < 3 && (here == Theme.Forest || here == Theme.Desert || here == Theme.Sky))
+            {
+                // a small awning over the door, in the house's own colour
+                Color ac = here == Theme.Desert ? new Color(0.62f, 0.3f, 0.2f) : shutterCols[hsh % shutterCols.Length];
+                k.Box(face + outward * 0.5f + up * (gapH + 0.42f), new Vector3(gap + 1f, 0.08f, 1.1f), wq * Quaternion.Euler(14, 0, 0), ac);
+            }
+            // corner posts and the beam the roof sits on
+            for (int e = -1; e <= 1; e += 2) k.Box(centre + along * e * (len / 2 - 0.13f) + outward * 0.04f + up * hh / 2, new Vector3(0.3f, hh, t + 0.1f), wq, trim);
+            k.Box(face + up * (hh - 0.15f), new Vector3(len + 0.1f, 0.3f, 0.16f), wq, trim);
         }
 
         /// <summary>A building you can walk into: four walls with a doorway, window gaps and a flat roof.</summary>
@@ -560,6 +619,7 @@ namespace BIS
                 Vector3 above = centre + Vector3.up * ((gapY + gapH + hh) / 2);
                 k.Box(above, new Vector3(gap, hh - gapY - gapH, t), wq, wall); Col(above, new Vector3(gap, hh - gapY - gapH, t), wq);
                 if (gapY > 0) { Vector3 below = centre + Vector3.up * (gapY / 2); k.Box(below, new Vector3(gap, gapY, t), wq, wall); Col(below, new Vector3(gap, gapY, t), wq); }
+                if (Settings.Quality > 0) WallTrim(k, centre, along, rot * n, wq, len, hh, t, gap, gapH, gapY, s == door, p, s);
             }
             {
                 Vector3 n = door == 0 ? Vector3.forward : door == 1 ? Vector3.right : door == 2 ? Vector3.back : Vector3.left;
@@ -596,6 +656,14 @@ namespace BIS
             k.Box(roof, new Vector3(w + 0.4f, 0.4f, dp + 0.4f), rot, dark);
             Col(roof, new Vector3(w + 0.4f, 0.4f, dp + 0.4f), rot);
             if (here == Theme.Forest && topFloor) k.Wedge(roof + Vector3.up * 1.4f, new Vector3(w + 0.8f, 2.6f, dp + 0.8f), rot, new Color(0.35f, 0.2f, 0.14f));
+            if (here == Theme.Forest && topFloor && Settings.Quality > 0)
+            {
+                // a stone chimney, on one end or the other
+                float cs = (Mathf.Abs(Mathf.RoundToInt(p.x * 3.1f + p.z * 7.7f)) & 1) == 0 ? 1 : -1;
+                Vector3 cp = roof + rot * new Vector3(cs * (w / 2 - 1.1f), 1.5f, dp * 0.22f);
+                k.Box(cp, new Vector3(0.9f, 3.2f, 0.9f), rot, new Color(0.46f, 0.44f, 0.42f));
+                k.Box(cp + Vector3.up * 1.65f, new Vector3(1.1f, 0.2f, 1.1f), rot, new Color(0.32f, 0.3f, 0.29f));
+            }
             if (here == Theme.Snow && topFloor) k.Box(roof + Vector3.up * 0.3f, new Vector3(w + 0.2f, 0.25f, dp + 0.2f), rot, new Color(0.93f, 0.95f, 1f));
             return made;
         }
@@ -622,7 +690,7 @@ namespace BIS
                 k.Quad(r0 + dn, r1 + dn, r1, r0, dark);
                 k.Quad(l0, l1, l1 + dn, l0 + dn, dark);
             }
-            var go = k.Make("bridge", transform, true);
+            var go = k.Make("bridge", transform, true, Mats.Built);
             go.layer = Layers.Ground;
             go.AddComponent<MeshCollider>().sharedMesh = go.GetComponent<MeshFilter>().sharedMesh;
             // rails along the level middle part, pillars down into the channel

@@ -9,7 +9,7 @@
 ## Third-party
 | What | Source | Licence |
 |---|---|---|
-| Unity 6 engine and its built-in `LegacyRuntime.ttf` font (UI text) | Unity Technologies | Unity licence (ships with the engine) |
+| Unity 6 engine (its built-in `LegacyRuntime.ttf` font is only a fallback) | Unity Technologies | Unity licence (ships with the engine) |
 | MCP for Unity (editor-only tooling, not in builds) | github.com/CoplayDev/unity-mcp | MIT |
 | uGUI package (com.unity.ugui) | Unity Technologies | Unity Companion Licence |
 | Weapon, explosion, impact, engine and shield sounds (`Assets/Resources/Audio/Sfx`, 43 files from "Sci-Fi Sounds" 1.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/sci-fi-sounds)) | CC0 1.0 |
@@ -21,11 +21,13 @@
 | Menu click / confirm / error sounds (`Assets/Resources/Audio/Ui`, from "Interface Sounds" 1.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/interface-sounds)) | CC0 1.0 |
 | Hand-held guns: 18 blasters (`Assets/Resources/Models/Guns`, from "Blaster Kit" 2.1), recoloured per faction in code | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/blaster-kit)) | CC0 1.0 |
 | Trees, bushes, ferns and rocks (`Assets/Resources/Models/Nature`, 12 models and 4 texture sheets from "Stylized Nature MegaKit", simplified and recoloured in code) | Quaternius ([OpenGameArt](https://opengameart.org/content/stylized-nature-megakit)) | CC0 1.0 |
+| Text font "Rajdhani" SemiBold (`Assets/Resources/Fonts/Rajdhani-SemiBold.ttf`; licence text beside it) | Indian Type Foundry ([Google Fonts](https://fonts.google.com/specimen/Rajdhani)) | SIL Open Font License 1.1 |
+| Ground and wall grain (`Assets/Resources/Textures/Detail`, greyscale detail maps made from the colour maps of Grass004, Ground054, Snow010A, Rock030, Plaster001 and Concrete034) | ambientCG ([ambientcg.com](https://ambientcg.com)) | CC0 1.0 |
 | Title font "Kenney Future Narrow" (`Assets/Resources/Fonts`, from "Kenney Fonts") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/kenney-fonts)) | CC0 1.0 |
 | Crosshairs: 8 pictures (`Assets/Resources/UI/Crosshairs`, from "Crosshair Pack") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/crosshair-pack)) | CC0 1.0 |
 | Menu and results music "Qazijamjam Orchestral Battle Theme" (`Assets/Resources/Audio/Music/theme_qazijamjam.wav`) | Emma_MA ([OpenGameArt](https://opengameart.org/content/qazijamjam-orchestral-battle-theme)) | CC0 1.0 |
 
-Every downloaded file is CC0 (listed above). No asset-store packs are used.
+Every downloaded file is CC0 except the Rajdhani font, which is under the SIL Open Font License (free to bundle in a game; its licence file ships with it). No asset-store packs are used.
 
 ## Inspiration
 Mechanics are inspired by the classic mid-2000s team-based "battlefront" shooters (command posts, reinforcement tickets, heroes, space battles with boarding, galactic campaign). No names, characters, designs, sounds or logos from any existing game or franchise are used.

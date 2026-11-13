@@ -309,7 +309,7 @@ namespace BIS
                     k.Sphere(lp + Vector3.up * 2.55f, Vector3.one * 0.55f, Quaternion.identity, MeshKit.Glow(new Color(1f, 0.85f, 0.5f) * 0.9f), 6, 4);
                 }
             }
-            k.Make("span", transform, true);
+            k.Make("span", transform, true, Mats.Built);
             var go = new GameObject("spanFloor");
             go.transform.SetParent(transform, false);
             go.layer = Layers.Ground;
@@ -468,7 +468,7 @@ namespace BIS
                 }
                 laid.Add(l);
             }
-            k.Make("streets", transform, false).GetComponent<MeshRenderer>().receiveShadows = true;
+            k.Make("streets", transform, false, Mats.Built).GetComponent<MeshRenderer>().receiveShadows = true;
         }
 
         void Park(Block b, System.Func<float, float, MeshKit> kitAt)
