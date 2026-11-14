@@ -37,6 +37,7 @@ namespace BIS
         public bool[] lockedClasses;          // conquest: player's side cannot use these roles yet
         public string title;
         public bool conquest;
+        public bool heroMode;                  // land quick battle: everyone (you, bots, a Wi-Fi guest) spawns as a hero; no vehicles
         // Wi-Fi play
         public bool netHost, netClient;
         public int remoteTeam;                 // host: the guest's side
@@ -192,6 +193,7 @@ namespace BIS
                 }
             }
             foreach (var p in people) p.heroCost = BonusOf(p.team) == Bonus.VeteranOfficers ? 18 : p.Human ? 36 : 52;
+            if (HeroMode) foreach (var p in people) p.heroReady = true;
             if (land) commander = new Commander(this);
 
             var pc = gameObject.AddComponent<PlayerControl>();
@@ -213,6 +215,9 @@ namespace BIS
             return null;
         }
 
+        /// <summary>Hero mode (2026-11-14, user: "to truly test heroes, a hero mode where everyone is a hero"): land only.</summary>
+        public bool HeroMode => cfg.heroMode && !cfg.space && !cfg.royale;
+
         /// <summary>Swap a living soldier for a hero on the spot (the H key / HERO button).</summary>
         public Unit MakeHeroNow(Participant p, int prefer)
         {
@@ -223,7 +228,7 @@ namespace BIS
             var hero = FreeHero(p.team, prefer);
             units.Remove(me);
             Destroy(me.gameObject);
-            p.heroReady = false; p.pointsAtHero = p.points; p.everHero = true;
+            p.heroReady = HeroMode; p.pointsAtHero = p.points; p.everHero = true;
             var u = SpawnUnit(p, null, hero, pos + Vector3.up * 0.2f, yaw);
             Fx.Burst(pos + Vector3.up, hero.glow, 40, 6, 0.5f, 0.8f);
             return u;
@@ -366,7 +371,7 @@ namespace BIS
         {
             if (over || MateBlocked(mate) != null || !MateSpot(mate, out var spot)) return null;
             var f = Faction(p.team);
-            if (hero != null) { p.heroReady = false; p.pointsAtHero = p.points; p.everHero = true; }
+            if (hero != null) { p.heroReady = HeroMode; p.pointsAtHero = p.points; p.everHero = true; }
             var cls = f.classes[Mathf.Clamp(classIndex, 0, 4)];
             mateSpawns++;
             mate.part.mateUsedUntil = Time.time + MateCooldown;
@@ -391,7 +396,7 @@ namespace BIS
         {
             if (over || !CanSpawn(p.team)) return null;
             var f = Faction(p.team);
-            if (hero != null) { p.heroReady = false; p.pointsAtHero = p.points; p.everHero = true; }
+            if (hero != null) { p.heroReady = HeroMode; p.pointsAtHero = p.points; p.everHero = true; }
             if (space)
             {
                 var ship = space.ships[p.team];
@@ -448,6 +453,17 @@ namespace BIS
         public HeroDef FreeHero(int t, int prefer = -1)
         {
             var f = Faction(t);
+            if (HeroMode)
+            {
+                // any number of each hero: the one asked for, else the one this side has fewest of
+                if (prefer >= 0 && prefer < f.heroes.Length) return f.heroes[prefer];
+                var count = new Dictionary<HeroDef, int>();
+                foreach (var h in f.heroes) count[h] = 0;
+                foreach (var u in units) if (u && u.Alive && u.team == t && u.hero != null && count.ContainsKey(u.hero)) count[u.hero]++;
+                int least = int.MaxValue; foreach (var h in f.heroes) least = Mathf.Min(least, count[h]);
+                var few = new List<HeroDef>(); foreach (var h in f.heroes) if (count[h] == least) few.Add(h);
+                return few[Random.Range(0, few.Count)];
+            }
             var used = new HashSet<HeroDef>();
             foreach (var u in units) if (u && u.Alive && u.hero != null) used.Add(u.hero);
             if (prefer >= 0 && !used.Contains(f.heroes[prefer])) return f.heroes[prefer];
@@ -567,7 +583,8 @@ namespace BIS
         {
             HeroDef hero = null;
             var rh = RemoteHuman;
-            if (p.heroReady && !TeamHasHero(p.team) && !(player.team == p.team && (player.heroReady || (player.unit && player.unit.IsHero)))
+            if (HeroMode) hero = FreeHero(p.team);
+            else if (p.heroReady && !TeamHasHero(p.team) && !(player.team == p.team && (player.heroReady || (player.unit && player.unit.IsHero)))
                 && !(rh != null && rh.team == p.team && (rh.heroReady || (rh.unit && rh.unit.IsHero))))
                 hero = FreeHero(p.team);
             if (space)
@@ -762,7 +779,8 @@ namespace BIS
             {
                 heroThink = 1;
                 foreach (var p in people)
-                    if (!p.heroReady && p.HeroProgress >= 1 && !(p.unit && p.unit.IsHero))
+                    if (HeroMode) p.heroReady = true;
+                    else if (!p.heroReady && p.HeroProgress >= 1 && !(p.unit && p.unit.IsHero))
                     {
                         p.heroReady = true;
                         if (p.isPlayer) { HUD.Message("HERO UNLOCKED - press H to become a hero now, or pick one at your next spawn", Color.yellow, 5); Sfx.Play2D("award", 0.8f); }

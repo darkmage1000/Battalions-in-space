@@ -29,7 +29,7 @@ namespace BIS.Net
             remote = battle.RemoteHuman;
             var c = battle.cfg;
             var w = new W(Msg.Start).B(c.space).U8(Mathf.Max(0, System.Array.IndexOf(Maps.Land, c.land))).U8(Mathf.Max(0, System.Array.IndexOf(Maps.Space, c.spaceMap)))
-                .U8(c.factions[0]).U8(c.factions[1]).I16(c.tickets).U8(c.botsPerTeam).U8(c.difficulty);
+                .U8(c.factions[0]).U8(c.factions[1]).I16(c.tickets).U8(c.botsPerTeam).U8(c.difficulty).B(c.heroMode);
             w.U16(battle.people.Count);
             foreach (var p in battle.people) w.Str(p.name).U8(p.team).B(p.Human);
             w.U16(remote != null ? battle.people.IndexOf(remote) : 0);
@@ -197,6 +197,7 @@ namespace BIS.Net
             if (p == null || (p.unit && p.unit.Alive) || b.over) return null;
             if (!b.CanSpawn(p.team)) return "No command posts to spawn at!";
             HeroDef hero = null;
+            if (b.HeroMode) { asHero = true; p.heroReady = true; }
             if (asHero) { if (!p.heroReady) return "Hero not unlocked yet"; hero = b.FreeHero(p.team, heroIdx); }
             Unit u;
             if (b.land && mate >= 0 && mate < b.people.Count)

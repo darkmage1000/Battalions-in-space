@@ -28,7 +28,7 @@ namespace BIS.Net
             cfg.land = Maps.Land[Mathf.Clamp(land, 0, Maps.Land.Length - 1)];
             cfg.spaceMap = Maps.Space[Mathf.Clamp(sp, 0, Maps.Space.Length - 1)];
             cfg.factions = new[] { r.U8(), r.U8() };
-            cfg.tickets = r.I16(); cfg.botsPerTeam = r.U8(); cfg.difficulty = r.U8();
+            cfg.tickets = r.I16(); cfg.botsPerTeam = r.U8(); cfg.difficulty = r.U8(); cfg.heroMode = r.B();
             int n = r.U16();
             cfg.rosterNames = new string[n]; cfg.rosterTeams = new int[n]; cfg.rosterHuman = new bool[n];
             for (int i = 0; i < n; i++) { cfg.rosterNames[i] = r.Str(); cfg.rosterTeams[i] = r.U8(); cfg.rosterHuman[i] = r.B(); }

@@ -13,6 +13,7 @@ namespace BIS
         int qpFaction = 0, qpEnemy = 1;
         int qpTickets = 200;
         int qpBots = 16;
+        bool qpHeroes;      // hero mode (land)
         string lastResult;
 
         public void Show(Screen s) { screen = s; enabled = true; }
@@ -115,7 +116,10 @@ namespace BIS
             qpBots = Mathf.RoundToInt(UI.Slider(new Rect(sx, y, 520, 40), "Per side", qpBots, 4, 32, qpBots.ToString())); y += 50;
             int d = Mathf.RoundToInt(UI.Slider(new Rect(sx, y, 520, 40), "Bot skill", Settings.Difficulty, 0, 2, Settings.DifficultyNames[Settings.Difficulty]));
             if (d != Settings.Difficulty) { Settings.Difficulty = d; Settings.Save(); }
-            y += 70;
+            y += 56;
+            if (qpMode == 0) qpHeroes = UI.Toggle(new Rect(sx, y, 520, 50), "Hero mode: everyone is a hero, no vehicles", qpHeroes);
+            else UI.Text(new Rect(sx, y, 520, 50), "Hero mode is for land battles", 18, UI.Dim);
+            y += 64;
             if (qpHost) HostPanel(sx, y);
             var mf = Factions.All[qpFaction];
             if (!qpHost) {
@@ -145,6 +149,7 @@ namespace BIS
                     spaceMap = Maps.Space[qpSpace],
                     factions = new[] { qpFaction, qpEnemy },
                     playerTeam = 0, tickets = qpTickets, botsPerTeam = qpBots, difficulty = Settings.Difficulty,
+                    heroMode = qpMode == 0 && qpHeroes,
                 };
                 bool hosted = qpHost;
                 if (hosted) HostConfig(cfg);

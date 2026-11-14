@@ -147,7 +147,8 @@ namespace BIS
                 else progress = Mathf.MoveTowards(progress, 0, 0.03f * dt);
             }
 
-            // vehicles
+            // vehicles (none in hero mode)
+            if (!(Battle.I != null && Battle.I.HeroMode))
             foreach (var pad in pads)
             {
                 if (pad.vehicle && pad.vehicle.Alive)

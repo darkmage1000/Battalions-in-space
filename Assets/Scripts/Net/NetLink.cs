@@ -30,7 +30,7 @@ namespace BIS.Net
     public class NetLink
     {
         public const int Port = 47777, DiscoveryPort = 47778;
-        public const string Version = "BIS-1";
+        public const string Version = "BIS-2";   // 2 = hero mode flag in the start message
         readonly TcpClient tcp;
         readonly NetworkStream stream;
         readonly ConcurrentQueue<byte[]> inbox = new ConcurrentQueue<byte[]>();

@@ -55,6 +55,7 @@ namespace BIS
         public void TrySpawn(bool asHero)
         {
             if (!b.CanSpawn(b.player.team)) { Say("No command posts to spawn at!"); Sfx.Play2D("deny"); return; }
+            if (b.HeroMode) { asHero = true; b.player.heroReady = true; }
             HeroDef hero = null;
             if (asHero)
             {

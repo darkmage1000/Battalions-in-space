@@ -734,7 +734,8 @@ namespace BIS
             }
             // heroes
             y += 6;
-            UI.Text(new Rect(left.x + 20, y, 480, 26), b.player.heroReady ? "HERO UNLOCKED - choose one:" : $"Heroes: {Mathf.RoundToInt(b.player.HeroProgress * 100)}% ({b.player.points} pts)", 20, b.player.heroReady ? UI.Gold : UI.Dim); y += 30;
+            if (b.HeroMode && pc.selHero < 0) pc.selHero = 0;
+            UI.Text(new Rect(left.x + 20, y, 480, 26), b.HeroMode ? "HERO MODE - everyone is a hero. Choose yours:" : b.player.heroReady ? "HERO UNLOCKED - choose one:" : $"Heroes: {Mathf.RoundToInt(b.player.HeroProgress * 100)}% ({b.player.points} pts)", 20, b.player.heroReady ? UI.Gold : UI.Dim); y += 30;
             for (int i = 0; i < 4; i++)
             {
                 var hd = f.heroes[i];
@@ -757,7 +758,7 @@ namespace BIS
             bool can = b.CanSpawn(b.player.team);
             float wait = b.land && pc.selMate != null ? b.WaitForMate(b.player, pc.selMate) : b.WaitFor(b.player, b.land && pc.selPost >= 0 && pc.selPost < b.posts.Count ? b.posts[pc.selPost] : null);
             if (wait > 0) can = false;
-            string spawnLabel = wait > 0 ? $"REINFORCEMENTS IN {Mathf.CeilToInt(wait)}" : pc.selHero >= 0 && b.player.heroReady ? "SPAWN AS HERO" : "SPAWN  (Enter)";
+            string spawnLabel = wait > 0 ? $"REINFORCEMENTS IN {Mathf.CeilToInt(wait)}" : (pc.selHero >= 0 && b.player.heroReady) || b.HeroMode ? "SPAWN AS HERO" : "SPAWN  (Enter)";
             if (UI.Button(new Rect(w - 360, 990, 330, 64), spawnLabel, false, can, wait > 0 ? 22 : 28, new Color(0.2f, 0.6f, 0.3f)))
                 pc.TrySpawn(pc.selHero >= 0 && b.player.heroReady);
             if (UI.Button(new Rect(30, 990, 220, 64), "CONTROLS", helpOpen, true, 22)) helpOpen = !helpOpen;
