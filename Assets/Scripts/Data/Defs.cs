@@ -46,7 +46,7 @@ namespace BIS
                     case WKind.Rifle: return 90;
                     case WKind.Repeater: return splash > 0 ? 80 : 60;
                     case WKind.Pistol: return 55;
-                    case WKind.Shotgun: return 22;
+                    case WKind.Shotgun: return 30;      // aim assist + touch auto-fire reach (was 22; bots still hold fire past 22 m)
                     case WKind.Sniper: return 320;
                     case WKind.Rocket: return 160;
                     case WKind.Blade: return 5;
@@ -83,7 +83,7 @@ namespace BIS
                 }
             }
         }
-        public string RangeWord { get { float r = EffectiveRange; return r <= 25 ? "close" : r <= 65 ? "short" : r <= 110 ? "medium" : r <= 200 ? "long" : "very long"; } }
+        public string RangeWord { get { float r = EffectiveRange; return r <= 30 ? "close" : r <= 65 ? "short" : r <= 110 ? "medium" : r <= 200 ? "long" : "very long"; } }
         /// <summary>"Assault rifle - medium range - 26 dmg - 5 shots/s"</summary>
         public string InfoLine
         {

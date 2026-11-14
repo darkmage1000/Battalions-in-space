@@ -189,6 +189,7 @@ namespace BIS
             if (Cast(s, from, dir, w.range, out var hit))
             {
                 dist = hit.distance;
+                if (w.kind == WKind.Shotgun) s.dmgMul *= PelletFalloff(w, dist);
                 s.prev = from;
                 Impact(s, hit.point, hit.normal, hit.collider);
             }
@@ -326,6 +327,16 @@ namespace BIS
         }
 
         public static System.Action<Vector3, Collider, WeaponDef, Unit> DebugImpact;   // test harness only
+
+        // ── scattergun falloff (2026-11-14, user: "add the falloff") ──
+        // a pellet does full damage out to FalloffFrom of the gun's range, then weakens evenly to FalloffMin at FalloffTo
+        // (infantry scatterguns, range 40 m: full to 12 m, 35% from 36 m; a starfighter's flechettes scale with their 400 m)
+        public const float FalloffFrom = 0.3f, FalloffTo = 0.9f, FalloffMin = 0.35f;
+        public static float PelletFalloff(WeaponDef w, float d)
+        {
+            float a = w.range * FalloffFrom, b = w.range * FalloffTo;
+            return Mathf.Lerp(1, FalloffMin, Mathf.InverseLerp(a, b, d));
+        }
 
         // ── headshots ──
         public const float HeadMul = 1.5f, HeadMulShotgun = 1.25f;    // per pellet for a scattergun
