@@ -319,6 +319,8 @@ namespace BIS
             if (!TouchInput.Active || !Settings.AutoFire || !AimAssist.On || !assistOnTarget || assistTarget == null) return false;
             if (w.kind == WKind.Repair) return false;
             if ((w.kind == WKind.Rocket || w.kind == WKind.Cannon) && assistTarget is Unit && w.lockOn) return false;
+            var me = b.player.unit;
+            if (me != null && Vector3.Distance(me.InVehicle && me.vehicle ? me.vehicle.transform.position : me.transform.position, assistTarget.AimPoint) > w.AutoFireRange) return false;
             return true;
         }
 

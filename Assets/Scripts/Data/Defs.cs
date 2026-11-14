@@ -60,6 +60,26 @@ namespace BIS
                 }
             }
         }
+        /// <summary>How far touch auto-fire shoots by itself (2026-11-14, user: "the Concord rifleman auto-fires too far out").
+        /// Shorter than EffectiveRange, which aim assist and bots still use: past this you aim and press FIRE yourself.
+        /// Scatterguns and sniper rifles keep their own rules (30 m; scoped only).</summary>
+        public float AutoFireRange
+        {
+            get
+            {
+                switch (kind)
+                {
+                    case WKind.Rifle: return 50;
+                    case WKind.Repeater: return splash > 0 ? 45 : 40;
+                    case WKind.Pistol: return 35;
+                    case WKind.Rocket: return 80;
+                    case WKind.Cannon: return 90;
+                    case WKind.Shotgun: case WKind.Sniper: case WKind.Beam: case WKind.Blade: return EffectiveRange;
+                    default: return Mathf.Min(EffectiveRange, 60);
+                }
+            }
+        }
+
         public bool UsesHeat => heatPerShot > 0;
 
         /// <summary>What kind of gun this is, in plain words (shown on pickups and in the weapon panel).</summary>
