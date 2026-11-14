@@ -185,7 +185,13 @@ namespace BIS
             AimDebug = PlayerPrefs.GetInt("aimdebug", 0) == 1;
             TouchSens = PlayerPrefs.GetFloat("touchsens", 1f);
             MouseAssist = PlayerPrefs.GetInt("mouseassist", 0) == 1;
-            AimAssist = PlayerPrefs.GetInt("aimassist", Application.isMobilePlatform ? 3 : 2);
+            AimAssist = PlayerPrefs.GetInt("aimassist", 1);   // default Low (2026-11-14, user: phones were on High)
+            // a phone or PC still on the old default (High on phones, Medium on PC) moves to Low once; a level picked by hand stays
+            if (PlayerPrefs.GetInt("aimassist2", 0) == 0)
+            {
+                if (AimAssist == (Application.isMobilePlatform ? 3 : 2)) AimAssist = 1;
+                PlayerPrefs.SetInt("aimassist", AimAssist); PlayerPrefs.SetInt("aimassist2", 1); PlayerPrefs.Save();
+            }
             BotsPerTeam = PlayerPrefs.GetInt("bots", 16);
             Difficulty = PlayerPrefs.GetInt("diff", 1);
             Quality = PlayerPrefs.GetInt("quality", Application.isMobilePlatform ? 1 : 2);   // phones: Medium (a 2026 phone held 60 fps with 32 animated soldiers)

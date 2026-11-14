@@ -253,15 +253,29 @@ namespace BIS
         public IDamageable assistTarget;
         Vector3 assistPoint; float assistAngle = 999;
 
-        /// <summary>Finds the assist target for the camera view, pulls the view toward it and returns the look-speed multiplier.</summary>
-        float Assist(Transform ignore, float range, float shotSpeed, bool infantry, bool vehicles, bool shipsOnly, float dt, bool pull)
+        // vehicle guns (tank cannon, gunner seats, APC guns): the assist only reaches soldiers you can make out on a phone
+        // screen, and vehicles a little further (2026-11-14, user: "I feel like I'm sniping with it, guys I can't even see").
+        // Bots keep the gun's full effective range.
+        public const float VehicleAssistInfantry = 70, VehicleAssistVehicles = 120;
+
+        /// <summary>Finds the assist target for the camera view, pulls the view toward it and returns the look-speed multiplier.
+        /// vehicleRange (if > 0) is a separate reach for vehicle targets.</summary>
+        float Assist(Transform ignore, float range, float shotSpeed, bool infantry, bool vehicles, bool shipsOnly, float dt, bool pull, float vehicleRange = 0)
         {
             assistTarget = null; assistAngle = 999; assistOnTarget = false;
             if (!AimAssist.On || range <= 0) return 1;
             var cam = Cam;
             float zoom = cam.fieldOfView / Mathf.Max(20, Settings.Fov);          // smaller cones when zoomed in
             float cone = AimAssist.PullCone * zoom;
-            var t = AimAssist.Find(b, b.player.team, cam.transform.position, cam.transform.forward, cone, range, shotSpeed, ignore, infantry, vehicles, shipsOnly, out assistPoint, out assistAngle);
+            IDamageable t;
+            if (vehicleRange > 0 && infantry && vehicles)
+            {
+                var ti = AimAssist.Find(b, b.player.team, cam.transform.position, cam.transform.forward, cone, range, shotSpeed, ignore, true, false, shipsOnly, out var pi, out var ai);
+                var tv = AimAssist.Find(b, b.player.team, cam.transform.position, cam.transform.forward, cone, vehicleRange, shotSpeed, ignore, false, true, shipsOnly, out var pv, out var av);
+                if (tv != null && (ti == null || av < ai)) { t = tv; assistPoint = pv; assistAngle = av; }
+                else { t = ti; assistPoint = pi; assistAngle = ai; }
+            }
+            else t = AimAssist.Find(b, b.player.team, cam.transform.position, cam.transform.forward, cone, range, shotSpeed, ignore, infantry, vehicles, shipsOnly, out assistPoint, out assistAngle);
             assistTarget = t;
             if (t == null) return 1;
             bool engaging = Ctl.Look.sqrMagnitude > 0.0001f || Ctl.Fire || Ctl.Move.sqrMagnitude > 0.01f;
@@ -492,7 +506,8 @@ namespace BIS
             else
             {
                 var gw = me.seat == 0 ? v.prim : me.seat == 1 ? v.gunW : null;
-                float lookMul = gw != null ? Assist(v.transform, gw.def.EffectiveRange, gw.def.speed, true, true, false, dt, true) : 1;
+                float lookMul = gw != null ? Assist(v.transform, Mathf.Min(gw.def.EffectiveRange, VehicleAssistInfantry), gw.def.speed, true, true, false, dt, true,
+                                                    Mathf.Min(gw.def.EffectiveRange, VehicleAssistVehicles)) : 1;
                 camYaw += Ctl.Look.x * lookMul;
                 camPitch = Mathf.Clamp(camPitch - Ctl.Look.y * lookMul, -40, 60);
                 Vector3 fwd = Quaternion.Euler(0, camYaw, 0) * Vector3.forward, right = Quaternion.Euler(0, camYaw, 0) * Vector3.right;
