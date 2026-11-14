@@ -93,7 +93,7 @@ namespace BIS
 
         static void Tank(VModel m, FactionDef f)
         {
-            var k = new MeshKit();
+            var k = new MeshKit { bevel = 0.3f };   // bevelled plates, not blocks
             Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt;
             switch (f.body)
             {
@@ -175,7 +175,7 @@ namespace BIS
 
         static void Transport(VModel m, FactionDef f)
         {
-            var k = new MeshKit();
+            var k = new MeshKit { bevel = 0.3f };
             Color a = f.main, b = f.second, dk = D(f.main, 0.5f), glow = f.bolt;
             k.Taper(new Vector3(0, 0, -0.5f), new Vector2(3.8f, 8.6f), new Vector2(3.2f, 7.4f), 1.8f, Quaternion.identity, a);
             k.Nose(new Vector3(0, -0.2f, 4.5f), new Vector3(3.4f, 1.4f, 2.2f), Quaternion.identity, f.body == Body.Reptile ? b : a, -0.2f);

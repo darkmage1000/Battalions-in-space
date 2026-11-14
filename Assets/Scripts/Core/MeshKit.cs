@@ -16,6 +16,9 @@ namespace BIS
         public readonly List<Vector2> uv = new List<Vector2>(256);
         public readonly List<int> t = new List<int>(512);
         public Matrix4x4 M = Matrix4x4.identity;
+        /// <summary>When above 0, Box draws its edges and corners chamfered by this share of its smallest half size
+        /// (soldier armour, hover tanks): less like building blocks, more like pressed plates.</summary>
+        public float bevel;
 
         public int Count => v.Count;
         public void Clear() { v.Clear(); n.Clear(); c.Clear(); uv.Clear(); t.Clear(); M = Matrix4x4.identity; }
@@ -69,6 +72,11 @@ namespace BIS
         public void Box(Vector3 center, Vector3 size, Quaternion rot, Color col)
         {
             Vector3 h = size * 0.5f;
+            if (bevel > 0)
+            {
+                float b = bevel * Mathf.Min(h.x, Mathf.Min(h.y, h.z));
+                if (b > 0.004f) { Chamfered(center, h, rot, col, b); return; }
+            }
             tmp[0] = center + rot * new Vector3(-h.x, -h.y, -h.z);
             tmp[1] = center + rot * new Vector3(h.x, -h.y, -h.z);
             tmp[2] = center + rot * new Vector3(h.x, -h.y, h.z);
@@ -78,6 +86,45 @@ namespace BIS
             tmp[6] = center + rot * new Vector3(h.x, h.y, h.z);
             tmp[7] = center + rot * new Vector3(-h.x, h.y, h.z);
             Hexa(tmp, col);
+        }
+
+        // a quad / triangle in box space, wound so it faces away from the box's centre
+        void OQuad(Vector3 c, Quaternion r, Vector3 a, Vector3 b, Vector3 d, Vector3 e, Color col)
+        {
+            if (Vector3.Dot(Vector3.Cross(b - a, e - a), a + b + d + e) < 0) { var t0 = b; b = e; e = t0; }
+            Quad(c + r * a, c + r * b, c + r * d, c + r * e, col);
+        }
+        void OTri(Vector3 c, Quaternion r, Vector3 a, Vector3 b, Vector3 d, Color col)
+        {
+            if (Vector3.Dot(Vector3.Cross(b - a, d - a), a + b + d) < 0) { var t0 = b; b = d; d = t0; }
+            Tri(c + r * a, c + r * b, c + r * d, col);
+        }
+        static Vector3 Axes(int a, float va, int b, float vb, float vc)
+        {
+            var p = Vector3.zero; p[a] = va; p[b] = vb; p[3 - a - b] = vc; return p;
+        }
+
+        /// <summary>A box with its 12 edges cut at 45 degrees by <paramref name="b"/> and its 8 corners cut off: 26 faces.</summary>
+        void Chamfered(Vector3 center, Vector3 h, Quaternion rot, Color col, float b)
+        {
+            Vector3 i = h - Vector3.one * b;
+            for (int a = 0; a < 3; a++)
+            {
+                int u = (a + 1) % 3, w = (a + 2) % 3;
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    // the flat face
+                    OQuad(center, rot, Axes(a, s * h[a], u, -i[u], -i[w]), Axes(a, s * h[a], u, i[u], -i[w]), Axes(a, s * h[a], u, i[u], i[w]), Axes(a, s * h[a], u, -i[u], i[w]), col);
+                    // the bevel between this face and the next axis' faces, running along the third axis
+                    for (int t2 = -1; t2 <= 1; t2 += 2)
+                        OQuad(center, rot, Axes(a, s * h[a], u, t2 * i[u], -i[w]), Axes(a, s * h[a], u, t2 * i[u], i[w]),
+                                             Axes(a, s * i[a], u, t2 * h[u], i[w]), Axes(a, s * i[a], u, t2 * h[u], -i[w]), col);
+                }
+            }
+            for (int sx = -1; sx <= 1; sx += 2)
+                for (int sy = -1; sy <= 1; sy += 2)
+                    for (int sz = -1; sz <= 1; sz += 2)
+                        OTri(center, rot, new Vector3(sx * h.x, sy * i.y, sz * i.z), new Vector3(sx * i.x, sy * h.y, sz * i.z), new Vector3(sx * i.x, sy * i.y, sz * h.z), col);
         }
 
         /// <summary>Tapered box: bottom size sb, top size st (x,z), height h, centred at c (bottom at c.y - h/2).</summary>

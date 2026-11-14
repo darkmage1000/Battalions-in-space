@@ -27,7 +27,7 @@ namespace BIS
         float pitchNow;
         HeroDef heroDef;
         Quaternion chestAnim, chestSet, headAnim, headSet;
-        static GameObject manPrefab;
+        static GameObject manPrefab, maleBody, femaleBody;
         static RuntimeAnimatorController manCtl;
         static bool manTried;
         static readonly Dictionary<string, Mesh> manMeshes = new Dictionary<string, Mesh>();
@@ -41,6 +41,9 @@ namespace BIS
                 {
                     manTried = true;
                     manPrefab = Resources.Load<GameObject>("Models/Characters/UAL_Mannequin");
+                    // Quaternius Universal Base Characters (CC0): real anatomy and hands under the code-built armour
+                    maleBody = Resources.Load<GameObject>("Models/Characters/Superhero_Male_FullBody");
+                    femaleBody = Resources.Load<GameObject>("Models/Characters/Superhero_Female_FullBody");
                     manCtl = Resources.Load<RuntimeAnimatorController>("Models/Characters/Soldier");
                 }
                 return manPrefab && manCtl;
@@ -50,10 +53,13 @@ namespace BIS
         Body body;
         string key;
 
+        /// <summary>How much the code-built armour's box edges are bevelled (share of a box's smallest half size; 0 = sharp).</summary>
+        public const float SoldierBevel = 0.45f;
+
         static Mesh Cached(string k, System.Action<MeshKit> build)
         {
             if (cache.TryGetValue(k, out var m) && m) return m;
-            var kit = new MeshKit();
+            var kit = new MeshKit { bevel = SoldierBevel };
             build(kit);
             m = kit.Build(k);
             cache[k] = m;
@@ -122,7 +128,7 @@ namespace BIS
         /// <summary>The faction-coloured copy of the mannequin mesh: body in the main colour, joints in the second.</summary>
         static Mesh ColouredMannequin(SkinnedMeshRenderer smr, Color body, Color joints)
         {
-            string k = ColorUtility.ToHtmlStringRGB(body) + ColorUtility.ToHtmlStringRGB(joints);
+            string k = smr.sharedMesh.name + ColorUtility.ToHtmlStringRGB(body) + ColorUtility.ToHtmlStringRGB(joints);
             if (manMeshes.TryGetValue(k, out var m) && m) return m;
             var src = smr.sharedMesh;
             m = Object.Instantiate(src);
@@ -141,15 +147,40 @@ namespace BIS
             return m;
         }
 
+        /// <summary>
+        /// Which body goes under the armour: the Synod are robots and keep the smooth mannequin; the Vorrkai get the
+        /// heavy male build (as their lizard body); humans and the Veil are men or women (about 4 in 10 women), picked
+        /// per soldier. Heroes keep one fixed body.
+        /// </summary>
+        GameObject BodyFor(HeroDef h)
+        {
+            if (body == Body.Machine || !maleBody || !femaleBody) return manPrefab;
+            if (body == Body.Reptile || h != null) return maleBody;
+            uint r = (uint)GetInstanceID() * 2654435761u;
+            return (r >> 16) % 10 < 4 ? femaleBody : maleBody;
+        }
+
+        float armourWiden = 1;
+
         bool MakeMannequin(ClassDef c, HeroDef h, WeaponDef weapon)
         {
-            var inst = Object.Instantiate(manPrefab, transform);
+            var prefab = BodyFor(h);
+            var inst = Object.Instantiate(prefab, transform);
             inst.name = "body";
             bodyRoot = inst.transform;
             anim = inst.GetComponent<Animator>();
-            var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>();
+            // the body mesh is the biggest skinned mesh; eyes and eyebrows of the base characters stay under the helmet
+            SkinnedMeshRenderer smr = null;
+            foreach (var s in inst.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (!smr || s.sharedMesh.vertexCount > smr.sharedMesh.vertexCount) { if (smr) smr.enabled = false; smr = s; }
+                else s.enabled = false;
+            }
             if (!anim || !smr) { Object.Destroy(inst); anim = null; return false; }
-            float k = height / transform.localScale.y / 1.94f;
+            float bodyH = prefab == femaleBody ? 1.85f : prefab == maleBody ? 1.92f : 1.94f;   // measured, feet to crown
+            // the base characters are broader than the mannequin the armour was sized on: widen it (not lengthen) to cover them
+            armourWiden = prefab == maleBody ? 1.2f : prefab == femaleBody ? 1.1f : 1f;
+            float k = height / transform.localScale.y / bodyH;
             // uniform scale only: a squashed humanoid skeleton bends its arms wrongly
             Vector3 sc = Vector3.one * k;
             bodyRoot.localPosition = Vector3.zero; bodyRoot.localRotation = Quaternion.identity; bodyRoot.localScale = sc;
@@ -206,7 +237,7 @@ namespace BIS
                 t.SetParent(bone, false);
                 t.position = at;
                 t.rotation = down.sqrMagnitude > 0.001f ? Quaternion.FromToRotation(-transform.up, down.normalized) * transform.rotation : transform.rotation;
-                t.localScale = Vector3.one * (ws / Mathf.Max(0.0001f, bone.lossyScale.x));
+                t.localScale = new Vector3(armourWiden, 1, armourWiden) * (ws / Mathf.Max(0.0001f, bone.lossyScale.x));
                 t.gameObject.AddComponent<MeshFilter>().sharedMesh = m;
                 var r = t.gameObject.AddComponent<MeshRenderer>(); r.sharedMaterial = Mats.Lit;
             }
