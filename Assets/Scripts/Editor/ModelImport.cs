@@ -17,6 +17,8 @@ namespace BIS.EditorTools
             m.importCameras = false;
             m.importLights = false;
             m.importBlendShapes = false;
+            // Quaternius Animated Mech Pack: its own (non-human) rig and clips, played by the vehicle code through Playables
+            if (assetPath.Contains("/Mechs/")) { m.animationType = ModelImporterAnimationType.Generic; m.importAnimation = true; m.bakeAxisConversion = true; return; }
             if (!assetPath.Contains("/Characters/")) { m.importAnimation = false; m.animationType = ModelImporterAnimationType.None; return; }
             // Quaternius Universal Animation Library: Humanoid rig, axis conversion baked (the pack's own setup notes)
             m.bakeAxisConversion = true;
@@ -27,12 +29,13 @@ namespace BIS.EditorTools
 
         void OnPreprocessAnimation()
         {
-            if (!assetPath.Contains("Resources/Models/Characters/")) return;
+            bool mech = assetPath.Contains("Resources/Models/Mechs/");
+            if (!assetPath.Contains("Resources/Models/Characters/") && !mech) return;
             var m = (ModelImporter)assetImporter;
             var clips = m.defaultClipAnimations;
             foreach (var c in clips)
             {
-                bool loop = c.name.EndsWith("_Loop");
+                bool loop = c.name.EndsWith("_Loop") || (mech && (c.name.Contains("Walk") || c.name.Contains("Idle") || c.name.Contains("Run")));
                 c.loopTime = loop;
                 c.lockRootRotation = true; c.keepOriginalOrientation = true;
                 c.lockRootHeightY = false; c.keepOriginalPositionY = true;

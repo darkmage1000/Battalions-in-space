@@ -13,6 +13,11 @@ namespace BIS
         public float hover = 1.2f;
         public float camDist = 9, camHeight = 3;
         public Material mat;          // null = Mats.Lit (vertex colours); imported ships use a textured material
+        // a walking mech drawn instead of the hull (WalkerRig): its model, scale, height and tint. The code-built hull,
+        // turret and gun are kept (hidden) so muzzles, aim and the collider work as before.
+        public string walker;
+        public float walkerScale = 1, walkerHeight;
+        public Color walkerTint = Color.white;
     }
 
     public static class VehicleModels
@@ -38,6 +43,7 @@ namespace BIS
                 default: Support(m, f); break;
             }
             m.bounds = m.body.bounds;
+            if (m.walker != null) m.bounds = new Bounds(new Vector3(0, m.walkerHeight / 2 - m.hover, 0), new Vector3(4.4f, m.walkerHeight, 3.6f));
             if (d.IsShip && d.kind != VKind.Dropship) UseShipArt(m, d, f);
             cache[key] = m;
             return m;
@@ -145,6 +151,26 @@ namespace BIS
             m.gunnerMuzzles = new[] { new Vector3(0, 0.2f, 1.1f) };
             m.engines = new[] { new Vector3(-1.3f, 0.2f, -3.9f), new Vector3(1.3f, 0.2f, -3.9f) };
             m.hover = 1.3f; m.camDist = 11; m.camHeight = 4f;
+            if (f.body == Body.Machine) Walker(m, f);
+        }
+
+        /// <summary>
+        /// The Synod (machine faction) fields a walking mech instead of a hover tank: same vehicle, drawn by WalkerRig.
+        /// The cannon fires from its right arm, the gunner's gun sits on its left shoulder.
+        /// </summary>
+        static void Walker(VModel m, FactionDef f)
+        {
+            m.walker = "Models/Mechs/Mike";
+            m.walkerScale = 1.1f;
+            m.walkerHeight = 5.25f * m.walkerScale;   // top of the head (measured: 4.3 m at 0.82)
+            m.walkerTint = Color.Lerp(Color.white, f.main, 0.25f); m.walkerTint.a = 1;
+            m.hover = 0.05f;
+            m.turretPos = new Vector3(0, 0, 0);
+            m.gunPos = new Vector3(2.5f, 2.8f, 0.4f);        // its right hand
+            m.muzzles = new[] { new Vector3(0, 0, 0.9f) };
+            m.gunnerPos = new Vector3(-1.15f, 4.5f, 0.2f);   // its left shoulder
+            m.engines = new Vector3[0];
+            m.camDist = 13; m.camHeight = 6f;
         }
 
         static void Transport(VModel m, FactionDef f)

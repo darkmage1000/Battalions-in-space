@@ -101,6 +101,20 @@ namespace BIS
             if (model.turret) { turret = MakePart("turret", body, model.turretPos, model.turret, true); }
             if (model.gun) gun = MakePart("gun", turret ? turret : body, turret ? model.gunPos - model.turretPos : model.gunPos, model.gun, true);
             if (model.gunnerTurret && d.gunner != null) gunnerT = MakePart("gunner", body, model.gunnerPos, model.gunnerTurret, true);
+            if (model.walker != null)
+            {
+                // a walking mech: it turns with the turret (it faces where it aims); the hull, turret and cannon are only
+                // kept for their positions (aim, muzzles) and are not drawn
+                var tex = ImportedModels.Tex(model.walker.Replace("Mechs/", "Mechs/Textures/") + "_Texture");
+                var rig = WalkerRig.Make(model.walker, turret ? turret : body, model.hover, model.walkerScale, tex ? Mats.LitTex(tex, model.walkerTint) : null);
+                if (rig)
+                {
+                    body.GetComponent<MeshRenderer>().enabled = false;
+                    if (turret) turret.GetComponent<MeshRenderer>().enabled = false;
+                    if (gun) gun.GetComponent<MeshRenderer>().enabled = false;
+                    if (gunnerT) gunnerT.GetComponent<MeshRenderer>().enabled = false;
+                }
+            }
             var bc = gameObject.AddComponent<BoxCollider>();
             var bnd = model.bounds;
             bc.center = bnd.center; bc.size = Vector3.Max(bnd.size, Vector3.one * 1.2f);

@@ -26,6 +26,7 @@
 | Smoke, fire, muzzle flash, flying dirt and scorch sprites (`Assets/Resources/Textures/Fx`, five 2 x 2 sheets made from "Particle Pack") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/particle-pack)) | CC0 1.0 |
 | Village props: carts, fences and gates, lantern posts, market stalls (`Assets/Resources/Models/Props/Town`, from "Fantasy Town Kit" 2.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/fantasy-town-kit)) | CC0 1.0 |
 | Village props: barrels, crates, tents, plank piles, workbenches (`Assets/Resources/Models/Props/Camp`, from "Survival Kit") | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/survival-kit)) | CC0 1.0 |
+| The Synod walking mech (`Assets/Resources/Models/Mechs/Mike.fbx` + texture, with its idle / walk / run animations, from "Animated Mech Pack") | Quaternius ([OpenGameArt](https://opengameart.org/content/animated-mech-pack)) | CC0 1.0 |
 | Title font "Kenney Future Narrow" (`Assets/Resources/Fonts`, from "Kenney Fonts") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/kenney-fonts)) | CC0 1.0 |
 | Crosshairs: 8 pictures (`Assets/Resources/UI/Crosshairs`, from "Crosshair Pack") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/crosshair-pack)) | CC0 1.0 |
 | Menu and results music "Qazijamjam Orchestral Battle Theme" (`Assets/Resources/Audio/Music/theme_qazijamjam.wav`) | Emma_MA ([OpenGameArt](https://opengameart.org/content/qazijamjam-orchestral-battle-theme)) | CC0 1.0 |
