@@ -188,7 +188,7 @@ namespace BIS
             anim.applyRootMotion = false;
             anim.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
             // the mannequin is the undersuit (dark, or the skin for scaled / alien bodies); the armour pieces carry the look
-            Color bodyCol = body == Body.Reptile || body == Body.Slender ? Color.Lerp(skin, Dark(main, 0.6f), 0.35f) : body == Body.Machine ? Dark(main, 0.55f) : Dark(Color.Lerp(main, second, 0.5f), 0.42f);
+            Color bodyCol = body == Body.Reptile || body == Body.Slender ? Color.Lerp(skin, Dark(main, 0.6f), 0.35f) : body == Body.Machine ? Dark(main, 0.55f) : Dark(main, 0.68f);   // a shade of the armour, so a gap between plates reads as shading
             bodyCol.a = 1;
             Color jointCol = Dark(second, 0.35f);
             smr.sharedMesh = ColouredMannequin(smr, bodyCol, jointCol);

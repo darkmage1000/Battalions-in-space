@@ -220,7 +220,7 @@ namespace BIS
                 Hero("Shard Duelist", "Bladesworn", HeroKind.Blade, W.Blade("Monofilament Edge"), "Dash Strike", "Four arms, one purpose.", new Color(0.12f, 0.12f, 0.14f), new Color(0.9f, 0.9f, 0.9f), new Color(0.3f, 1f, 0.6f)),
                 Hero("The Choir", "Mystic", HeroKind.Mystic, W.Beam("Resonance"), "Kinetic Wave", "A thousand minds singing lightning.", new Color(0.85f, 0.8f, 0.6f), new Color(0.3f, 0.3f, 0.35f), new Color(1f, 0.85f, 0.3f)),
             };
-            synod.tank = Veh("Monolith Tank", VKind.Tank, "Slab-sided hover tank with a lattice cannon.", "Lattice Cannon", null);
+            synod.tank = Veh("Monolith Walker", VKind.Tank, "A walking war machine with a lattice cannon in its arm.", "Lattice Cannon", null);
             synod.transport = Veh("Hive Hauler", VKind.Transport, "Frame transport with a rocket turret.", "Hauler Guns", null);
             synod.air = Veh("Wasp Drone Gunship", VKind.Air, "Drone gunship with lasers and missiles.", "Wasp Lasers", "Stinger Missiles");
             synod.ships = new[]

@@ -2,18 +2,20 @@
 
 **A large-scale sci-fi team shooter for Windows and Android.** Four original factions fight over command posts on open battlefields, dogfight between capital ships and board them through the hangar, drop into a 100-player battle royale (solo or in pairs), and wage a turn-based galactic campaign. Two people can play together over Wi-Fi.
 
-**[Download v0.9](https://github.com/darkmage1000/Battalions-in-space/releases/latest)**: Android APK and Windows zip.
+**[Download v0.10](https://github.com/darkmage1000/Battalions-in-space/releases/latest)**: Android APK and Windows zip.
 
 ![Main menu](docs/images/menu.jpg)
 
 | | |
 |---|---|
 | ![A land battle over a command post](docs/images/land_battle.jpg) | ![A capital ship with its hangar open](docs/images/space_battle.jpg) |
-| *Land battle: a squad pushes on a command post* | *Space: a capital ship, its shield up and hangar open* |
+| *Land battle: a squad advances under fire* | *Space: a capital ship, its shield up and hangar open* |
 | ![Gliding into the battle royale](docs/images/royale_drop.jpg) | ![Novo Meridian from above](docs/images/city.jpg) |
 | *Battle royale: gliding down from the dropship* | *Novo Meridian, the city map* |
+| ![A village with gardens, barrels and shutters](docs/images/village.jpg) | ![A Synod walking mech beside a Concord hover tank](docs/images/mech.jpg) |
+| *A battle royale village* | *The Synod walking mech and a Concord hover tank* |
 
-Made in Unity 6 (6000.0.62f1). Everything (factions, characters, ships, planets, story) is original; see [CREDITS.md](CREDITS.md) for the free (CC0) sounds, music and models used.
+Made in Unity 6 (6000.0.62f1). Everything (factions, characters, ships, planets, story) is original; see [CREDITS.md](CREDITS.md) for the free sounds, music, models, textures and fonts used (all CC0 except one font under the SIL Open Font Licence).
 
 ---
 
@@ -88,7 +90,7 @@ Each faction has 5 classes (plus a pilot and a marine for space), 4 heroes, its 
 |---|---|---|---|---|
 | **Terran Concord** (humans) | Rifleman, Breacher, Longshot, Field Engineer, Vanguard (jump-pack) | Elena Voss, Darius Rook, Ilya Mareth, Sena Kai | Bastion tank, Mule APC, Kestrel gunship | Lancer, Hammerhead, Swiftwing, Aegis |
 | **Vorrkai Dominion** (reptilian) | Clawguard, Siegebreaker, Fang Stalker, Forgeling, Ravager (frenzy) | Warlord Skarr, Huntmistress Vyssa, Bladefang Ruuk, Shaman Ossk | Crusher tank, Drake Carrier, Wyrm gunship | Talon, Maw, Viper, Brood Tender |
-| **Iron Synod** (machines) | Unit-K Trooper, Breaker Frame, Optic Sentinel, Fabricator, Phantom Frame (cloak) | Prime Axiom, Executor Vex-9, Shard Duelist, The Choir | Monolith tank, Hive Hauler, Wasp gunship | Spindle, Anvil, Needle, Mender |
+| **Iron Synod** (machines) | Unit-K Trooper, Breaker Frame, Optic Sentinel, Fabricator, Phantom Frame (cloak) | Prime Axiom, Executor Vex-9, Shard Duelist, The Choir | Monolith walker (a mech), Hive Hauler, Wasp gunship | Spindle, Anvil, Needle, Mender |
 | **Kessari Veil** (psionic) | Veil Warden, Lancebearer, Seer, Weaver, Shade (rally) | Matriarch Ysolde, Duelist Kaeth, Starcaller Iru, Ironveil Thane | Pillar tank, Reliquary skiff, Heron gunship | Glaive, Bloom, Mote, Lantern |
 
 **Class roles:**
@@ -193,8 +195,8 @@ Each faction has 5 classes (plus a pilot and a marine for space), 4 heroes, its 
 ## Getting the game
 
 **Download** the latest build from [Releases](https://github.com/darkmage1000/Battalions-in-space/releases/latest):
-- **Android:** `BattalionsInSpace-v0.9-Android.apk`. Open it on the phone and allow installing from this source when asked.
-- **Windows:** `BattalionsInSpace-v0.9-Windows.zip`. Unzip anywhere and run `BattalionsInSpace/BattalionsInSpace.exe`.
+- **Android:** `BattalionsInSpace-v0.10-Android.apk`. Open it on the phone and allow installing from this source when asked.
+- **Windows:** `BattalionsInSpace-v0.10-Windows.zip`. Unzip anywhere and run `BattalionsInSpace/BattalionsInSpace.exe`.
 
 **Or build it yourself** (`Builds/` isn't stored in the repository):
 
@@ -229,6 +231,6 @@ Or use `bash Tools/deploy.sh`, which finds a phone with wireless debugging on an
   - `Conquest`: the campaign.
   - `Net`: Wi-Fi play.
   - `UI`.
-- **The scene holds almost nothing**: maps, soldiers, vehicles and ships are built in code, and most models are made from simple shapes at start-up.
+- **The scene holds almost nothing**: maps, soldiers, vehicles and ships are put together in code at start-up, from simple shapes and from free CC0 models (guns, trees, rocks, village props, starfighters, the Synod mech, soldier bodies) that are recoloured per faction and merged into each map's meshes.
 - **Project notes**: `CLAUDE.md` holds the detailed design notes, the numbers behind every rule, and how each system was tested.
 - **Self-tests**: run the Windows build with `-autotest` for a battle self-test. For a two-copy Wi-Fi test, start one copy with `-nethost` (add `-royale`, `-duos`) and one with `-netjoin 127.0.0.1`.
