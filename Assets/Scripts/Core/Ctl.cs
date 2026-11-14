@@ -219,7 +219,8 @@ namespace BIS
         {
             AudioListener.volume = Volume;
             QualitySettings.shadows = Quality == 0 ? ShadowQuality.Disable : ShadowQuality.All;
-            QualitySettings.shadowDistance = Quality >= 2 ? 140 : 70;
+            QualitySettings.shadowDistance = Quality >= 2 ? 160 : 70;
+            QualitySettings.shadowCascades = Quality >= 2 ? 2 : 1;
             QualitySettings.shadowResolution = Quality >= 2 ? ShadowResolution.High : ShadowResolution.Medium;
             QualitySettings.antiAliasing = Quality >= 2 ? 4 : 0;
             QualitySettings.vSyncCount = 1;

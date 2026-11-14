@@ -10,8 +10,8 @@ Shader "BIS/LitTex" {
     #pragma multi_compile_instancing
     #pragma target 3.0
     sampler2D _MainTex;
-    struct Input { float2 uv_MainTex; float4 color : COLOR; };
-    fixed4 _Color; float _Glow;
+    struct Input { float2 uv_MainTex; float4 color : COLOR; float3 viewDir; float3 worldNormal; };
+    fixed4 _Color; float _Glow; float4 _BIS_Rim;
     void surf (Input IN, inout SurfaceOutput o) {
       float3 t = tex2D(_MainTex, IN.uv_MainTex).rgb;
       float3 c = IN.color.rgb * _Color.rgb;
@@ -22,6 +22,9 @@ Shader "BIS/LitTex" {
       float g = saturate((0.5 - IN.color.a) * 2);
       o.Albedo = c * (1 - g * 0.6);
       o.Emission = c * g * _Glow;
+      // soft sky-coloured light along the silhouette (global _BIS_Rim, set per map)
+      float rim = 1 - saturate(dot(normalize(IN.viewDir), normalize(IN.worldNormal)));
+      o.Emission += _BIS_Rim.rgb * (rim * rim * rim) * (0.55 + 0.45 * saturate(IN.worldNormal.y + 0.5)) * (1 - g);
       o.Alpha = 1;
     }
     ENDCG

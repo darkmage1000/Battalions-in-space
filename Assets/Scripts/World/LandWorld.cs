@@ -775,17 +775,21 @@ namespace BIS
             sky.SetFloat("_Seed", def.seed % 97);
             RenderSettings.skybox = sky;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = th.ambientSky;
-            RenderSettings.ambientEquatorColor = Color.Lerp(th.ambientSky, th.ambientGround, 0.5f);
-            RenderSettings.ambientGroundColor = th.ambientGround;
+            // lighting pass: a cooler, dimmer fill against a warmer, stronger sun gives the shading some contrast
+            Color coolSky = Color.Lerp(th.ambientSky, new Color(0.5f, 0.6f, 0.8f), 0.25f) * 0.86f;
+            RenderSettings.ambientSkyColor = coolSky;
+            RenderSettings.ambientEquatorColor = Color.Lerp(coolSky, th.ambientGround, 0.5f) * 0.92f;
+            RenderSettings.ambientGroundColor = th.ambientGround * 0.8f;
+            Shader.SetGlobalColor("_BIS_Rim", Color.Lerp(th.ambientSky, th.skyHorizon, 0.5f) * 0.45f);
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogColor = th.fog;
             RenderSettings.fogDensity = th.fogDensity * (def.royale ? 0.6f : 1f);
             Game.I.sun.transform.rotation = sunRot;
-            Game.I.sun.color = th.sun;
-            Game.I.sun.intensity = def.theme == Theme.Volcanic ? 0.9f : 1.15f;
+            Game.I.sun.color = Color.Lerp(th.sun, new Color(1f, 0.86f, 0.68f), 0.25f);
+            Game.I.sun.intensity = def.theme == Theme.Volcanic ? 1.0f : 1.3f;
             Game.I.sun.shadows = LightShadows.Soft;
+            Game.I.sun.shadowStrength = 0.82f;      // shadows filled a little by the sky, never black
             Game.Cam.clearFlags = CameraClearFlags.Skybox;
             Game.Cam.farClipPlane = def.royale ? 1700 : 1400;
             if (def.Floating) BuildClouds();

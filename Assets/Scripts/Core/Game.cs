@@ -97,6 +97,7 @@ namespace BIS
             RenderSettings.fog = false;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.3f, 0.3f, 0.36f);
+            Shader.SetGlobalColor("_BIS_Rim", new Color(0.16f, 0.18f, 0.26f));   // the menu backdrop's ships
             sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.6f, 0.3f, 0.7f));
             sun.color = new Color(1f, 0.92f, 0.8f); sun.intensity = 1.3f; sun.shadows = LightShadows.None;
             Cam.clearFlags = CameraClearFlags.Skybox; Cam.farClipPlane = 9000;

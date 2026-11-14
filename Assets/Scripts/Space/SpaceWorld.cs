@@ -43,6 +43,7 @@ namespace BIS
             Game.I.sun.color = d.sun;
             Game.I.sun.intensity = 1.25f;
             Game.I.sun.shadows = LightShadows.None;
+            Shader.SetGlobalColor("_BIS_Rim", Color.Lerp(d.neb1, new Color(0.5f, 0.6f, 0.8f), 0.5f) * 0.5f);   // ships stand out from the dark
             Game.Cam.clearFlags = CameraClearFlags.Skybox;
             Game.Cam.farClipPlane = 9000;
 
