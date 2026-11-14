@@ -362,9 +362,11 @@ namespace BIS
             }
             placed.Add((c, Mathf.Sqrt(w * w + d * d) / 2));
             var k = kitAt(c.x, c.y);
-            if (shell && def.royale && w >= 9.5f && R() < 0.4f) TwoStory(k, new Vector3(c.x, hi, c.y), rot, w, d, lo, door);
+            bool two = shell && def.royale && w >= 9.5f && R() < 0.4f;   // same draws from the map's stream as before
+            if (two) TwoStory(k, new Vector3(c.x, hi, c.y), rot, w, d, lo, door);
             else if (shell) HouseShell(k, new Vector3(c.x, hi, c.y), rot, w, d, lo, door);
             else HouseSolid(k, new Vector3(c.x, hi, c.y), rot, w, d, lo);
+            NoteHouse(c, rot, w, d, door, shell, two);
         }
 
         void CityTower(Vector2 c, float w, float d, float hgt, System.Func<float, float, MeshKit> kitAt, List<(Vector2 c, float r)> placed)

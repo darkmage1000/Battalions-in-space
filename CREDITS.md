@@ -24,6 +24,8 @@
 | Text font "Rajdhani" SemiBold (`Assets/Resources/Fonts/Rajdhani-SemiBold.ttf`; licence text beside it) | Indian Type Foundry ([Google Fonts](https://fonts.google.com/specimen/Rajdhani)) | SIL Open Font License 1.1 |
 | Ground and wall grain (`Assets/Resources/Textures/Detail`, greyscale detail maps made from the colour maps of Grass004, Ground054, Snow010A, Rock030, Plaster001 and Concrete034) | ambientCG ([ambientcg.com](https://ambientcg.com)) | CC0 1.0 |
 | Smoke, fire, muzzle flash, flying dirt and scorch sprites (`Assets/Resources/Textures/Fx`, five 2 x 2 sheets made from "Particle Pack") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/particle-pack)) | CC0 1.0 |
+| Village props: carts, fences and gates, lantern posts, market stalls (`Assets/Resources/Models/Props/Town`, from "Fantasy Town Kit" 2.0) | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/fantasy-town-kit)) | CC0 1.0 |
+| Village props: barrels, crates, tents, plank piles, workbenches (`Assets/Resources/Models/Props/Camp`, from "Survival Kit") | Kenney — www.kenney.nl ([OpenGameArt](https://opengameart.org/content/survival-kit)) | CC0 1.0 |
 | Title font "Kenney Future Narrow" (`Assets/Resources/Fonts`, from "Kenney Fonts") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/kenney-fonts)) | CC0 1.0 |
 | Crosshairs: 8 pictures (`Assets/Resources/UI/Crosshairs`, from "Crosshair Pack") | Kenney — www.kenney.nl ([kenney.nl](https://kenney.nl/assets/crosshair-pack)) | CC0 1.0 |
 | Menu and results music "Qazijamjam Orchestral Battle Theme" (`Assets/Resources/Audio/Music/theme_qazijamjam.wav`) | Emma_MA ([OpenGameArt](https://opengameart.org/content/qazijamjam-orchestral-battle-theme)) | CC0 1.0 |

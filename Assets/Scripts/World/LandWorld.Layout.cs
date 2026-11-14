@@ -335,7 +335,7 @@ namespace BIS
             foreach (var br in bridges) BuildBridge(br);
             foreach (var l in channels) if (l.kind != FeatureKind.Wadi) BuildLiquid(l);
             BuildPlaces(kitAt, buildings);
-            if (def.features == null) return;
+            if (def.features == null) { DressHouses(kitAt); return; }
             foreach (var f in def.features)
             {
                 Vector2 c = f.pts[0] * NS;
@@ -348,6 +348,7 @@ namespace BIS
                 }
             }
             BuildWalls(kitAt, buildings);
+            DressHouses(kitAt);
             AtBase();
         }
 
@@ -471,9 +472,11 @@ namespace BIS
                     Vector3 local = Quaternion.Inverse(rot) * new Vector3(toRoad.x, 0, toRoad.y);
                     door = Mathf.Abs(local.x) > Mathf.Abs(local.z) ? (local.x > 0 ? 1 : 3) : (local.z > 0 ? 0 : 2);
                 }
-                if (shell && def.royale && w >= 9.5f && R() < 0.4f) TwoStory(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo, door);
+                bool two = shell && def.royale && w >= 9.5f && R() < 0.4f;   // same draws from the map's stream as before
+                if (two) TwoStory(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo, door);
                 else if (shell) HouseShell(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo, door);
                 else HouseSolid(kit, new Vector3(q.x, hi, q.y), rot, w, dp, lo);
+                NoteHouse(q, rot, w, dp, door, shell, two);
             }
         }
 

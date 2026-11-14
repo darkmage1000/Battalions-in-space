@@ -78,7 +78,7 @@ namespace BIS.EditorTools
                 if (bake) t.textureCompression = TextureImporterCompression.Uncompressed;
                 else { t.maxTextureSize = 2048; t.alphaIsTransparency = true; t.mipMapsPreserveCoverage = true; t.alphaTestReferenceValue = 0.4f; }
             }
-            if (assetPath.Contains("/Guns/")) { t.isReadable = true; t.mipmapEnabled = false; t.filterMode = FilterMode.Point; t.textureCompression = TextureImporterCompression.Uncompressed; }
+            if (assetPath.Contains("/Guns/") || assetPath.Contains("/Props/")) { t.isReadable = true; t.mipmapEnabled = false; t.filterMode = FilterMode.Point; t.textureCompression = TextureImporterCompression.Uncompressed; }
         }
     }
 }
